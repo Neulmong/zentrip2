@@ -10,10 +10,10 @@
     "verify:schema": "node --env-file=.env.local scripts/verify-schema.mjs",
     "test:policy": "tsx scripts/test-policy.ts",
     "probe:ai": "tsx --env-file=.env.local scripts/probe-ai.mts",
-    "probe:models": "tsx --env-file=.env.local scripts/probe-models.mts"
+    "probe:models": "tsx --env-file=.env.local scripts/probe-models.mts",
+    "test:api": "tsx --env-file=.env.local scripts/test-api.mts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.116.0",
     "@google/genai": "^2.16.0",
     "@supabase/supabase-js": "^2.112.2",
     "next": "16.3.0",

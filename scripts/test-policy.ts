@@ -11,6 +11,7 @@ import { checkPrecondition, RESET_ON, ZERO_COUNTS, hasRetryBudget, resetCounters
 import { computeVerdict, discardAxes, withAxis, contentHash, passedAxis, failedAxis, axisPassed } from '../lib/validation'
 import { maskName, maskEmail, maskPhone, maskPii } from '../lib/mask'
 import { RETRY_COUNTERS, RETRY_LIMIT, type ProductRow, type ValidationSnapshot } from '../lib/types'
+import { validateFormInput, buildFormInput, tripDays, hasDayMarker, combineTripPeriod } from '../lib/form-validation'
 
 let pass = 0, fail = 0
 function check(name: string, ok: boolean, got?: unknown) {
@@ -169,6 +170,64 @@ check('중첩 객체 재귀 마스킹',
 check('개인정보가 아닌 값은 원본 유지',
   masked.headcount === 2
   && (masked.product_snapshot as Record<string, unknown>).행사명 === '제주 올레 바람 여행')
+
+/* ── §7.1·§6.2.1 폼 검증 ────────────────────────────────────── */
+section('§7.1·§6.2.1 — 폼 검증')
+
+check('일수는 양끝 포함 — 하루 여행은 1일', tripDays('2026-03-14', '2026-03-14') === 1)
+check('3/14~3/17은 4일', tripDays('2026-03-14', '2026-03-17') === 4)
+
+function form(over: Record<string, string> = {}) {
+  return buildFormInput({
+    행사명: '제주 올레 바람 여행', 여행지: '제주',
+    여행기간_시작: '2026-03-14', 여행기간_종료: '2026-03-17',
+    일정원문: '1일: 김해공항 출발, 올레 7코스 걷기, 중식·석식 제공\n2일: 성산일출봉 관람',
+    숙소명: '롯데호텔 제주', 객실타입: '디럭스룸', 위치: '중문',
+    상점명: '제주 로컬 기념품 숍', 상점정보: '여행객 10% 할인',
+    가격_성인: '120000', 가격_아동: '해당 없음', 가격_기타: '항공료 별도',
+    식사정보: '조식 3회, 중식 2회, 석식 1회',
+    ...over,
+  })
+}
+
+check('정상 입력은 오류 0건', Object.keys(validateFormInput(form())).length === 0,
+  validateFormInput(form()))
+check('15일은 통과',
+  !validateFormInput(form({ 여행기간_종료: '2026-03-28' }))['행사정보.여행기간_종료'])
+check('16일은 거부 (§6.2.1 상한)',
+  !!validateFormInput(form({ 여행기간_종료: '2026-03-29' }))['행사정보.여행기간_종료'])
+check('종료일이 시작일보다 이르면 거부',
+  !!validateFormInput(form({ 여행기간_종료: '2026-03-13' }))['행사정보.여행기간_종료'])
+check('행사명 40자 초과 거부 (hero.headline 계약과 연동 §17.1)',
+  !!validateFormInput(form({ 행사명: '가'.repeat(41) }))['행사정보.행사명'])
+
+// 일차 구분 인식 6종 (§6.3) — 이 목록이 실패 판정의 기준이다
+for (const [label, text] of [
+  ['n일', '1일: 김해공항 출발하여 올레길을 걷습니다'],
+  ['n일차', '1일차 김해공항 출발하여 올레길을 걷습니다'],
+  ['n일 차', '1일 차 김해공항 출발하여 올레길을 걷습니다'],
+  ['첫째 날', '첫째 날 김해공항 출발하여 올레길을 걷습니다'],
+  ['Day n', 'Day 1 김해공항 출발하여 올레길을 걷습니다'],
+  ['DAY n', 'DAY 1 김해공항 출발하여 올레길을 걷습니다'],
+] as const) {
+  check(`일차 구분 인식: ${label}`, hasDayMarker(text))
+}
+check('일차 구분이 없으면 거부 (임의 배분 금지)',
+  !!validateFormInput(form({ 일정원문: '제주도의 아름다운 풍경을 즐기는 여행입니다. 맛집도 갑니다.' }))['행사정보.일정원문'])
+
+// §7.4 구조
+const f = form()
+check('form_input은 중첩 구조 (평면 키 아님)',
+  f.행사정보?.행사명 === '제주 올레 바람 여행' && !('행사명' in f))
+check('여행기간은 2필드 — 결합은 confirmed_data에서만 (§6.2.1)',
+  f.행사정보.여행기간_시작 === '2026-03-14' && f.행사정보.여행기간_종료 === '2026-03-17'
+  && !('여행기간' in f.행사정보))
+check('미입력 선택 항목은 빈 문자열 — `추후 추가 예정`은 confirmed_data에서만 (§7.4)',
+  f.행사정보.타겟층 === '' && f.숙박.숙박일정 === '' && f.항공편.공항 === '')
+check('금액은 {숫자}원 문자열 (§6.2)', f.가격.성인 === '120000원')
+check('아동 미운영은 `해당 없음` 그대로 (0원 표시 방지 §6.1)', f.가격.아동 === '해당 없음')
+check('여행기간 결합 형식 — 물결표 앞뒤 공백 1칸',
+  combineTripPeriod('2026-03-14', '2026-03-17') === '2026-03-14 ~ 2026-03-17')
 
 /* ── 결과 ────────────────────────────────────────────────────── */
 console.log(`\n${'─'.repeat(52)}`)
