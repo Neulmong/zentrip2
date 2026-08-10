@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { TRAVEL_STYLES, CHILD_NOT_OFFERED, tripDays } from '@/lib/form-validation'
 import { TRIP_DAYS_MAX } from '@/lib/types'
+import { runPipeline, BROCHURE_PHASES } from '@/lib/client/run-pipeline'
 
 /** spec §7 — 필수 폼 그룹 6개 + 선택 4개 + 슬롯 지정 이미지 업로드. */
 
@@ -74,6 +75,7 @@ export default function NewProductPage() {
     const fd = new FormData(e.currentTarget)
     if (childNotOffered) fd.set('가격_아동', CHILD_NOT_OFFERED)
 
+    // ① 상품 등록 (§8.1) — AI 0회
     const res = await fetch('/api/products', { method: 'POST', body: fd })
     const body = await res.json().catch(() => ({}))
 
@@ -85,9 +87,32 @@ export default function NewProductPage() {
       return
     }
 
-    // 이후 3개 요청(일차 분해 → 소개서 → 1차 검증)은 #9에서 이어 붙인다.
-    setProgress('등록되었습니다. 소개서 생성으로 이동합니다…')
-    router.push(`/admin/products/${body.product_id}`)
+    // ②③④ 일차 분해 → 소개서 → 1차 검증 (§8.5). 각 요청이 AI를 1회씩 쓴다.
+    const id: string = body.product_id
+    const outcome = await runPipeline(id, BROCHURE_PHASES, (label, attempt) => {
+      setProgress(attempt > 0 ? `${label} (재시도 ${attempt}회)` : label)
+    })
+
+    if (outcome.kind === 'input_error') {
+      // 입력 문제 — 폼 값을 유지한 채 사유를 표시한다(§14.1 · §15.1).
+      router.push(`/new?product_id=${id}`)
+      setErrors({ _: outcome.failure_reason })
+      setProgress(null)
+      setBusy(false)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    if (outcome.kind === 'error') {
+      setErrors({ _: outcome.message })
+      setProgress(null)
+      setBusy(false)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    // done · refetch 모두 상세 화면에서 현재 상태를 다시 읽는다.
+    setProgress('완료. 소개서 검토 화면으로 이동합니다…')
+    router.push(`/admin/products/${id}`)
   }
 
   const err = (k: string) => errors[k]
