@@ -66,6 +66,11 @@ export type AiResult<T> =
       usage: AiUsage | null
       elapsedMs: number
       model: string
+      /**
+       * 429일 때 제공자가 알려준 대기 시간. 클라이언트가 이만큼 쉬었다가
+       * 재호출한다 — 즉시 재시도하면 재시도 예산만 태우고 전부 실패한다.
+       */
+      retryAfterMs?: number
     }
 
 export interface AiProvider {

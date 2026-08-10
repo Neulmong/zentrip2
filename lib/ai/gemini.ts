@@ -36,7 +36,7 @@ const REFUSAL_REASONS = new Set<string>([
   FinishReason.PROHIBITED_CONTENT, FinishReason.SPII, FinishReason.IMAGE_SAFETY,
 ])
 
-function classify(err: unknown): { type: AiErrorType; detail: string } {
+function classify(err: unknown): { type: AiErrorType; detail: string; retryAfterMs?: number } {
   const e = err as { name?: string; message?: string; status?: number }
   const msg = e?.message ?? String(err)
 
@@ -44,7 +44,15 @@ function classify(err: unknown): { type: AiErrorType; detail: string } {
     return { type: 'timeout', detail: `25초 타임아웃: ${msg.slice(0, 200)}` }
   }
   const code = Number(msg.match(/"code":\s*(\d+)/)?.[1] ?? e?.status ?? 0)
-  if (code === 429) return { type: 'rate_limited', detail: msg.slice(0, 300) }
+  if (code === 429) {
+    // 무료 티어는 분당 한도(RPM)가 낮아 짧은 구간에 호출이 몰리면 걸린다.
+    // 제공자가 retryDelay를 주면 그만큼, 없으면 분 경계를 넘기도록 기본 20초 쉰다.
+    const secs = Number(/"retryDelay":\s*"(\d+)s"/.exec(msg)?.[1] ?? 0)
+    return {
+      type: 'rate_limited', detail: msg.slice(0, 300),
+      retryAfterMs: (secs > 0 ? secs : 20) * 1000,
+    }
+  }
   return { type: 'api_error', detail: `${code || '?'} ${msg.slice(0, 300)}` }
 }
 
@@ -70,9 +78,10 @@ export function createGeminiProvider(apiKey: string, model = DEFAULT_MODEL): AiP
       const fail = (
         errorType: AiErrorType, detail: string,
         finishReason: string | null = null, usage: AiUsage | null = null,
+        retryAfterMs?: number,
       ): AiResult<T> => ({
         ok: false, errorType, detail, finishReason, usage,
-        elapsedMs: Date.now() - startedAt, model,
+        elapsedMs: Date.now() - startedAt, model, retryAfterMs,
       })
 
       let res
@@ -93,8 +102,8 @@ export function createGeminiProvider(apiKey: string, model = DEFAULT_MODEL): AiP
           },
         })
       } catch (e) {
-        const { type, detail } = classify(e)
-        return fail(type, detail)
+        const { type, detail, retryAfterMs } = classify(e)
+        return fail(type, detail, null, null, retryAfterMs)
       }
 
       const usage = readUsage(res.usageMetadata)

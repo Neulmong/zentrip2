@@ -52,6 +52,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
             검증영역: '생성', source경로: null, 기준값: '일차 분해 결과',
             발견값: res.errorType, 사유: ERROR_LABEL[res.errorType], 위치: 'confirmed_data.행사정보.일정',
           }],
+          retryAfterMs: res.retryAfterMs,
           exhausted: {
             patch: { status: 'input_error', failure_reason: `일정 분해에 반복 실패했습니다. ${ERROR_LABEL[res.errorType]}` },
             body: { current_step: p.current_step, failure_reason: '일정 분해 실패' },

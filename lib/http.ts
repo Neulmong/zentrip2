@@ -37,7 +37,11 @@ export function unprocessable(failure_reason: string) {
 
 type ConflictExtra =
   /** 재시도 여력 있음 — retry_from이 지정한 라우트부터 재호출(§14.6) */
-  | { reason: 'retry'; retry_from: RetryFrom; items?: ValidationItem[] }
+  | {
+      reason: 'retry'; retry_from: RetryFrom; items?: ValidationItem[]
+      /** 429 등으로 대기가 필요할 때. 클라이언트는 이만큼 쉬었다가 재호출한다 */
+      retry_after_ms?: number
+    }
   /** 시작 조건 미충족 — 재호출 금지. GET으로 재조회 후 화면 갱신 */
   | { reason: 'precondition'; detail?: string }
   /** updated_at 불일치 — 재조회 후 사용자에게 알림. 자동 재시도 금지 */

@@ -64,6 +64,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
         }
         return {
           type: 'fail', counter: 'consistency', retryFrom: 5, items: [item],
+          retryAfterMs: res.retryAfterMs,
           exhausted: exhaustedWith([item]), logOutput: toLogOutput(res),
         }
       }

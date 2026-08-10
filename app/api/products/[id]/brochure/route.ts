@@ -49,6 +49,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       if (!res.ok) {
         return {
           type: 'fail', counter: 'brochure', retryFrom: 3,
+          retryAfterMs: res.retryAfterMs,
           items: [{
             검증영역: '생성', source경로: null, 기준값: '소개서 개요',
             발견값: res.errorType, 사유: ERROR_LABEL[res.errorType], 위치: 'b_overview.data.핵심일정',

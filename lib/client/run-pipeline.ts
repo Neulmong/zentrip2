@@ -85,6 +85,20 @@ export async function runPipeline(
           const back = phases.findIndex((p) => p.num === body.retry_from)
           i = back >= 0 ? back : i
           attempt += 1
+
+          /*
+           * 429(무료 티어 분당 한도)처럼 즉시 재호출이 무의미한 경우 서버가
+           * `retry_after_ms`를 준다. 이걸 무시하고 바로 재호출하면 재시도
+           * 예산 2회를 몇 초 만에 태우고 전부 실패한다.
+           *
+           * 폴링이 아니다 — 재호출 전 한 번 쉬는 백오프다(§4.2는 상태를
+           * 되묻는 폴링을 금지하지, 실패 후 대기를 금지하지 않는다).
+           */
+          const waitMs = Number(body.retry_after_ms ?? 0)
+          if (waitMs > 0) {
+            onProgress(`${phase.label} 잠시 후 다시 시도합니다`, attempt)
+            await new Promise((r) => setTimeout(r, Math.min(waitMs, 30_000)))
+          }
           continue
         }
         case 'precondition':

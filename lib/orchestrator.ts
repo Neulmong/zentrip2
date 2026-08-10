@@ -82,6 +82,8 @@ export type StepOutcome =
       counter: RetryCounter
       retryFrom: RetryFrom
       items: ValidationItem[]
+      /** 429 등으로 즉시 재호출이 무의미할 때, 클라이언트가 쉴 시간 */
+      retryAfterMs?: number
       /** 재시도 소진 시 확정할 상태·산출물 */
       exhausted: {
         patch: Partial<ProductRow>; body: StepResultBody; detail: string
@@ -175,7 +177,7 @@ export async function runStep(
   }
 
   /* ── 생성·검증 실패 ───────────────────────────────────────── */
-  const { retryFrom, items, exhausted } = outcome
+  const { retryFrom, items, exhausted, retryAfterMs } = outcome
 
   if (hasRetryBudget(product.retry_counts, counter)) {
     const counts = { ...product.retry_counts, [counter]: product.retry_counts[counter] + 1 }
@@ -187,7 +189,10 @@ export async function runStep(
       ...flagBase, retry_counts: counts, bumped: counter, failedItems: items,
     })
     // 재호출 중에도 실패 사유를 화면에 표시할 수 있도록 items를 함께 담는다.
-    return conflict({ reason: 'retry', retry_from: retryFrom, items })
+    return conflict({
+      reason: 'retry', retry_from: retryFrom, items,
+      ...(retryAfterMs ? { retry_after_ms: retryAfterMs } : {}),
+    })
   }
 
   // 재시도 소진 — 파이프라인을 "중단"하지 않는다.
