@@ -68,6 +68,8 @@ export type StepOutcome =
       patch: Partial<ProductRow>
       body: StepResultBody
       logOutput?: unknown
+      /** 주 단계 **뒤에** 남길 단계명 — draft 전이처럼 순서가 규정인 경우(§9.5) */
+      trailingLogs?: LogStep[]
     }
   /**
    * 생성 실패 또는 검증 실패.
@@ -81,7 +83,10 @@ export type StepOutcome =
       retryFrom: RetryFrom
       items: ValidationItem[]
       /** 재시도 소진 시 확정할 상태·산출물 */
-      exhausted: { patch: Partial<ProductRow>; body: StepResultBody; detail: string }
+      exhausted: {
+        patch: Partial<ProductRow>; body: StepResultBody; detail: string
+        trailingLogs?: LogStep[]
+      }
       logOutput?: unknown
     }
   /** 입력 문제로 중단 → 422. 검증 실패와 달리 카운터를 쓰지 않는다. */
@@ -144,7 +149,8 @@ export async function runStep(
     const applied = await updateProduct(product, outcome.patch)
     if (!applied.ok) return conflict({ reason: 'stale' })
 
-    await writeLogs(cfg, product, applied.row, 'pass', retryIndex, outcome.logOutput)
+    await writeLogs(cfg, product, applied.row, 'pass', retryIndex, outcome.logOutput,
+      outcome.trailingLogs)
     await detectAbnormalities({
       ...flagBase, retry_counts: applied.row.retry_counts, partialDays: cfg.partialDays,
     })
@@ -189,7 +195,8 @@ export async function runStep(
   const applied = await updateProduct(product, exhausted.patch)
   if (!applied.ok) return conflict({ reason: 'stale' })
 
-  await writeLogs(cfg, product, applied.row, 'fail', retryIndex, outcome.logOutput ?? { items })
+  await writeLogs(cfg, product, applied.row, 'fail', retryIndex, outcome.logOutput ?? { items },
+    exhausted.trailingLogs)
   await detectAbnormalities({
     ...flagBase, retry_counts: applied.row.retry_counts,
     failedItems: items, aborted: exhausted.detail,
@@ -201,8 +208,9 @@ export async function runStep(
 async function writeLogs(
   cfg: StepConfig, before: ProductRow, after: ProductRow,
   verdict: 'pass' | 'fail', retryIndex: number, output: unknown,
+  trailing: LogStep[] = [],
 ) {
-  for (const step of [...(cfg.extraSteps ?? []), cfg.step]) {
+  for (const step of [...(cfg.extraSteps ?? []), cfg.step, ...trailing]) {
     await appendLog({
       execution_id: before.execution_id,
       product_id: before.id,

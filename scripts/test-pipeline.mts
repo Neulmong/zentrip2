@@ -130,14 +130,88 @@ if (axis1?.verdict !== 'pass' && axis1?.items?.length) {
   for (const i of axis1.items) console.log(`    · ${i.검증영역}: ${i.기준값} → ${i.발견값} (${i.사유})`)
 }
 
+/* ── ⑤ 페이지 생성 ───────────────────────────────────────────── */
+console.log('\n⑤ POST /page  (AI 1회)')
+const r5 = await call('page')
+console.log(`  ${r5.status} · ${(r5.ms / 1000).toFixed(1)}초`)
+if (r5.status !== 200) console.log(`  본문: ${JSON.stringify(r5.body).slice(0, 400)}`)
+check('200', r5.status === 200)
+
+const p5 = await row()
+const pc = p5?.page_content
+check('섹션 9개·순서 (§9.3)',
+  JSON.stringify(pc?.sections?.map((s: { id: string }) => s.id)) === JSON.stringify([
+    'sec_hero', 'sec_summary', 'sec_itinerary', 'sec_accommodation',
+    'sec_flight', 'sec_meal', 'sec_price', 'sec_shop', 'sec_apply']),
+  pc?.sections?.map((s: { id: string }) => s.id))
+check('order 1~9', JSON.stringify(pc?.sections?.map((s: { order: number }) => s.order))
+  === JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8, 9]))
+check('7개 최상위 필드 (§9.2 — visible·locked 포함)',
+  (pc?.sections ?? []).every((s: object) =>
+    ['id', 'type', 'order', 'visible', 'locked', 'data', 'source'].every((k) => k in s)))
+check('hero·apply만 locked (§10.2)',
+  pc?.sections?.filter((s: { locked: boolean }) => s.locked).map((s: { id: string }) => s.id)
+    .join(',') === 'sec_hero,sec_apply')
+check('테마 nature (자연 → §9.4)', pc?.theme === 'nature', pc?.theme)
+check('slug 발급 — 한글 행사명이라 무작위 (§12.1)',
+  typeof p5?.slug === 'string' && /^p-[a-z0-9]{6}$/.test(p5.slug), p5?.slug)
+check('hero.headline 값 보존 + 40자 이내 (§17.1)',
+  pc?.sections?.[0]?.data?.headline === '제주 올레 바람 여행'
+  && pc.sections[0].data.headline.length <= 40)
+check('일차별 서술 200자 이내 (§17.1 생성 시 4종)',
+  (pc?.sections?.[2]?.data?.days ?? []).every((d: { text: string }) => d.text.length <= 200),
+  (pc?.sections?.[2]?.data?.days ?? []).map((d: { text: string }) => d.text.length))
+check('image_slot에는 source가 없다 (사실정보 아님 §9.3)',
+  !('image_slot' in (pc?.sections?.[0]?.source ?? {})))
+check('apply에 신청 폼 필드 구성이 없다 (§13.1 고정 계약)',
+  !['이름', '이메일', '연락처', '인원수', '동의'].some((k) => k in (pc?.sections?.[8]?.data ?? {})))
+check('apply 가격요약이 price와 일치',
+  pc?.sections?.[8]?.data?.가격요약?.성인 === pc?.sections?.[6]?.data?.성인)
+console.log(`  확장 서술 1일차: "${pc?.sections?.[2]?.data?.days?.[0]?.text?.slice(0, 60) ?? ''}…"`)
+console.log(`  신청 안내: "${pc?.sections?.[8]?.data?.안내문구?.slice(0, 50) ?? ''}…"`)
+
+/* ── ⑥ 2차 검증 ──────────────────────────────────────────────── */
+console.log('\n⑥ POST /validate-page  (AI 1회) — 주 검증')
+const r6 = await call('validate-page')
+console.log(`  ${r6.status} · ${(r6.ms / 1000).toFixed(1)}초`)
+check('200', r6.status === 200, r6.body)
+const p6 = await row()
+const axis2 = p6?.validation_snapshot?.axes?.axis_2
+check('axis_2 = pass', axis2?.verdict === 'pass', axis2?.items)
+check('아직 draft가 아니다 (3차가 남았다)', p6?.status === 'generating', p6?.status)
+if (axis2?.verdict !== 'pass' && axis2?.items?.length) {
+  console.log('  실패 항목:')
+  for (const i of axis2.items) console.log(`    · ${i.검증영역}: ${i.기준값} → ${i.발견값}`)
+}
+
+/* ── ⑦ 3차 검증 + draft 등록 ─────────────────────────────────── */
+console.log('\n⑦ POST /validate-consistency  (AI 1회)')
+const r7 = await call('validate-consistency')
+console.log(`  ${r7.status} · ${(r7.ms / 1000).toFixed(1)}초`)
+check('200', r7.status === 200, r7.body)
+const p7 = await row()
+const axis3 = p7?.validation_snapshot?.axes?.axis_3
+check('axis_3 = pass', axis3?.verdict === 'pass', axis3?.items)
+check('skipped = ["apply"] (§11.1)', JSON.stringify(axis3?.skipped) === '["apply"]', axis3?.skipped)
+check('status = draft (§15.2)', p7?.status === 'draft', p7?.status)
+check('최상위 verdict = pass — 4축 전부 통과',
+  p7?.validation_snapshot?.verdict === 'pass')
+check('content_hash 기록 (§11.3)',
+  typeof p7?.validation_snapshot?.content_hash === 'string'
+  && p7.validation_snapshot.content_hash.startsWith('sha256:'))
+check('page·consistency 카운터 미소모',
+  p7?.retry_counts?.page === 0 && p7?.retry_counts?.consistency === 0, p7?.retry_counts)
+
 /* ── 로그 (§5.4) ─────────────────────────────────────────────── */
 console.log('\n§5.4 execution_logs')
 const { data: logs } = await db.from('execution_logs').select('*')
   .eq('execution_id', p4.execution_id).order('id')
 const steps = logs?.map((l: { step: string }) => l.step) ?? []
-check('단계 5행 순서대로', JSON.stringify(steps) === JSON.stringify([
-  'pipeline_started', 'itinerary_decomposed', 'normalization_validated',
-  'brochure_generated', 'validation_1_completed']), steps)
+check('단계 9행 순서대로 — draft_registered 포함 (§9.5)',
+  JSON.stringify(steps) === JSON.stringify([
+    'pipeline_started', 'itinerary_decomposed', 'normalization_validated',
+    'brochure_generated', 'validation_1_completed', 'page_generated',
+    'validation_2_completed', 'validation_3_completed', 'draft_registered']), steps)
 check('verdict 전부 영어', (logs ?? []).every((l: { verdict: string }) => ['pass', 'fail', '-'].includes(l.verdict)))
 check('AI 단계 output에 usage 기록 (§4.3)',
   !!logs?.find((l: { step: string; output: { usage?: unknown } }) =>
