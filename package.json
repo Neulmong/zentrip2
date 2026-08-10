@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "verify:schema": "node --env-file=.env.local scripts/verify-schema.mjs"
+    "verify:schema": "node --env-file=.env.local scripts/verify-schema.mjs",
+    "test:policy": "tsx scripts/test-policy.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
@@ -26,6 +27,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.12",
     "typescript": "^5"
   }
 }
