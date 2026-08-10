@@ -11,7 +11,8 @@
     "test:policy": "tsx scripts/test-policy.ts",
     "probe:ai": "tsx --env-file=.env.local scripts/probe-ai.mts",
     "probe:models": "tsx --env-file=.env.local scripts/probe-models.mts",
-    "test:api": "tsx --env-file=.env.local scripts/test-api.mts"
+    "test:api": "tsx --env-file=.env.local scripts/test-api.mts",
+    "test:pipeline": "tsx --env-file=.env.local scripts/test-pipeline.mts"
   },
   "dependencies": {
     "@google/genai": "^2.16.0",
