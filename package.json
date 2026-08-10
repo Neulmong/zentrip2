@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "verify:schema": "node --env-file=.env.local scripts/verify-schema.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
