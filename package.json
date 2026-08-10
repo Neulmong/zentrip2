@@ -12,12 +12,14 @@
     "probe:ai": "tsx --env-file=.env.local scripts/probe-ai.mts",
     "probe:models": "tsx --env-file=.env.local scripts/probe-models.mts",
     "test:api": "tsx --env-file=.env.local scripts/test-api.mts",
-    "test:pipeline": "tsx --env-file=.env.local scripts/test-pipeline.mts"
+    "test:pipeline": "tsx --env-file=.env.local scripts/test-pipeline.mts",
+    "probe:solar": "tsx --env-file=.env.local scripts/probe-solar.mts"
   },
   "dependencies": {
     "@google/genai": "^2.16.0",
     "@supabase/supabase-js": "^2.112.2",
     "next": "16.3.0",
+    "openai": "^7.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "resend": "^6.18.1",
