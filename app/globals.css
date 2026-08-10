@@ -1,8 +1,20 @@
 @import "tailwindcss";
 
+/**
+ * spec §17.2 — 다크 모드는 **범위 제외**다. 라이트 테마 단일로 간다.
+ *
+ * Next.js 기본 스캐폴드에는 `prefers-color-scheme: dark` 블록이 있었는데,
+ * 화면 컴포넌트는 전부 라이트 기준(bg-white · text-neutral-800)이라
+ * OS가 다크 모드면 검은 배경 위에 회색 글자가 되어 아무것도 읽히지 않았다.
+ * 그 블록을 제거하고 라이트 값을 고정한다.
+ *
+ * 본문 대비는 4.5:1 이상을 만족해야 한다(§17.2 접근성).
+ *   #171717 on #ffffff → 약 16.8:1
+ */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,15 +24,20 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--background);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, "Malgun Gothic", sans-serif;
+}
+
+/* 폼 컨트롤도 OS 다크 모드를 따라가지 않게 고정한다 */
+input,
+textarea,
+select,
+button {
+  color-scheme: light;
 }
