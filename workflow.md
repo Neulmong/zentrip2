@@ -1,6 +1,8 @@
 # workflow.md — 여행 상품 소개서·웹페이지·게시·신청 파이프라인
 
-> **문서 버전 2.4** (2026-08-10). `spec.md` 2.4와 짝을 이룬다. 개정 이력: [CHANGELOG.md](./CHANGELOG.md)
+> **문서 버전 2.5** (2026-08-11). `spec.md` 2.5와 짝을 이룬다. 개정 이력: [CHANGELOG.md](./CHANGELOG.md)
+>
+> 2.4 → 2.5는 AI 공급자 교체(Claude → Gemini 무료 티어)만 반영했다. 단계 순서·분기·복귀는 그대로다.
 
 ## 0. 이 문서의 역할과 경계
 
@@ -14,7 +16,7 @@
 
 | 항목 | 단일 출처 |
 |---|---|
-| AI 호출 계약 (모델·파라미터·출력 강제·실패) | `spec.md` §4.3 |
+| AI 호출 계약 (모델·파라미터·출력 강제·실패) | `spec.md` §4.3 — 라우트는 `lib/ai`의 provider 중립 인터페이스만 호출한다 |
 | 소개서 8개 섹션 `data` 키 | `spec.md` §8.7 |
 | 페이지 9개 섹션 `data` 키 | `spec.md` §9.3 |
 | 실패 항목 `items` 구조 | `spec.md` §11.3 |
@@ -678,7 +680,7 @@ ELSE
 
 - 재시도 카운터는 **4종**: `normalization` · `brochure` · `page` · `consistency`.
 - **각 카운터의 상한은 2회**(총 3회 시도)이며 **예산을 서로 공유하지 않는다.**
-- 재시도는 **클라이언트가 같은 API를 재호출**하는 방식이다. 서버가 내부에서 반복하지 않고, **SDK 자동 재시도도 끈다**(`maxRetries: 0`, spec §4.3).
+- 재시도는 **클라이언트가 같은 API를 재호출**하는 방식이다. 서버가 내부에서 반복하지 않고, **SDK 자동 재시도를 쓰지 않는다**(spec §4.3).
 - `form_input`은 항상 유지한다.
 - **폼 재검증 실패와 일차 분해 실패에는 카운터를 적용하지 않는다.** 사용자 재입력이므로 재시도가 아니다.
 - 재시도 소진 후에도 파이프라인을 "중단"하지 않는다 — §10.1의 갈래에 따라 상태를 확정하고 다음 조작 경로를 남긴다.
@@ -727,13 +729,14 @@ ELSE
 | 상황 | 비고 |
 |---|---|
 | 25초 타임아웃 | SDK 기본 타임아웃(10분)을 요청 단위로 덮어쓴다 |
-| SDK 오류 (429·5xx·네트워크) | `maxRetries: 0`이므로 SDK가 자동 재시도하지 않는다 |
-| `stop_reason = "max_tokens"` | 출력 절단 |
-| `stop_reason = "refusal"` | `detail`에 `stop_details.category` 기록 |
-| 스키마 검증 실패 | `output_config.format`으로 강제해도 실패할 수 있다 |
+| 429 한도 초과 | 무료 티어에서 가장 흔하다. `rate_limited`로 분류 |
+| 5xx·네트워크·인증 | SDK가 자동 재시도하지 않는다. 과부하 503 포함 |
+| `finishReason = MAX_TOKENS` | 출력 절단 |
+| `finishReason` 안전 계열 또는 `promptFeedback.blockReason` | `detail`에 종료 사유를 기록 |
+| 스키마 검증·파싱 실패 | `responseSchema`로 강제해도 실패할 수 있다 |
 | 서버 검사 실패 | 섹션 수·`source`·토큰·길이 계약 |
 
-**`stop_reason`을 먼저 확인한 뒤 `content`를 읽는다.** 거부 시 `content`가 비어 있다.
+**`finishReason`과 `promptFeedback`을 먼저 확인한 뒤 본문을 읽는다.** 거부 시 본문이 비어 있다.
 
 ---
 
@@ -765,7 +768,7 @@ ELSE
 |---|---|
 | `verdict` 저장값 | **`pass` / `fail` / `-` (영어).** 화면에만 `통과`/`반려`/`-`로 표시한다(spec §5.4·§14.3) |
 | `input`·`output` | 가공·요약 없는 원본. **단 `category = application`은 이름·이메일·연락처를 마스킹**해 저장한다 |
-| AI 호출 단계의 `output` | `{stop_reason, usage, error_type}`을 포함한다. `usage.cache_read_input_tokens`가 0이면 프롬프트 캐시가 깨진 것이다(spec §4.3) |
+| AI 호출 단계의 `output` | `{error_type, detail, finish_reason, usage, elapsed_ms, model}`을 포함한다(spec §4.3) |
 | 로그 기록 실패 | **본 동작을 실패시키지 않는다.** 트랜잭션 밖에서 실행하고 서버 오류 로그에만 남긴다 |
 
 ### 11.2 이상 플래그 감지 조건

@@ -1,6 +1,9 @@
 # spec.md — zentrip: 여행 상품 페이지 자동 생성·배포 플랫폼
 
-> **문서 버전 2.4** (2026-08-10) · 개정 이력: **[CHANGELOG.md](./CHANGELOG.md)**
+> **문서 버전 2.5** (2026-08-11) · 개정 이력: **[CHANGELOG.md](./CHANGELOG.md)**
+>
+> 2.4 → 2.5는 **§4·§4.3·§21만** 바뀌었다 — AI 공급자를 Claude → Gemini 무료 티어로 교체.
+> 나머지 절의 규정은 2.4와 동일하며, 파이프라인·검증·상태 설계는 공급자와 무관하다.
 >
 > **판정 기준은 「이 문서만 보고 제3자가 구현할 수 있는가」다.** 규정은 §1~§21 본문에 전부 있고, 「왜 그렇게 됐는지」는 CHANGELOG에 있다.
 
@@ -95,7 +98,7 @@ status = published → 공개 URL 배포 ─────────────
 | 배포 | Vercel 단일 프로젝트, 상시 배포 | 게시마다 재빌드하지 않으므로 게시 지연 0초, 게시 취소도 즉시 |
 | 데이터베이스 | Supabase Postgres | 상품·신청·로그·편집이력 |
 | 이미지 저장소 | Supabase Storage | 업로드 이미지 |
-| AI | Claude API (Messages API) 직접 호출 | 서버리스 환경에서 응답 지연·배포 복잡도 최소 |
+| AI | Gemini API 직접 호출 (`@google/genai`) | 서버리스 환경에서 응답 지연·배포 복잡도 최소. 무료 티어로 운영비 0 |
 | 이메일 | Resend | Vercel 서버 라우트에서 직접 발송 |
 | 인증 | 단일 공유 비밀번호 + 서명 쿠키 | 기획자 전용 게이트, 시연 단순성 |
 
@@ -103,7 +106,8 @@ status = published → 공개 URL 배포 ─────────────
 
 | 변수 | 용도 |
 |---|---|
-| `ANTHROPIC_API_KEY` | AI 호출(§4.3) |
+| `GEMINI_API_KEY` | AI 호출(§4.3). AI Studio **무료 티어** 키 |
+| `AI_MODEL` | 선택. 모델 덮어쓰기 — 한도·과부하 시 교체용(§4.3) |
 | `SUPABASE_URL` | DB·Storage 엔드포인트 |
 | `SUPABASE_SERVICE_ROLE_KEY` | 서버 라우트 전용 DB·Storage 접근 |
 | `RESEND_API_KEY` | 이메일 발송(§13.3) |
@@ -148,72 +152,81 @@ status = published → 공개 URL 배포 ─────────────
 
 AI가 5개 작업(일차 분해·소개서 작성·1차 검증·페이지 생성·2·3차 검증)을 수행하므로, 그 인터페이스를 여기서 확정한다.
 
-**호출 방식**: Anthropic 공식 SDK(`@anthropic-ai/sdk`)를 서버 라우트에서 사용한다. 원시 HTTP를 쓰지 않는다.
+**호출 방식**: Google 공식 SDK(`@google/genai`)를 서버 라우트에서 사용한다. 원시 HTTP를 쓰지 않는다.
+
+**라우트는 `lib/ai`의 provider 중립 인터페이스만 호출한다.** 모델·공급자를 바꿔도 파이프라인 6개 라우트는 수정하지 않는다.
 
 | 항목 | 값 |
 |---|---|
-| 모델 | **`claude-opus-5`** (날짜 접미사를 붙이지 않는다) |
-| `max_tokens` | 8000. 콘텐츠 모델 JSON은 이 범위를 넘지 않는다 |
-| 스트리밍 | 사용하지 않는다. `max_tokens`가 16000 이하이므로 비스트리밍이 안전하다 |
-| `thinking` | `{ type: "adaptive" }` — 기본값이며 명시한다 |
-| `output_config.effort` | 생성 3종은 `"medium"`, 검증 3종은 `"low"` |
-| 요청 타임아웃 | **25초.** SDK 기본값(10분)을 요청 단위로 덮어쓴다 |
-| SDK 재시도 | **`maxRetries: 0`.** 재시도는 클라이언트가 담당하므로(§4.2) SDK가 자동 재시도하면 25초 예산을 초과한다 |
+| 모델 | **`gemini-3.5-flash`** (아래 실측 근거) |
+| `maxOutputTokens` | 8000. 콘텐츠 모델 JSON은 이 범위를 넘지 않는다 |
+| 스트리밍 | 사용하지 않는다. 출력 상한이 낮아 비스트리밍이 안전하다 |
+| `thinkingConfig.thinkingLevel` | 생성 3종은 `MEDIUM`, 검증 3종은 `LOW` |
+| 요청 타임아웃 | **25초.** `AbortSignal.timeout`으로 요청 단위 적용 |
+| SDK 재시도 | **없음.** 재시도는 클라이언트가 담당하므로(§4.2) SDK가 자동 재시도하면 25초 예산을 초과한다 |
+| 요금제 | **AI Studio 무료 티어.** 결제 계정을 연결하지 않는다 |
 
-**금지 파라미터** — `claude-opus-5`에서 400을 반환한다.
+**모델 선정 근거 (2026-08-11 실측)** — `page_content` 9섹션 스키마를 강제한 호출 1건:
 
-| 금지 | 대체 |
+| 모델 | 소요 | 사고 토큰 | 판정 |
+|---|---:|---:|---|
+| **`gemini-3.5-flash`** | **9.8초** | 1,425 | **채택** |
+| `gemini-3.6-flash` | 20.3초 | 3,933 | 탈락 |
+
+`3.6-flash`를 쓰지 않는 이유: 25초 예산에 4.7초밖에 남기지 않아 변동에 취약하고, §5.5의 `processing_delayed` 임계값(20초)을 매 생성마다 넘겨 이상 플래그가 상시 뜬다. 두 모델의 산출물 품질 차이는 이 작업에서 관측되지 않았다.
+
+**무료 티어 제약** — 유료 전환 시 해제된다.
+
+| 항목 | 내용 |
 |---|---|
-| `temperature` · `top_p` · `top_k` | 프롬프트로 제어한다 |
-| `thinking: { type: "enabled", budget_tokens: N }` | `{ type: "adaptive" }` + `effort` |
-| 마지막 assistant 턴 prefill | `output_config.format`(아래) |
-| `output_format` (최상위) | `output_config.format` |
-
-> **`thinking`을 끄지 않는 이유**: `claude-opus-5`는 사고가 기본 켜짐이고, `{ type: "disabled" }`는 effort `high` 이하에서만 허용된다. 게다가 사고를 끄면 도구 호출이 일반 텍스트로 새거나 `<thinking>` 태그가 응답에 노출되는 실패 모드가 있다. 비용·지연은 `effort`를 낮춰 제어하는 것이 안전하며, `low`·`medium`에서도 품질이 충분하다.
+| 사용 가능 모델 | **flash 계열만.** pro 계열은 유료이며 429를 반환한다 |
+| 컨텍스트 캐싱 | **사용 불가**(유료 전용). 비용이 0이므로 실질 손해는 없고 지연만 소폭 는다 |
+| 데이터 취급 | 무료 티어는 입력이 모델 개선에 사용된다. 실제 고객 데이터를 넣지 않는다 |
+| 가용성 | 과부하 시 **503**이 발생할 수 있다. `AI_MODEL` 환경 변수로 대체 모델을 지정한다 |
 
 #### 출력 형식 강제
 
-**모든 AI 호출은 `output_config.format`으로 JSON 스키마를 강제한다.** 프롬프트로 "JSON만 출력하라"고 지시하는 방식은 쓰지 않는다.
+**모든 AI 호출은 `responseSchema`로 JSON 스키마를 강제한다.** 프롬프트로 "JSON만 출력하라"고 지시하는 방식은 쓰지 않는다.
 
 ```ts
-output_config: {
-  format: { type: "json_schema", schema: { /* §8.7 · §9.3 · §11.3의 스키마 */ } },
-  effort: "medium",
+config: {
+  systemInstruction: SYSTEM,
+  responseMimeType: 'application/json',
+  responseSchema: { /* §8.7 · §9.3 · §11.3의 스키마 */ },
+  thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
 }
 ```
 
 | 규칙 | 내용 |
 |---|---|
 | 스키마 출처 | 생성 호출은 §8.7·§9.3의 `data` 키 표, 검증 호출은 §11.3의 `items` 구조 |
-| 스키마 제약 | 모든 객체에 `additionalProperties: false`와 `required`를 넣는다. 재귀 스키마·수치 제약(`minimum` 등)·문자열 길이 제약은 지원되지 않으므로 스키마에 쓰지 않고 서버가 별도 검사한다 |
-| 첫 요청 지연 | 새 스키마는 1회 컴파일 비용이 있고 이후 24시간 캐시된다. 스키마를 요청마다 다시 만들지 않는다 |
-| 파싱 | SDK의 스키마 검증 헬퍼를 쓴다. `JSON.parse` 후 수동 검사하지 않는다 |
+| 스키마 제약 | 모든 객체에 `required`를 넣는다. 재귀 스키마·수치 제약은 지원이 불안정하므로 스키마에 쓰지 않고 서버가 별도 검사한다 |
+| 파싱 | 스키마 강제 후 `JSON.parse`한다. 파싱 실패는 `schema_invalid`로 분류해 생성 실패로 취급한다 |
 
-#### 프롬프트 캐싱
+#### 시스템 프롬프트 불변 규칙
 
-시스템 프롬프트(섹션 규칙·금지 사항·§16.1 무결성 규칙)는 요청 간 **바이트 단위로 동일**하므로 캐시 대상이다. `claude-opus-5`의 최소 캐시 길이는 512 토큰이다.
+무료 티어에서는 캐싱이 동작하지 않지만, 유료 전환 시 즉시 캐시 대상이 되도록 **시스템 프롬프트는 요청 간 바이트 단위로 동일하게 유지한다.**
 
 | 규칙 | 내용 |
 |---|---|
-| 배치 | 시스템 프롬프트 마지막 블록에 `cache_control: { type: "ephemeral" }` |
-| 금지 | 시스템 프롬프트에 **날짜·`product_id`·`execution_id`·타임스탬프를 넣지 않는다.** 접두사가 매 요청 달라져 캐시가 전혀 동작하지 않는다 |
-| 가변 데이터 위치 | `confirmed_data`·`form_input` 등은 `messages`에 넣는다 |
-| 확인 | `usage.cache_read_input_tokens`가 0이면 캐시가 깨진 것이다. 로그 `output`에 이 값을 함께 기록한다 |
+| 금지 | 시스템 프롬프트에 **날짜·`product_id`·`execution_id`·타임스탬프를 넣지 않는다** |
+| 가변 데이터 위치 | `confirmed_data`·`form_input` 등은 사용자 파트에 넣는다 |
 
 #### 실패 처리
 
-| 상황 | 판정 | 응답 |
-|---|---|---|
-| 25초 타임아웃 | 생성 실패 | **409 `{reason: "retry", retry_from: N}`** + 해당 카운터 +1 |
-| SDK 오류 (429 · 5xx · 네트워크) | 생성 실패 | 동일 |
-| `stop_reason = "max_tokens"` | 생성 실패 (출력 절단) | 동일 |
-| `stop_reason = "refusal"` | 생성 실패 | 동일. `detail`에 `stop_details.category`를 기록한다 |
-| 스키마 검증 실패 | 생성 실패 | 동일 |
-| 카운터 소진 | — | §11.6의 축별 소진 처리 |
+| 상황 | `error_type` | 판정 | 응답 |
+|---|---|---|---|
+| 25초 타임아웃 | `timeout` | 생성 실패 | **409 `{reason: "retry", retry_from: N}`** + 해당 카운터 +1 |
+| 429 한도 초과 | `rate_limited` | 생성 실패 | 동일 |
+| 5xx·네트워크·인증 | `api_error` | 생성 실패 | 동일 |
+| `finishReason = MAX_TOKENS` | `max_tokens` | 생성 실패 (출력 절단) | 동일 |
+| `finishReason ∈ {SAFETY, RECITATION, BLOCKLIST, PROHIBITED_CONTENT, SPII}` 또는 `promptFeedback.blockReason` | `refusal` | 생성 실패 | 동일 |
+| 스키마 검증·파싱 실패 | `schema_invalid` | 생성 실패 | 동일 |
+| 카운터 소진 | — | — | §11.6의 축별 소진 처리 |
 
-**`stop_reason`을 먼저 확인한 뒤 `content`를 읽는다.** 거부 시 `content`가 비어 있어 무조건 인덱싱하면 예외가 발생한다.
+**`finishReason`과 `promptFeedback`을 먼저 확인한 뒤 본문을 읽는다.** 거부 시 본문이 비어 있어 무조건 읽으면 예외가 발생한다.
 
-모든 실패는 `execution_logs`에 해당 단계의 실패 행으로 기록하며, `output`에 `{stop_reason, usage, error_type}`을 담는다(§5.4).
+모든 실패는 `execution_logs`에 해당 단계의 실패 행으로 기록하며, `output`에 `{error_type, detail, finish_reason, usage, elapsed_ms, model}`을 담는다(§5.4).
 
 ---
 
@@ -1744,7 +1757,7 @@ Storage `product-images` 버킷은 읽기 공개, 업로드는 service role만 �
 | 일차 구분 표기 인식 범위 | 6종 (`n일`·`n일차`·`n일 차`·`첫째 날`·`Day n`·`DAY n`) | **§6.3** |
 | `gallery` 슬롯 렌더 위치 | 슬롯 자체를 삭제 | **§7.3**·§18.2 |
 | 개인정보 보유 기간 | 신청 접수일로부터 1년, 수동 삭제 | **§13.1**·§12.4 |
-| AI 모델·파라미터 | `claude-opus-5`, effort 생성 `medium`/검증 `low` | **§4.3** |
+| AI 모델·파라미터 | `gemini-3.5-flash`, thinkingLevel 생성 `MEDIUM`/검증 `LOW` (2026-08-11 실측 확정) | **§4.3** |
 | 금액 단위 | `원` 고정 | **§6.2** |
 | 여행기간 일수 계산 | 양끝 포함, `1 ≤ 일수 ≤ 15` | **§6.2.1** |
 | 출처 없는 숫자 판정 | 허용 출처 4종 + 4단계 판정 | **§6.3.1** |

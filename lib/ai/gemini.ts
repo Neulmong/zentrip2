@@ -10,7 +10,19 @@ import type { AiErrorType, AiProvider, AiRequest, AiResult, AiUsage } from './co
  * 지연만 조금 는다.
  */
 
-const DEFAULT_MODEL = 'gemini-3.6-flash'
+/**
+ * 실측(2026-08-11, page_content 9섹션 스키마 강제) 근거로 고른 값이다.
+ *
+ *   gemini-3.5-flash  9.8초  (사고 1,425)  ← 채택
+ *   gemini-3.6-flash 20.3초  (사고 3,933)
+ *
+ * 3.6은 25초 예산에 4.7초밖에 남기지 않고, §5.5의 `processing_delayed`
+ * 임계값(20초)을 매 생성마다 넘겨 이상 플래그가 상시 뜬다.
+ * 품질 차이는 이 작업에서 관측되지 않았다.
+ *
+ * 한도·과부하로 막히면 `AI_MODEL` 환경 변수로 갈아끼운다.
+ */
+const DEFAULT_MODEL = 'gemini-3.5-flash'
 
 /** spec §4.3의 effort 대응. 생성은 medium, 검증은 low. */
 const THINKING: Record<AiRequest['effort'], ThinkingLevel> = {
