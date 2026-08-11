@@ -168,8 +168,27 @@ export function ProductActions(p: ActionsProps) {
         case 'resubmit':
           router.push(`/new?product_id=${p.id}`)
           break
-        default:
-          setError(`아직 연결되지 않은 동작입니다: ${b.label}`)
+
+        /*
+         * `publish`의 case는 두지 않는다. 위의 조기 반환(`if (b.key === 'publish')`)이
+         * 타입을 이미 좁혀놔서 case를 쓰면 「도달할 수 없는 비교」로 컴파일이 실패한다.
+         * 좁혀졌다는 것 자체가 처리됐다는 증거이므로 아래 소진 검사도 통과한다.
+         */
+
+        /**
+         * **버튼 키 소진 검사.** `describeStatus()`가 돌려주는 키를 여기서
+         * 처리하지 않으면 `b.key`가 `never`로 좁혀지지 않아 **컴파일이 실패한다.**
+         *
+         * 이 장치를 두는 이유: 4단계에서 `available.ts`의 `edit`를 풀어 버튼은
+         * 화면에 나왔지만 이 switch에 `case 'edit'`가 없었다. 결과는 [편집]을
+         * 누르면 편집기가 아니라 「아직 연결되지 않은 동작입니다」였고,
+         * 타입 검사·테스트·빌드가 **전부 통과했다** — `default`가 런타임 메시지로
+         * 삼켜버렸기 때문이다. 같은 실수를 두 번 하지 않게 컴파일에서 막는다.
+         */
+        default: {
+          const unhandled: never = b.key
+          setError(`연결되지 않은 동작입니다: ${String(unhandled)}`)
+        }
       }
     } finally {
       setProgress(null)

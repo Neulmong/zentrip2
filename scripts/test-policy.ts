@@ -641,8 +641,11 @@ check('미검증 → 게시 경로 없음 (없는 것을 통과로 읽지 않는
   publishProcedure(publishable({ validation_snapshot: null })).kind === 'blocked')
 
 check('pass는 그냥 통과한다', publishGate(publishable()).ok)
-check('통과 시 override는 false다',
-  publishGate(publishable()) as { ok: true; override: boolean } ? !(publishGate(publishable()) as { ok: true; override: boolean }).override : false)
+{
+  const g = publishGate(publishable())
+  check('통과 시 override는 false다 — publish_override_at을 남기지 않는다',
+    g.ok === true && g.override === false, g)
+}
 
 // §11.5 — 확인 모달은 화면 규정이라 서버가 강제하지 않는다(DB에 남는 것이 없다)
 check('pass + human_edited도 서버는 플래그 없이 통과시킨다',
