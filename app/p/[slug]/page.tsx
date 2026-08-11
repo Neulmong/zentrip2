@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { loadPublishedBySlug } from '@/lib/orchestrator'
 import { loadPageImages } from '@/lib/page-images'
 import { PageRenderer } from '@/components/page/PageRenderer'
+import { ApplyForm } from '@/components/page/ApplyForm'
 import type { PageContent } from '@/lib/pipeline/page'
 
 /**
@@ -63,29 +64,16 @@ export default async function PublicProductPage({ params }: Props) {
 
   const images = await loadPageImages(p.id).catch(() => [])
 
+  /*
+   * 신청 폼(§13.1)에 `product_id`를 넘긴다. slug가 아닌 이유: `POST
+   * /api/applications`는 인증이 없어 세션에서 대상을 알아낼 수 없고, slug를
+   * 받으면 라우트가 slug → 상품을 다시 조회해야 한다. 이미 조회한 행의 id를 쓴다.
+   */
   return (
     <PageRenderer
       content={p.page_content as PageContent}
       images={images}
-      applyForm={<ApplyPlaceholder />}
+      applyForm={<ApplyForm productId={p.id} />}
     />
-  )
-}
-
-/**
- * 신청 폼 자리 (§13.1) — **7단계에서 실제 폼으로 교체한다.**
- *
- * 빈 채로 두지 않는 이유: `apply` 섹션은 `locked: true`라 항상 그려지는데,
- * 아무것도 없으면 고객이 「신청 방법이 없는 상품」으로 읽는다. 준비 중임을
- * 명시하는 편이 정직하고, 교체 지점도 한 군데로 남는다.
- */
-function ApplyPlaceholder() {
-  return (
-    <p
-      className="rounded-xl border border-dashed border-[var(--t-primary)] px-4 py-6
-                 text-center text-[15px]"
-    >
-      신청 접수는 준비 중입니다.
-    </p>
   )
 }

@@ -177,3 +177,40 @@ export interface ProductRow {
   created_at: string
   updated_at: string
 }
+
+// ── applications 행 (§5.3) ──────────────────────────────────────
+/**
+ * 신청 시점 상품 스냅샷(§13.2 3항). 이메일 본문은 **이것만 읽는다** —
+ * 현재 상품 값을 다시 읽으면 게시 후 가격이 수정됐을 때 이미 발송한 메일과
+ * 어긋나고, 그 불일치가 분쟁의 근거가 된다(§13.3).
+ *
+ * `여행지`가 §13.2의 괄호 목록에 없지만 여기 있는 이유: §13.3의 본문 구성이
+ * 여행지를 요구하고 「현재 상품 값을 다시 읽지 않는다」고 못 박았으므로,
+ * 스냅샷에 없으면 본문에 넣을 방법 자체가 없다.
+ */
+export interface ProductSnapshot {
+  행사명: string
+  여행지: string
+  /** 결합값 `{시작} ~ {종료}` (§6.2.1). 2필드로 쪼개 두지 않는다 */
+  여행기간: string
+  숙소명: string
+  가격: { 성인: string; 아동: string }
+  /** `{SITE_URL}/p/{slug}` — 메일에서 열려야 하므로 절대 URL이다(§13.3) */
+  url: string
+}
+
+export type EmailStatus = 'pending' | 'sent' | 'failed'
+
+export interface ApplicationRow {
+  id: string
+  product_id: string
+  name: string
+  email: string
+  phone: string
+  headcount: number
+  consent_at: string
+  product_snapshot: ProductSnapshot
+  email_status: EmailStatus
+  email_error: string | null
+  created_at: string
+}
