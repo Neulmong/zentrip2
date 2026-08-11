@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { runStep } from '@/lib/orchestrator'
 import { ai, toLogOutput, ERROR_LABEL } from '@/lib/ai'
-import { withAxis, failedAxis, passedAxis } from '@/lib/validation'
+import { withAxis, passedAxis } from '@/lib/validation'
 import {
   FACTCHECK_SYSTEM, VALIDATION_SCHEMA, type ValidationResult,
 } from '@/lib/pipeline/ai-contracts'

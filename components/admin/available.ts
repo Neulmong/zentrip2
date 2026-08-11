@@ -12,12 +12,12 @@ import type { ButtonKey } from '@/lib/status-view'
  *
  * | 버튼 | 언제 지우나 |
  * |---|---|
- * | `edit` | 4단계 — `/admin/products/{id}/edit` |
+ * | ~~`edit`~~ | ~~4단계~~ — 완료(`/admin/products/{id}/edit`) |
  * | `publish` · `unpublish` | 5단계 — API #12·#13 |
  *
  * **이 파일은 6단계가 끝나면 통째로 지운다.**
  */
-const UNAVAILABLE: readonly ButtonKey[] = ['edit', 'publish', 'unpublish']
+const UNAVAILABLE: readonly ButtonKey[] = ['publish', 'unpublish']
 
 export function isAvailable(key: ButtonKey): boolean {
   return !UNAVAILABLE.includes(key)

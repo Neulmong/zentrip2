@@ -13,6 +13,10 @@ import { maskName, maskEmail, maskPhone, maskPii } from '../lib/mask'
 import { RETRY_COUNTERS, RETRY_LIMIT, type ProductRow, type ValidationSnapshot } from '../lib/types'
 import { validateFormInput, buildFormInput, tripDays, hasDayMarker, combineTripPeriod } from '../lib/form-validation'
 import { describeStatus, screenPath, verificationBadge, editBadge } from '../lib/status-view'
+import {
+  diffSections, LENGTH_LIMITS_SAVE, moveSection, renumber, same, validateEdit,
+} from '../lib/edit-contract'
+import { LENGTH_LIMITS_GENERATE, type PageContent, type PageSection } from '../lib/pipeline/page'
 
 let pass = 0, fail = 0
 function check(name: string, ok: boolean, got?: unknown) {
@@ -393,6 +397,221 @@ check('human_edited=false면 편집 배지 없음 (「편집 안 됨」 배지�
 check('두 축은 독립 — 검증 실패 + 사람 편집됨이 동시에 붙는다',
   verificationBadge(product({ validation_snapshot: failSnap, human_edited: true })) === 'fail'
   && editBadge(product({ validation_snapshot: failSnap, human_edited: true })) === '사람 편집됨')
+
+/* ── E10. 편집 계약 (§10.2·§10.3·§17.1) ─────────────────────── */
+section('E10 — 편집 계약 (§10.2·§10.3·§17.1)')
+
+const sec = (
+  id: string, type: string, order: number,
+  data: Record<string, unknown>, over: Partial<PageSection> = {},
+): PageSection => ({
+  id, type, order, visible: true, locked: id === 'sec_hero' || id === 'sec_apply',
+  data, source: Object.fromEntries(Object.keys(data).map((k) => [k, 'generated'])), ...over,
+})
+
+/** §9.3 9종을 갖춘 최소 page_content. */
+function pageContent(over: Partial<Record<string, Record<string, unknown>>> = {}): PageContent {
+  const base: Record<string, [string, Record<string, unknown>]> = {
+    sec_hero: ['hero', { headline: '제주 여행', subcopy: '봄', image_slot: '' }],
+    sec_summary: ['summary', { 여행기간: '3일', 여행지: '제주', 타겟층: '가족', 여행스타일: '자연' }],
+    sec_itinerary: ['itinerary', { days: [{ day: '1', text: '도착', image_slot: '' }] }],
+    sec_accommodation: ['accommodation', { 숙소명: 'A', 객실타입: 'B', 위치: 'C', 숙박일정: 'D', image_slots: [] }],
+    sec_flight: ['flight', { 공항: 'A', 항공사: 'B', 편명: 'C', 출발시간: 'D', 도착시간: 'E' }],
+    sec_meal: ['meal', { 식사정보: '조식' }],
+    sec_price: ['price', { 성인: '1', 아동: '2', 기타: '3' }],
+    sec_shop: ['shop', { 상점명: 'S', 상점정보: 'I', image_slots: [] }],
+    sec_apply: ['apply', {
+      제목: '신청', 안내문구: '연락 주세요',
+      가격요약: { 성인: '1', 아동: '2' }, 행사정보요약: { 행사명: '제주 여행', 여행기간: '3일' },
+    }],
+  }
+  return {
+    schema_version: '1.0', theme: 'nature',
+    sections: Object.entries(base).map(([id, [type, data]], i) =>
+      sec(id, type, i + 1, { ...data, ...(over[id] ?? {}) })),
+  }
+}
+
+const ctx0 = { before: pageContent(), imageIds: new Set<string>(), slots: new Set<string>() }
+const clone = (c: PageContent): PageContent => JSON.parse(JSON.stringify(c))
+
+check('변경 없는 저장은 통과한다',
+  validateEdit(clone(ctx0.before), ctx0).content !== undefined)
+
+// §9.4 — 테마는 편집기에서 변경 불가
+{
+  const next = clone(ctx0.before); next.theme = 'urban'
+  check('테마 변경은 거부한다 (§9.4)', 'theme' in validateEdit(next, ctx0).errors)
+}
+
+// §10.2 삭제 불가 — locked 섹션은 숨길 수도 없다
+{
+  const next = clone(ctx0.before)
+  next.sections.find((s) => s.id === 'sec_hero')!.visible = false
+  check('hero는 숨길 수 없다 (§10.2 locked)', 'sec_hero' in validateEdit(next, ctx0).errors)
+}
+{
+  const next = clone(ctx0.before)
+  next.sections = next.sections.filter((s) => s.id !== 'sec_meal')
+  check('기본 9종은 배열에서 사라질 수 없다 (삭제는 숨김으로만)',
+    'sec_meal' in validateEdit(next, ctx0).errors)
+}
+{
+  const next = clone(ctx0.before)
+  next.sections.find((s) => s.id === 'sec_meal')!.visible = false
+  check('locked=false 섹션의 숨김은 허용한다 (데이터는 보존)',
+    validateEdit(next, ctx0).content !== undefined)
+}
+
+// §10.2 apply 예외 — 제목·안내문구만
+{
+  const next = clone(ctx0.before)
+  next.sections.find((s) => s.id === 'sec_apply')!.data.안내문구 = '바뀐 문구'
+  check('신청 섹션의 안내문구는 편집할 수 있다',
+    validateEdit(next, ctx0).content !== undefined)
+}
+{
+  const next = clone(ctx0.before)
+  ;(next.sections.find((s) => s.id === 'sec_apply')!.data.가격요약 as Record<string, string>).성인 = '999'
+  check('신청 섹션의 가격요약은 편집할 수 없다 (§10.2)',
+    'sec_apply.가격요약' in validateEdit(next, ctx0).errors)
+}
+
+// §9.3 키 고정 — source 없는 사실정보 필드를 만들 수 없다
+{
+  const next = clone(ctx0.before)
+  next.sections.find((s) => s.id === 'sec_meal')!.data.새필드 = 'x'
+  check('§9.3에 없는 키를 늘릴 수 없다', 'sec_meal.새필드' in validateEdit(next, ctx0).errors)
+}
+{
+  const next = clone(ctx0.before)
+  delete next.sections.find((s) => s.id === 'sec_meal')!.data.식사정보
+  check('§9.3의 키를 지울 수 없다', 'sec_meal.식사정보' in validateEdit(next, ctx0).errors)
+}
+
+// §17.1 길이 계약 — 편집 저장 시 6종
+{
+  const long = (n: number) => 'ㄱ'.repeat(n)
+  const at = (id: string, patch: Record<string, unknown>) => {
+    const next = clone(ctx0.before)
+    Object.assign(next.sections.find((s) => s.id === id)!.data, patch)
+    return validateEdit(next, ctx0).errors
+  }
+  check('hero.headline 40자 초과 거부', 'sec_hero.headline' in at('sec_hero', { headline: long(41) }))
+  check('hero.headline 40자는 통과', !('sec_hero.headline' in at('sec_hero', { headline: long(40) })))
+  check('hero.subcopy 80자 초과 거부', 'sec_hero.subcopy' in at('sec_hero', { subcopy: long(81) }))
+  check('일차별 서술 200자 초과 거부',
+    'sec_itinerary.days.0.text' in
+    at('sec_itinerary', { days: [{ day: '1', text: long(201), image_slot: '' }] }))
+  check('섹션 제목 30자 초과 거부', 'sec_apply.제목' in at('sec_apply', { 제목: long(31) }))
+}
+
+// §10.2 삽입 블록 3종
+{
+  const withBlock = (type: string, data: Record<string, unknown>) => {
+    const next = clone(ctx0.before)
+    next.sections.splice(8, 0, {
+      id: 'blk_abc', type, order: 8.5, visible: true, locked: false, data, source: {},
+    })
+    return validateEdit(next, ctx0)
+  }
+  check('free_text 블록 삽입 허용', withBlock('free_text', { 본문: '안녕' }).content !== undefined)
+  check('free_text 500자 초과 거부',
+    'blk_abc.본문' in withBlock('free_text', { 본문: 'ㄱ'.repeat(501) }).errors)
+  check('notice 300자 초과 거부',
+    'blk_abc.본문' in withBlock('notice', { 본문: 'ㄱ'.repeat(301) }).errors)
+  check('3종 밖의 블록은 거부한다', 'blk_abc' in withBlock('video', { 본문: 'x' }).errors)
+  check('image 블록은 올라간 사진만 참조한다 (§10.2)',
+    'blk_abc.image_id' in withBlock('image', { image_id: '없는-id' }).errors)
+  check('image 블록이 실제 이미지를 가리키면 통과',
+    validateEdit(
+      (() => { const n = clone(ctx0.before); n.sections.splice(8, 0, {
+        id: 'blk_abc', type: 'image', order: 8.5, visible: true, locked: false,
+        data: { image_id: 'img-1' }, source: {} }); return n })(),
+      { ...ctx0, imageIds: new Set(['img-1']) },
+    ).content !== undefined)
+  check('free_text의 source는 전 필드 generated다 (§10.2 표)',
+    withBlock('free_text', { 본문: '안녕', 제목: '제목' })
+      .content!.sections.find((s) => s.id === 'blk_abc')!.source.본문 === 'generated')
+  check('image 블록에는 source를 붙이지 않는다 (사실정보가 아니다)',
+    Object.keys(validateEdit(
+      (() => { const n = clone(ctx0.before); n.sections.splice(8, 0, {
+        id: 'blk_abc', type: 'image', order: 8.5, visible: true, locked: false,
+        data: { image_id: 'img-1' }, source: {} }); return n })(),
+      { ...ctx0, imageIds: new Set(['img-1']) },
+    ).content!.sections.find((s) => s.id === 'blk_abc')!.source).length === 0)
+}
+
+// §16.1 — 없는 슬롯을 참조하지 않는다
+{
+  const next = clone(ctx0.before)
+  next.sections.find((s) => s.id === 'sec_hero')!.data.image_slot = 'hero'
+  check('업로드되지 않은 슬롯 참조는 거부', 'sec_hero.image_slot' in validateEdit(next, ctx0).errors)
+  check('업로드된 슬롯이면 통과',
+    validateEdit(next, { ...ctx0, slots: new Set(['hero']) }).content !== undefined)
+}
+
+// §10.2 order — hero는 항상 1, apply는 항상 마지막
+{
+  const next = clone(ctx0.before)
+  next.sections.splice(8, 0, {
+    id: 'blk_z', type: 'notice', order: 99, visible: true, locked: false,
+    data: { 본문: '맨 끝에 놓아 봤다' }, source: {},
+  })
+  const out = validateEdit(next, ctx0).content!
+  check('order를 1부터 다시 매긴다', out.sections.every((s, i) => s.order === i + 1))
+  check('hero는 항상 첫 번째', out.sections[0].id === 'sec_hero')
+  check('apply는 항상 마지막 — 뒤에 놓은 블록도 앞으로 당긴다',
+    out.sections[out.sections.length - 1].id === 'sec_apply')
+}
+
+// [위로]/[아래로]는 hero·apply 자리를 침범하지 않는다
+{
+  const list = renumber(pageContent().sections)
+  check('두 번째 섹션을 위로 올려도 hero는 1번을 지킨다',
+    moveSection(list, 'sec_summary', -1)[0].id === 'sec_hero')
+  check('마지막 직전 섹션을 내려도 apply는 끝을 지킨다',
+    moveSection(list, 'sec_shop', 1).at(-1)!.id === 'sec_apply')
+}
+
+// §10.3 5항 — 변경된 섹션마다 edit_history
+{
+  const before = pageContent()
+  const after = clone(before)
+  after.sections.find((s) => s.id === 'sec_meal')!.data.식사정보 = '중식 포함'
+  const recs = diffSections(before, after)
+  check('바뀐 섹션 1건만 기록한다',
+    recs.length === 1 && recs[0].action === 'update' && recs[0].section_id === 'sec_meal', recs)
+  check('변경이 없으면 이력을 남기지 않는다', diffSections(before, clone(before)).length === 0)
+
+  const hidden = clone(before)
+  hidden.sections.find((s) => s.id === 'sec_shop')!.visible = false
+  check('숨김은 delete로 적는다 (§10.2가 삭제를 숨김으로 정의)',
+    diffSections(before, hidden)[0].action === 'delete')
+
+  const inserted = validateEdit(
+    (() => { const n = clone(before); n.sections.splice(8, 0, {
+      id: 'blk_new', type: 'notice', order: 8.5, visible: true, locked: false,
+      data: { 본문: '새 안내' }, source: {} }); return n })(), ctx0).content!
+  const insertRecs = diffSections(before, inserted)
+  check('삽입은 insert로 적는다',
+    insertRecs.some((r) => r.action === 'insert' && r.section_id === 'blk_new'), insertRecs)
+  check('삽입으로 밀려난 섹션은 reorder로 적는다',
+    insertRecs.some((r) => r.action === 'reorder' && r.section_id === 'sec_apply'))
+}
+
+// 키 순서만 바뀐 것은 변경이 아니다 — 이력이 쓰레기로 차는 것을 막는다
+check('키 순서가 달라도 같은 값으로 본다',
+  same({ a: 1, b: { c: 2, d: 3 } }, { b: { d: 3, c: 2 }, a: 1 }))
+check('값이 다르면 다르게 본다', !same({ a: 1 }, { a: 2 }))
+
+// §17.1 — 생성 4종과 편집 6종의 상한값은 같아야 한다 (강제 시점만 다르다)
+check('생성 시 4종의 상한이 편집 저장 시와 일치한다',
+  LENGTH_LIMITS_GENERATE['hero.headline'] === LENGTH_LIMITS_SAVE['hero.headline']
+  && LENGTH_LIMITS_GENERATE['hero.subcopy'] === LENGTH_LIMITS_SAVE['hero.subcopy']
+  && LENGTH_LIMITS_GENERATE['일차별 서술'] === LENGTH_LIMITS_SAVE['일차별 서술']
+  && LENGTH_LIMITS_GENERATE['섹션 제목'] === LENGTH_LIMITS_SAVE['섹션 제목'])
+check('편집 저장 시 강제하는 것은 6종이다', Object.keys(LENGTH_LIMITS_SAVE).length === 6)
 
 /* ── 결과 ────────────────────────────────────────────────────── */
 console.log(`\n${'─'.repeat(52)}`)

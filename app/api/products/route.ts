@@ -5,7 +5,6 @@ import { ZERO_COUNTS } from '@/lib/policy'
 import { badRequest, serverError } from '@/lib/http'
 import { buildFormInput, tripDays, validateFormInput } from '@/lib/form-validation'
 import { defaultAlt, extensionOf, validateImages } from '@/lib/images'
-import type { FormInput } from '@/lib/types'
 
 /** spec §4.2 — 서버리스 실행 시간 상한. AI를 쓰지 않는 라우트지만 함께 맞춘다. */
 export const maxDuration = 60

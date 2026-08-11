@@ -183,6 +183,14 @@ export function checkPage(p: PageContent, slots: Set<string>): string[] {
   }
 
   for (const s of p.sections) {
+    // 「섹션 제목」 30자 — 생성 시점에 제목을 가진 것은 `sec_apply`뿐이지만,
+    // 조건을 `sec_apply`로 좁히지 않는다. §9.3 표에 제목 필드가 늘면 검사도
+    // 함께 늘어야 하는데, id로 걸어두면 그때 조용히 빠진다.
+    const 제목 = s.data.제목
+    if (typeof 제목 === 'string' && 제목.length > LENGTH_LIMITS_GENERATE['섹션 제목']) {
+      errors.push(`${s.id}의 제목이 30자를 넘습니다 (${제목.length}자).`)
+    }
+
     for (const [k, v] of Object.entries(s.data)) {
       if (k === 'days' || k === 'image_slot' || k === 'image_slots') continue
       if (k === '가격요약' || k === '행사정보요약') {
