@@ -5,7 +5,6 @@ import {
   buttonTarget, describeStatus, screenPath, STATUS_FILTERS, type StatusInput,
 } from '@/lib/status-view'
 import { StatusBadges } from '@/components/admin/badges'
-import { isAvailable } from '@/components/admin/available'
 
 /**
  * §14.1 — 상품 목록. **인증 필요**(`proxy.ts`가 `/admin/*`를 막는다).
@@ -178,7 +177,7 @@ export default async function AdminPage({
                   확인 모달·실패 항목 열람이 필요한 것들은 그 화면에서 한다.
                 */}
                 <div className="mt-3 flex flex-wrap gap-2 border-t border-neutral-100 pt-3">
-                  {view.buttons.filter((b) => isAvailable(b.key)).map((b) =>
+                  {view.buttons.map((b) =>
                     b.disabled ? (
                       <span
                         key={b.key}

@@ -106,6 +106,16 @@ open http://localhost:3000/admin/preview
 
 - [ ] **육안 확인 미완** — 위 3뷰포트 항목과 함께 봐야 한다. 편집기는 좌(208px) + 중앙(가변) + 우(뷰포트 폭)라 1280 미리보기는 창이 넓어야 잘리지 않는다.
 
+### 완료 — 실제 이미지가 붙은 공개 페이지 (2026-08-11)
+
+고정 데이터는 이미지 0장이라 미뤄 뒀던 항목이다. 실제 업로드본 3장을 가진 상품(`/p/p-5aw6et`)을 게시해 확인했다.
+
+- [x] `next.config.ts`의 `remotePatterns`(`SUPABASE_URL` 호스트 + 공개 버킷 경로)를 통과한다
+- [x] 이미지 3장 전부 `/_next/image`가 **HTTP 200 · `image/jpeg`** 로 응답 (30KB · 31KB · 11KB로 재인코딩)
+- [x] 히어로만 `priority`(=`loading` 속성 없음), 나머지 3개는 `loading="lazy"` — §17.2
+- [x] 전 이미지에 비어 있지 않은 `alt`
+- [x] 편집기에서 삽입한 `image` 블록이 `product_images.id`로 실제 사진을 찾아 그린다(§10.2)
+
 ### 이 문서에서 다루지 않은 것
 
-- **실제 이미지가 붙은 상태의 검증.** 고정 데이터는 이미지 0장이다. Supabase Storage URL이 `next/image`를 통과하는지는 `/p/{slug}`에 실제 업로드본이 올라간 뒤 확인한다(`next.config.ts`의 `remotePatterns`가 `SUPABASE_URL` 호스트로 좁혀져 있다).
+- **LCP 2.5초 실측**(§17.2). 히어로 `priority`·고정 종횡비·`object-cover`까지 계약은 갖췄지만, 실제 수치는 배포본에서 재야 의미가 있다. 로컬 dev는 이미지 최적화 첫 요청이 느려(0.36초) 기준으로 삼을 수 없다.

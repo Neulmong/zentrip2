@@ -3,8 +3,9 @@ import { db } from './supabase'
 import { appendLog, detectAbnormalities } from './logging'
 import { checkPrecondition, hasRetryBudget, type RouteKey } from './policy'
 import { conflict, ok, unprocessable, type StepResultBody } from './http'
-import type {
-  LogStep, ProductRow, RetryCounter, RetryFrom, ValidationItem,
+import {
+  PUBLIC_STATUS,
+  type LogStep, type ProductRow, type RetryCounter, type RetryFrom, type ValidationItem,
 } from './types'
 
 /**
@@ -25,6 +26,26 @@ import type {
 
 export async function loadProduct(id: string): Promise<ProductRow | null> {
   const { data, error } = await db().from('products').select('*').eq('id', id).maybeSingle()
+  if (error) throw new Error(`상품 조회 실패: ${error.message}`)
+  return (data as ProductRow | null) ?? null
+}
+
+/**
+ * 공개 페이지(`/p/{slug}`)와 신청 접수(§13.2 2항)의 조회 경로.
+ *
+ * **상태 조건을 호출부에 맡기지 않고 쿼리에 넣는다.** §4.1은 「`published` 외
+ * 6개 상태는 **예외 없이** 404」라고 규정하는데, 행을 먼저 읽어 오고 호출부가
+ * `if (status !== 'published')`를 잊으면 임시저장본이 그대로 공개된다.
+ * 여기서 걸러 두면 그 실수를 할 수 있는 자리 자체가 없다.
+ *
+ * `slug`에는 UNIQUE 제약이 있으므로(§12.1) 결과는 0건 아니면 1건이다.
+ */
+export async function loadPublishedBySlug(slug: string): Promise<ProductRow | null> {
+  const { data, error } = await db()
+    .from('products').select('*')
+    .eq('slug', slug)
+    .eq('status', PUBLIC_STATUS)
+    .maybeSingle()
   if (error) throw new Error(`상품 조회 실패: ${error.message}`)
   return (data as ProductRow | null) ?? null
 }

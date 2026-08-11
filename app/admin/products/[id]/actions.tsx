@@ -8,7 +8,6 @@ import {
 import {
   describeStatus, publishProcedure, type ActionButton, type StatusInput,
 } from '@/lib/status-view'
-import { isAvailable } from '@/components/admin/available'
 import { PublishDialog } from '@/components/admin/PublishDialog'
 import type { ValidationItem } from '@/lib/types'
 
@@ -40,8 +39,7 @@ export function ProductActions(p: ActionsProps) {
   /** 열려 있으면 그 모드의 게시 확인 모달을 띄운다(§11.5) */
   const [dialog, setDialog] = useState<'override' | 'acknowledge' | null>(null)
 
-  const view = describeStatus(p)
-  const buttons = view.buttons.filter((b) => isAvailable(b.key))
+  const buttons = describeStatus(p).buttons
   if (buttons.length === 0) return null
 
   const onProgress = (label: string, attempt: number) =>
@@ -179,8 +177,8 @@ export function ProductActions(p: ActionsProps) {
          * **버튼 키 소진 검사.** `describeStatus()`가 돌려주는 키를 여기서
          * 처리하지 않으면 `b.key`가 `never`로 좁혀지지 않아 **컴파일이 실패한다.**
          *
-         * 이 장치를 두는 이유: 4단계에서 `available.ts`의 `edit`를 풀어 버튼은
-         * 화면에 나왔지만 이 switch에 `case 'edit'`가 없었다. 결과는 [편집]을
+         * 이 장치를 두는 이유: 4단계에서 미구현 버튼을 걸러내던 비계에서 `edit`를
+         * 풀어 버튼은 화면에 나왔지만 이 switch에 `case 'edit'`가 없었다. 결과는 [편집]을
          * 누르면 편집기가 아니라 「아직 연결되지 않은 동작입니다」였고,
          * 타입 검사·테스트·빌드가 **전부 통과했다** — `default`가 런타임 메시지로
          * 삼켜버렸기 때문이다. 같은 실수를 두 번 하지 않게 컴파일에서 막는다.
