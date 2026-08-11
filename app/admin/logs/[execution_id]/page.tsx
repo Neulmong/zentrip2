@@ -81,7 +81,12 @@ function LogTable({ rows }: { rows: LogRow[] }) {
     // 8열이라 좁은 화면에서는 표만 가로로 흐른다. 페이지 본문은 밀지 않는다.
     <div className="overflow-x-auto rounded-xl border border-neutral-200">
       <table className="w-full min-w-[64rem] text-left text-sm">
-        <thead className="bg-neutral-50 text-[11px] uppercase tracking-wide text-neutral-500">
+        {/*
+          * `whitespace-nowrap` — 375px에서 「시도」·「재시도」가 한 글자씩 세로로
+          * 쪼개져 읽히지 않았다. 표는 이미 자체 가로 스크롤이라(§17.1) 헤더가
+          * 넓어져도 페이지 본문은 밀리지 않는다.
+          */}
+        <thead className="whitespace-nowrap bg-neutral-50 text-[11px] uppercase tracking-wide text-neutral-500">
           {/* §14.3이 컬럼 순서를 규정한다: 타임스탬프 → 시도 → 재시도 → 단계명 → 판정 → 상태 → 입력 → 출력 */}
           <tr>
             <th className="px-3 py-2 font-medium">타임스탬프 (UTC)</th>

@@ -20,6 +20,7 @@
     "test:security": "tsx --env-file=.env.local scripts/test-security.mts",
     "test:delete": "tsx --env-file=.env.local scripts/test-delete.mts",
     "test:demo": "tsx --env-file=.env.local scripts/test-demo.mts",
+    "verify:responsive": "tsx --env-file=.env.local scripts/verify-responsive.mts",
     "probe:solar": "tsx --env-file=.env.local scripts/probe-solar.mts"
   },
   "dependencies": {
@@ -39,6 +40,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5"

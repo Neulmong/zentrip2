@@ -74,7 +74,13 @@ function Field({
   name: string; label: string; error?: string; hint?: string; children: React.ReactNode
 }) {
   return (
-    <div className="space-y-1.5">
+    /*
+     * `min-w-0` — 격자 자식의 기본값은 `min-width: auto`라 **내용의 최소 폭보다
+     * 좁아지지 않는다.** `type="file"` 입력은 버튼 + 파일명이라 최소 폭이 크고,
+     * 375px에서 이 칸이 버티면 페이지 전체가 가로로 밀린다(§17.1 「페이지 본문은
+     * 가로 스크롤이 발생하지 않는다」).
+     */
+    <div className="min-w-0 space-y-1.5">
       <label htmlFor={name} className="block text-sm font-medium text-neutral-800">{label}</label>
       {children}
       {hint && !error && <p className="text-xs text-neutral-500">{hint}</p>}
@@ -369,29 +375,31 @@ export function ProductForm({
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* 375px에서는 1열로 내린다 — 파일 입력 2개를 나란히 둘 폭이 없다 */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field name="image:hero" label="대표 이미지 (0~1장)">
               <input id="image:hero" name="image:hero" type="file"
-                accept="image/jpeg,image/png,image/webp" className="text-xs" />
+                accept="image/jpeg,image/png,image/webp" className="w-full min-w-0 text-xs" />
             </Field>
             <Field name="image:accommodation" label="숙소 사진 (0~3장)">
               <input id="image:accommodation" name="image:accommodation" type="file" multiple
-                accept="image/jpeg,image/png,image/webp" className="text-xs" />
+                accept="image/jpeg,image/png,image/webp" className="w-full min-w-0 text-xs" />
             </Field>
             <Field name="image:shop" label="제휴상점 사진 (0~2장)">
               <input id="image:shop" name="image:shop" type="file" multiple
-                accept="image/jpeg,image/png,image/webp" className="text-xs" />
+                accept="image/jpeg,image/png,image/webp" className="w-full min-w-0 text-xs" />
             </Field>
           </div>
 
           {days > 0 && (
             <div>
               <p className="mb-2 text-xs font-medium text-neutral-700">일차별 사진 (각 0~1장)</p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
                 {Array.from({ length: days }, (_, i) => i + 1).map((n) => (
                   <Field key={n} name={`image:itinerary_day_${n}`} label={`${n}일차`}>
                     <input id={`image:itinerary_day_${n}`} name={`image:itinerary_day_${n}`}
-                      type="file" accept="image/jpeg,image/png,image/webp" className="text-xs" />
+                      type="file" accept="image/jpeg,image/png,image/webp"
+                      className="w-full min-w-0 text-xs" />
                   </Field>
                 ))}
               </div>

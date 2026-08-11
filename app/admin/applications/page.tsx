@@ -126,8 +126,8 @@ export default async function ApplicationsPage({ searchParams }: Props) {
       <div className="mt-6 flex items-center justify-between gap-4">
         <Link
           href={sortHref}
-          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700
-                     hover:border-neutral-900 hover:text-neutral-900"
+          className="shrink-0 whitespace-nowrap rounded-lg border border-neutral-300 px-3 py-1.5
+                     text-sm text-neutral-700 hover:border-neutral-900 hover:text-neutral-900"
         >
           {oldestFirst ? '오래된순 ↑' : '최근순 ↓'}
         </Link>
@@ -143,7 +143,8 @@ export default async function ApplicationsPage({ searchParams }: Props) {
       ) : (
         <div className="mt-4 overflow-x-auto rounded-xl border border-neutral-200">
           <table className="w-full min-w-[60rem] text-left text-sm">
-            <thead className="bg-neutral-50 text-[11px] uppercase tracking-wide text-neutral-500">
+            {/* 375px에서 열 제목이 글자 단위로 쪼개지지 않게 한다 — 표는 자체 스크롤이다 */}
+            <thead className="whitespace-nowrap bg-neutral-50 text-[11px] uppercase tracking-wide text-neutral-500">
               <tr>
                 <th className="px-3 py-2 font-medium">접수일 (UTC)</th>
                 <th className="px-3 py-2 font-medium">상품</th>
