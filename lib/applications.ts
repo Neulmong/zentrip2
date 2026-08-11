@@ -33,6 +33,42 @@ export function buildSnapshot(p: ProductRow): ProductSnapshot {
   }
 }
 
+/* ── 조회 (§14.1 신청 내역 화면 · §14.4 #15) ───────────────────── */
+
+/**
+ * 전체 신청 내역. 상품으로 좁히려면 `product_id`를 넘긴다.
+ *
+ * 정렬 기준이 접수일인 이유는 §13.1이다 — 보유 기간(1년) 경과분을 「관리
+ * 화면에서 접수일 기준으로 정렬해 수동 처리」하도록 규정하므로, 오래된 것부터
+ * 보는 방향(`oldest`)이 실제 운영 동작이다. 기본은 최근순이다.
+ */
+export async function loadApplications(opts: {
+  product_id?: string
+  oldestFirst?: boolean
+} = {}): Promise<ApplicationRow[]> {
+  let q = db().from('applications').select('*')
+  if (opts.product_id) q = q.eq('product_id', opts.product_id)
+  const { data, error } = await q.order('created_at', { ascending: !!opts.oldestFirst })
+  if (error) throw new Error(`신청 내역 조회 실패: ${error.message}`)
+  return (data ?? []) as ApplicationRow[]
+}
+
+export async function loadApplication(id: string): Promise<ApplicationRow | null> {
+  const { data, error } = await db()
+    .from('applications').select('*').eq('id', id).maybeSingle()
+  if (error) throw new Error(`신청 조회 실패: ${error.message}`)
+  return (data as ApplicationRow | null) ?? null
+}
+
+/** §13.1 — 개인정보 보유 기간. 경과분은 §12.4의 `DELETE`로 수동 삭제한다. */
+export const RETENTION_DAYS = 365
+
+/** 접수일로부터 보유 기간이 지났는가. 화면에서 삭제 대상을 골라내는 데 쓴다. */
+export function retentionExpired(created_at: string, now = new Date()): boolean {
+  const age = now.getTime() - new Date(created_at).getTime()
+  return age > RETENTION_DAYS * 86_400_000
+}
+
 /**
  * 발송하고 결과를 `applications`와 `execution_logs`에 반영한다.
  *

@@ -90,13 +90,19 @@ export default async function AdminPage({
           <h1 className="text-2xl font-semibold tracking-tight">상품 목록</h1>
           <p className="mt-1 text-sm text-neutral-500">기획자 전용 · 총 {counts.get('all') ?? 0}건</p>
         </div>
-        <Link
-          href="/new"
-          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white
-                     transition hover:bg-neutral-800"
-        >
-          새 상품 등록
-        </Link>
+        <div className="flex items-center gap-4">
+          {/* §14.1의 라우트 4개 중 목록에서 갈 곳 — 신청 내역은 상품과 독립된 화면이다 */}
+          <Link href="/admin/applications" className="text-sm text-neutral-500 hover:text-neutral-900">
+            신청 내역
+          </Link>
+          <Link
+            href="/new"
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white
+                       transition hover:bg-neutral-800"
+          >
+            새 상품 등록
+          </Link>
+        </div>
       </header>
 
       {/* 상태 필터 — 7개 상태 전부 + 전체 (§14.1) */}

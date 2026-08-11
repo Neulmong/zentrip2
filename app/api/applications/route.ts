@@ -4,7 +4,8 @@ import { loadProduct } from '@/lib/orchestrator'
 import { appendLog } from '@/lib/logging'
 import { badRequest, conflict, notFound, ok, serverError } from '@/lib/http'
 import { validateApplication } from '@/lib/application-validation'
-import { buildSnapshot, deliverApplicationEmail } from '@/lib/applications'
+import { buildSnapshot, deliverApplicationEmail, loadApplications } from '@/lib/applications'
+import { maskEmail, maskName, maskPhone } from '@/lib/mask'
 import type { ApplicationRow } from '@/lib/types'
 
 /**
@@ -30,6 +31,45 @@ import type { ApplicationRow } from '@/lib/types'
  */
 
 export const maxDuration = 60
+
+/**
+ * §14.4 #15 — `GET /api/applications`. **인증 필요 · AI 0회.**
+ *
+ * `proxy.ts`가 이 경로의 POST만 열어 두므로 GET은 인증 게이트 안이다 —
+ * 익명 조회가 열리면 신청자 명단이 그대로 노출된다.
+ *
+ * ## 기본 응답은 마스킹된 값이다
+ *
+ * 화면은 「연락처 기본 마스킹 + 명시적 조작 시에만 전체 표시」를 지킨다(§13.1).
+ * API가 항상 원본을 주면 그 규칙이 화면 한 곳에만 있는 장식이 되므로, 같은
+ * 계약을 여기에도 둔다 — 원본은 `?reveal={id}`로 **한 건씩** 요청한다.
+ *
+ * | 파라미터 | 동작 |
+ * |---|---|
+ * | `product_id` | 해당 상품의 신청만 |
+ * | `sort=oldest` | 접수일 오름차순 (§13.1 보유 기간 경과분 처리 방향) |
+ * | `reveal={id}` | 그 1건만 원본으로 반환 |
+ */
+export async function GET(req: NextRequest) {
+  const q = req.nextUrl.searchParams
+  const reveal = q.get('reveal')
+
+  let rows: ApplicationRow[]
+  try {
+    rows = await loadApplications({
+      product_id: q.get('product_id') ?? undefined,
+      oldestFirst: q.get('sort') === 'oldest',
+    })
+  } catch (e) {
+    return serverError((e as Error).message)
+  }
+
+  const applications = rows.map((r) =>
+    r.id === reveal ? r : { ...r, name: maskName(r.name), email: maskEmail(r.email), phone: maskPhone(r.phone) },
+  )
+
+  return ok({ current_step: 'applications_listed', count: applications.length, applications })
+}
 
 export async function POST(req: NextRequest) {
   const raw = await req.json().catch(() => null)

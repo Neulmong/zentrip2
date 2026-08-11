@@ -1,6 +1,10 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { loadProduct } from '@/lib/orchestrator'
+import { loadFlags, loadLogs } from '@/lib/logging'
+import { loadApplications } from '@/lib/applications'
+import { STEP_LABEL, utcStamp } from '@/lib/log-view'
+import type { LogStep } from '@/lib/types'
 import { VERDICT_LABEL, type AxisName, type ValidationItem } from '@/lib/types'
 import type { BrochureContent, BrochureSection } from '@/lib/pipeline/brochure'
 import { StatusBadges } from '@/components/admin/badges'
@@ -63,6 +67,20 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const { id } = await params
   const p = await loadProduct(id).catch(() => null)
   if (!p) notFound()
+
+  /*
+   * §14.1은 이 경로에 「로그 요약, 신청 내역 요약」도 요구한다. 전체 이력은
+   * §14.3의 단일 화면이 담당하므로 여기서는 **마지막 단계·이상 건수·신청 건수**만
+   * 보여주고 각 화면으로 보낸다 — 두 화면이 같은 표를 그리면 §14.3의 「단일
+   * 화면에서 확인」이 두 곳으로 갈라진다.
+   */
+  const [logs, flags, applications] = await Promise.all([
+    loadLogs(p.execution_id).catch(() => []),
+    loadFlags(p.execution_id).catch(() => []),
+    loadApplications({ product_id: p.id }).catch(() => []),
+  ])
+  const lastLog = logs[logs.length - 1]
+  const failedEmails = applications.filter((a) => a.email_status === 'failed').length
 
   const snap = p.validation_snapshot
   const axes: AxisName[] = ['axis_0', 'axis_1', 'axis_2', 'axis_3']
@@ -157,6 +175,80 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           아직 소개서가 생성되지 않았습니다. 현재 단계: {p.current_step}
         </p>
       )}
+
+      {/* 로그 요약 · 신청 내역 요약 (§14.1). 전체는 각 화면에서 본다 */}
+      <div className="mt-8 grid gap-3 sm:grid-cols-2">
+        <section className="rounded-xl border border-neutral-200 p-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold">실행 로그</h2>
+            <Link href={`/admin/logs/${p.execution_id}`}
+              className="text-xs text-neutral-500 underline hover:text-neutral-900">
+              전체 보기
+            </Link>
+          </div>
+          <dl className="mt-3 space-y-1.5 text-sm">
+            <div className="flex gap-2">
+              <dt className="w-20 shrink-0 text-neutral-400">기록</dt>
+              <dd className="text-neutral-800">{`${logs.length}행`}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="w-20 shrink-0 text-neutral-400">마지막</dt>
+              <dd className="min-w-0 text-neutral-800">
+                {lastLog ? STEP_LABEL[lastLog.step as LogStep] ?? lastLog.step : '-'}
+                {lastLog && (
+                  <span className="mt-0.5 block font-mono text-[11px] text-neutral-400">
+                    {utcStamp(lastLog.created_at)}
+                  </span>
+                )}
+              </dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="w-20 shrink-0 text-neutral-400">이상</dt>
+              <dd className={flags.length > 0 ? 'text-amber-700' : 'text-neutral-800'}>
+                {flags.length > 0 ? `${flags.length}건` : '없음'}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="rounded-xl border border-neutral-200 p-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold">신청 내역</h2>
+            <Link href={`/admin/applications?product_id=${p.id}`}
+              className="text-xs text-neutral-500 underline hover:text-neutral-900">
+              전체 보기
+            </Link>
+          </div>
+          {applications.length === 0 ? (
+            <p className="mt-3 text-sm text-neutral-500">접수된 신청이 없습니다.</p>
+          ) : (
+            <dl className="mt-3 space-y-1.5 text-sm">
+              <div className="flex gap-2">
+                <dt className="w-20 shrink-0 text-neutral-400">접수</dt>
+                <dd className="text-neutral-800">{`${applications.length}건`}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-20 shrink-0 text-neutral-400">발송 실패</dt>
+                <dd className={failedEmails > 0 ? 'text-red-700' : 'text-neutral-800'}>
+                  {failedEmails > 0 ? `${failedEmails}건 — 재발송 필요` : '없음'}
+                </dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-20 shrink-0 text-neutral-400">최근</dt>
+                <dd className="min-w-0 font-mono text-[11px] text-neutral-500">
+                  {utcStamp(applications[0]?.created_at)}
+                </dd>
+              </div>
+            </dl>
+          )}
+          {/* §12.4 — 신청이 있으면 상품을 삭제할 수 없다. 그 사실을 미리 알린다 */}
+          {applications.length > 0 && (
+            <p className="mt-3 text-[11px] leading-snug text-neutral-500">
+              신청이 있는 상품은 삭제할 수 없습니다. 먼저 신청 내역을 삭제해야 합니다.
+            </p>
+          )}
+        </section>
+      </div>
 
       {/* 상태별 버튼 (§15.1) — 어떤 버튼을 그릴지는 규칙표가 정한다 */}
       <ProductActions
