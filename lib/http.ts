@@ -30,6 +30,16 @@ export function forbidden(reason: string) {
   return NextResponse.json({ reason }, { status: 403 })
 }
 
+/**
+ * 404 — 대상 행이 없다. §14.5 #16이 `404 / 409 precondition`으로 둘을 구분한다.
+ *
+ * 「없다」와 「있는데 지금은 안 된다」를 같은 코드로 돌려주면 클라이언트가
+ * 재조회할지 포기할지 정할 수 없다.
+ */
+export function notFound(message = '대상을 찾을 수 없습니다.') {
+  return NextResponse.json({ error: 'not_found', message }, { status: 404 })
+}
+
 /** 422 — 입력 문제로 중단(`input_error`). 클라이언트는 폼으로 이동한다. */
 export function unprocessable(failure_reason: string) {
   return NextResponse.json({ failure_reason }, { status: 422 })
