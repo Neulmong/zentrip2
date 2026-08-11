@@ -27,10 +27,23 @@ export function resolveTheme(travelStyle: string): ThemeKey {
   return STYLE_TO_THEME[travelStyle.trim()] ?? 'default'
 }
 
+/**
+ * 헤드라인 톤·강조 포인트는 렌더링 컴포넌트가 1:1로 분기하므로(§9.4) 열거값으로
+ * 고정한다. `string`으로 두면 토큰을 추가했을 때 컴포넌트가 대응하지 않아도
+ * 컴파일이 통과해, 화면에서 조용히 기본값으로 떨어진다.
+ */
+export type HeadlineTone =
+  | 'calm-serif' | 'soft-sans' | 'tight-sans' | 'warm-serif'
+  | 'bold-sans' | 'classic-serif' | 'neutral-sans'
+
+export type AccentStyle =
+  | 'underline-accent' | 'pill-badge' | 'bar-accent'
+  | 'dot-accent' | 'block-accent' | 'rule-accent'
+
 export interface ThemeTokens {
   colors: { primary: string; secondary: string; surface: string; text: string }
-  headline: string
-  accent: string
+  headline: HeadlineTone
+  accent: AccentStyle
 }
 
 /**
