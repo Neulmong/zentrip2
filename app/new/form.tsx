@@ -48,6 +48,8 @@ function toFormValues(fi: FormInput): Record<string, string> {
     일정원문: fi.행사정보.일정원문,
     타겟층: fi.행사정보.타겟층,
     여행스타일: fi.행사정보.여행스타일,
+    여행주제: fi.행사정보.여행주제,
+    기획메모: fi.행사정보.기획메모,
     숙소명: fi.숙박.숙소명,
     객실타입: fi.숙박.객실타입,
     위치: fi.숙박.위치,
@@ -111,11 +113,13 @@ function Group({ title, required, children }: {
 }
 
 export function ProductForm({
-  productId, initial, failureReason, existing = [],
+  productId, initial, failureReason, existing = [], updatedAt,
 }: {
   /** 있으면 재제출 모드 (§14.4 #17) */
   productId?: string
   initial?: FormInput
+  /** §16.1.1 — 재제출(#17)이 보낼 조회 시점 */
+  updatedAt?: string
   /** `input_error`의 중단 사유. 폼 상단에 그대로 보여준다(§14.1) */
   failureReason?: string | null
   /** 이미 올라간 사진 — 교체하지 않으면 그대로 유지된다 */
@@ -155,6 +159,9 @@ export function ProductForm({
 
     const fd = new FormData(e.currentTarget)
     if (childNotOffered) fd.set('가격_아동', CHILD_NOT_OFFERED)
+    // §16.1.1 — 재제출은 form_input을 통째로 교체한다. 낡은 화면에서 보내면
+    // 다른 사람이 고친 입력을 덮어쓰므로 조회 시점을 함께 싣는다.
+    if (resubmit && updatedAt) fd.set('updated_at', updatedAt)
 
     /*
      * ① 신규는 등록(#1), 재제출은 교체(#17). 둘 다 AI 0회이며
@@ -198,7 +205,11 @@ export function ProductForm({
     }
     if (outcome.kind === 'error') { stop({ _: outcome.message }); return }
 
-    setProgress('완료. 소개서 검토 화면으로 이동합니다…')
+    // 축이 fail로 굳어도 소개서 자체는 만들어져 있다. 검토 화면에서 실패 항목과
+    // [다시 생성]·[입력 수정]을 보여준다(§15.1) — "완료"라고 말하지 않는다.
+    setProgress(outcome.kind === 'axis_failed'
+      ? '검사에서 문제가 발견됐습니다. 검토 화면으로 이동합니다…'
+      : '완료. 소개서 검토 화면으로 이동합니다…')
     router.push(`/admin/products/${id}`)
   }
 
@@ -333,7 +344,8 @@ export function ProductForm({
               <input id="타겟층" name="타겟층" className={inputClass}
                 defaultValue={v.타겟층} placeholder="30~40대 부부" />
             </Field>
-            <Field name="여행스타일" label="여행스타일" hint="페이지 테마를 결정합니다">
+            <Field name="여행스타일" label="여행스타일"
+              hint="페이지 색상 테마만 결정합니다. 문구는 바뀌지 않습니다">
               <select id="여행스타일" name="여행스타일" className={inputClass}
                 defaultValue={v.여행스타일 ?? ''}>
                 <option value="">선택 안 함</option>
@@ -341,6 +353,17 @@ export function ProductForm({
               </select>
             </Field>
           </div>
+
+          {/*
+            여행스타일이 6종 단일 선택이라 「걷기 + 맛집 + 휴식」처럼 복합 주제를
+            담을 수 없다. 테마는 위 select가 정하고, 주제 문구는 이 칸이 담는다.
+          */}
+          <Field name="여행주제" label="여행주제"
+            hint="상품의 주제를 자유롭게 적습니다. 개요·요약 섹션에 표시됩니다 (최대 200자)">
+            <input id="여행주제" name="여행주제" className={inputClass} maxLength={200}
+              defaultValue={v.여행주제}
+              placeholder="제주 걷기와 로컬 맛집·카페에서의 휴식" />
+          </Field>
           <Field name="숙박일정" label="숙박일정">
             <input id="숙박일정" name="숙박일정" className={inputClass}
               defaultValue={v.숙박일정} placeholder="3박4일" />
@@ -361,6 +384,36 @@ export function ProductForm({
             해당 섹션은 삭제되지 않습니다.
           </p>
         </Group>
+
+        {/*
+          기획 메모 — 고객에게 표시되지 않는 유일한 입력이다. 다른 칸과 섞어 두면
+          「이것도 페이지에 나오나?」를 매번 헷갈리므로 **별도 그룹으로 분리**하고
+          미노출임을 라벨·안내문 양쪽에 적는다.
+        */}
+        <section className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50/60 p-5">
+          <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-neutral-900">
+            기획 메모
+            <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[11px] font-medium text-neutral-600">
+              선택
+            </span>
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+              고객에게 표시되지 않음
+            </span>
+          </h2>
+          <p className="mb-4 text-xs text-neutral-600">
+            페르소나·기획 의도처럼 <strong>어떤 어조로 쓸지</strong>를 정하는 재료입니다.
+            소개서와 상품 페이지 어디에도 나오지 않으며, AI가 문장의 결을 잡는 데만 참고합니다.
+            여기 적은 나이·인원·가격은 <strong>사실정보로 쓰이지 않습니다.</strong>
+          </p>
+          <Field name="기획메모" label="메모"
+            hint="최대 1000자. 예: 30대 초반 여성 2인, 회사 스트레스 해소와 재충전이 목적">
+            <textarea id="기획메모" name="기획메모" rows={5} maxLength={1000}
+              className={inputClass} defaultValue={v.기획메모}
+              placeholder={'금융권 동기생 두 명이 함께 가는 여행.\n'
+                + '혼자서는 부담되는 걷기 축제를 같이 즐기고,\n'
+                + '맛집과 카페에서 재충전하고 싶어한다.'} />
+          </Field>
+        </section>
 
         <Group title="이미지">
           {errors.images && <p className="text-xs text-red-600">{errors.images}</p>}

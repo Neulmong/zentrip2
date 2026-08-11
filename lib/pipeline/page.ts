@@ -72,10 +72,14 @@ export function buildPage(input: PageInputs): PageContent {
         { headline: '행사정보.행사명', subcopy: '행사정보.여행기간' }),
 
       section('sec_summary', 'summary', 2,
-        { 여행기간: g.여행기간, 여행지: g.여행지, 타겟층: g.타겟층, 여행스타일: g.여행스타일 },
+        {
+          여행기간: g.여행기간, 여행지: g.여행지, 타겟층: g.타겟층,
+          여행스타일: g.여행스타일, 여행주제: g.여행주제,
+        },
         {
           여행기간: '행사정보.여행기간', 여행지: '행사정보.여행지',
           타겟층: '행사정보.타겟층', 여행스타일: '행사정보.여행스타일',
+          여행주제: '행사정보.여행주제',
         }),
 
       section('sec_itinerary', 'itinerary', 3,

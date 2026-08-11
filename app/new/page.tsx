@@ -42,6 +42,7 @@ export default async function NewProductPage({
     <ProductForm
       productId={p.id}
       initial={p.form_input}
+      updatedAt={p.updated_at}
       failureReason={p.failure_reason}
       existing={existing}
     />

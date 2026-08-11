@@ -20,7 +20,7 @@ function required(name: string): string {
 }
 
 /**
- * AI 공급자 키(`GEMINI_API_KEY` · `UPSTAGE_API_KEY`)는 여기에 없다.
+ * AI 공급자 키(`GEMINI_API_KEY` · `DEEPSEEK_API_KEY`)는 여기에 없다.
  * spec §4.3의 예비 경로 때문에 「없으면 터진다」가 아니라 「없으면 그 공급자를
  * 고를 수 없다」로 다뤄야 하므로, `lib/ai/index.ts`가 발급 주소까지 담은
  * 자체 메시지로 처리한다. 2.4까지 있던 `ANTHROPIC_API_KEY`는 폐기됐다(§4.3).

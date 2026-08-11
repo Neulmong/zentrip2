@@ -56,6 +56,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const raw: Record<string, string> = {}
   for (const [k, v] of form.entries()) if (typeof v === 'string') raw[k] = v
 
+  /*
+   * §16.1.1 — 조회 시점 대조. 이 라우트는 multipart라 값이 폼 필드로 온다.
+   * **업로드보다 먼저** 본다: 낡은 요청이 파일을 Storage에 올린 뒤 거절당하면
+   * 아무도 참조하지 않는 고아 파일만 남는다(§16.2).
+   */
+  if (raw.updated_at && raw.updated_at !== p.updated_at) {
+    return conflict({ reason: 'stale' })
+  }
+
   const formInput = buildFormInput(raw)
   const errors = validateFormInput(formInput)
   if (Object.keys(errors).length > 0) return badRequest(errors)

@@ -44,7 +44,8 @@ function makeForm(over: Record<string, string> = {}) {
     상점명: '제주 로컬 기념품 숍', 상점정보: '여행객 10% 할인',
     가격_성인: '120000', 가격_아동: '해당 없음', 가격_기타: '항공료 별도',
     식사정보: '조식 3회, 중식 2회, 석식 1회',
-    여행스타일: '자연',
+    여행스타일: '자연', 여행주제: '제주 걷기와 로컬 맛집 휴식',
+    기획메모: '',
   }
   for (const [k, v] of Object.entries({ ...base, ...over })) fd.set(k, v)
   return fd

@@ -55,6 +55,13 @@ export interface ConfirmedData {
     행사명: string; 여행지: string; 여행기간: string
     일정원문: string; 일정: DayEntry[]
     여행스타일: string; 타겟층: string
+    /** 값 필드 — 화면에 표시되므로 미입력 시 `추후 추가 예정`으로 채운다 */
+    여행주제: string
+    /**
+     * 참고 필드 — 고객에게 표시되지 않는다. **채우지 않는다.**
+     * 미입력이면 빈 문자열로 남고, 그때는 AI 프롬프트에도 싣지 않는다.
+     */
+    기획메모: string
   }
   숙박: { 숙소명: string; 객실타입: string; 위치: string; 숙박일정: string }
   상점: { 상점명: string; 상점정보: string }
@@ -127,6 +134,9 @@ export function buildConfirmedData(
         일정: [],
         여행스타일: fill(fi.행사정보.여행스타일, changes, '행사정보.여행스타일'),
         타겟층: fill(fi.행사정보.타겟층, changes, '행사정보.타겟층'),
+        여행주제: fill(fi.행사정보.여행주제, changes, '행사정보.여행주제'),
+        // 채우지 않는다 — 고객에게 보이지 않는 필드다(§6.1의 채움 목적 밖).
+        기획메모: space(fi.행사정보.기획메모, changes, '행사정보.기획메모'),
       },
       숙박: {
         숙소명: space(fi.숙박.숙소명, changes, '숙박.숙소명'),

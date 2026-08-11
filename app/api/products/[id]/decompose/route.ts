@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server'
-import { runStep } from '@/lib/orchestrator'
+import { readUpdatedAt, runStep } from '@/lib/orchestrator'
 import { ai, toLogOutput, ERROR_LABEL } from '@/lib/ai'
 import { withAxis, passedAxis, failedAxis } from '@/lib/validation'
 import { tripDays } from '@/lib/form-validation'
@@ -22,11 +22,13 @@ export const maxDuration = 60
  * 실패 갈래가 둘이다: **입력 문제**(일차 초과·구분 불가·0차 소진)는 422이고,
  * **생성 문제**(0차 실패 + 여력)는 409 retry_from:2다.
  */
-export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
+  const clientUpdatedAt = await readUpdatedAt(req)
 
   return runStep(
-    { route: 'decompose', step: 'normalization_validated', extraSteps: ['itinerary_decomposed'], productId: id },
+    { route: 'decompose', step: 'normalization_validated', extraSteps: ['itinerary_decomposed'],
+      productId: id, clientUpdatedAt },
     async (p) => {
       const fi = p.form_input
       const days = tripDays(fi.행사정보.여행기간_시작, fi.행사정보.여행기간_종료) ?? 0
@@ -123,7 +125,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
               validation_snapshot: withAxis(p.validation_snapshot, p.attempt_no, 'axis_0',
                 failedAxis(items[0])),
             },
-            body: { current_step: p.current_step, items },
+            body: { current_step: p.current_step, axes: { axis_0: 'fail' as const }, items },
             detail: '0차 재시도 소진으로 input_error 확정 (§15.2)',
           },
           logOutput: { ...toLogOutput(res), items, changes },

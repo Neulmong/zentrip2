@@ -88,16 +88,25 @@ export async function POST(req: NextRequest) {
   const storagePaths: string[] = []
   try {
     const rows = []
-    for (const [i, u] of uploads.entries()) {
+    /**
+     * `sort_order`는 「**같은 슬롯 내** 순서」다(§5.2). 전체 업로드 순번을 쓰면
+     * `accommodation` 3장이 슬롯 안에서 0·1·2가 아니라 1·2·3이 되고,
+     * 같은 일을 하는 §14.4 #17(`/form-input`)과 값이 갈린다.
+     */
+    const perSlotIndex = new Map<string, number>()
+    for (const u of uploads) {
       const path = `${product.id}/${crypto.randomUUID()}.${extensionOf(u.file.type)}`
       const { error } = await db().storage
         .from(STORAGE_BUCKET)
         .upload(path, u.file, { contentType: u.file.type, upsert: false })
       if (error) throw new Error(`이미지 업로드 실패: ${error.message}`)
       storagePaths.push(path)
+
+      const n = perSlotIndex.get(u.slot) ?? 0
+      perSlotIndex.set(u.slot, n + 1)
       rows.push({
         product_id: product.id, slot: u.slot, storage_path: path,
-        alt: u.alt, sort_order: i, bytes: u.file.size,
+        alt: u.alt, sort_order: n, bytes: u.file.size,
       })
     }
 

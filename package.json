@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "verify:schema": "node --env-file=.env.local scripts/verify-schema.mjs",
-    "test:policy": "tsx scripts/test-policy.ts",
+    "test:policy": "tsx scripts/test-policy.mts",
     "probe:ai": "tsx --env-file=.env.local scripts/probe-ai.mts",
     "probe:models": "tsx --env-file=.env.local scripts/probe-models.mts",
     "test:api": "tsx --env-file=.env.local scripts/test-api.mts",
@@ -20,8 +20,14 @@
     "test:security": "tsx --env-file=.env.local scripts/test-security.mts",
     "test:delete": "tsx --env-file=.env.local scripts/test-delete.mts",
     "test:demo": "tsx --env-file=.env.local scripts/test-demo.mts",
+    "test:images": "tsx --env-file=.env.local scripts/test-images.mts",
+    "test:exhaustion": "tsx --env-file=.env.local scripts/test-exhaustion.mts",
+    "test:auth": "tsx --env-file=.env.local scripts/test-auth.mts",
+    "test:stale": "tsx --env-file=.env.local scripts/test-stale.mts",
+    "verify:a11y": "tsx scripts/verify-a11y.mts",
+    "verify:artifacts": "tsx --env-file=.env.local scripts/verify-artifacts.mts",
     "verify:responsive": "tsx --env-file=.env.local scripts/verify-responsive.mts",
-    "probe:solar": "tsx --env-file=.env.local scripts/probe-solar.mts"
+    "probe:deepseek": "tsx --env-file=.env.local scripts/probe-deepseek.mts"
   },
   "dependencies": {
     "@google/genai": "^2.16.0",

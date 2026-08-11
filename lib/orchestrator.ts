@@ -143,6 +143,24 @@ export interface StepConfig {
   productId: string
   /** 일차 부족 채움이 있었다면 그 번호들 (itinerary_partial 판정용) */
   partialDays?: string[]
+  /**
+   * 클라이언트가 읽은 시점의 `updated_at` (§16.1.1).
+   *
+   * 주면 **작업 전에** 대조하고 어긋나면 409 `stale`이다. 주지 않으면
+   * 그 검사를 건너뛴다 — 조건부 갱신은 어차피 뒤에서 걸리므로 안전은
+   * 유지되고, 값을 아직 안 보내는 호출부가 400으로 죽지 않는다.
+   */
+  clientUpdatedAt?: string
+}
+
+/**
+ * 요청 본문에서 조회 시점을 꺼낸다(§16.1.1).
+ * 본문이 없거나 JSON이 아니어도 던지지 않는다 — 없으면 `undefined`다.
+ */
+export async function readUpdatedAt(req: Request): Promise<string | undefined> {
+  const body = await req.json().catch(() => null)
+  const v = (body as { updated_at?: unknown } | null)?.updated_at
+  return typeof v === 'string' && v ? v : undefined
 }
 
 /**
@@ -160,6 +178,21 @@ export async function runStep(
   const product = await loadProduct(cfg.productId)
   if (!product) {
     return conflict({ reason: 'precondition', detail: '상품을 찾을 수 없습니다.' })
+  }
+
+  /*
+   * §16.1.1 낙관적 잠금 — **작업보다 먼저 본다.**
+   *
+   * 뒤의 조건부 갱신만으로도 덮어쓰기는 막히지만, 그때는 이미 AI를 25초
+   * 호출한 뒤다. 그 비용이 통째로 버려지고 재시도 예산까지 걸린다.
+   * 낡은 요청은 아무것도 하기 전에 돌려보낸다.
+   *
+   * 시작 조건보다 먼저 보는 이유: 클라이언트가 낡았다면 그가 믿고 있는
+   * 상태 자체를 신뢰할 수 없다. `publish`·`content`·`slug` 등 이미 잠금이
+   * 있던 라우트도 같은 순서다.
+   */
+  if (cfg.clientUpdatedAt && cfg.clientUpdatedAt !== product.updated_at) {
+    return conflict({ reason: 'stale' })
   }
 
   const missing = checkPrecondition(cfg.route, product)
@@ -191,7 +224,8 @@ export async function runStep(
     await detectAbnormalities({
       ...flagBase, retry_counts: applied.row.retry_counts, partialDays: cfg.partialDays,
     })
-    return ok(outcome.body)
+    // 행이 갱신됐다 — 다음 단계가 쓸 새 조회 시점을 함께 준다(§16.1.1).
+    return ok({ ...outcome.body, updated_at: applied.row.updated_at })
   }
 
   /* ── 입력 문제 → 422 ──────────────────────────────────────── */
@@ -224,8 +258,11 @@ export async function runStep(
       ...flagBase, retry_counts: counts, bumped: counter, failedItems: items,
     })
     // 재호출 중에도 실패 사유를 화면에 표시할 수 있도록 items를 함께 담는다.
+    // `updated_at`은 카운터를 올리며 바뀐 값이다 — 이걸 안 주면 클라이언트가
+    // 낡은 값으로 재호출해 stale을 맞고 재시도가 시작도 못 한다(§16.1.1).
     return conflict({
       reason: 'retry', retry_from: retryFrom, items,
+      updated_at: applied.row.updated_at,
       ...(retryAfterMs ? { retry_after_ms: retryAfterMs } : {}),
     })
   }
@@ -241,7 +278,29 @@ export async function runStep(
     ...flagBase, retry_counts: applied.row.retry_counts,
     failedItems: items, aborted: exhausted.detail,
   })
-  return ok(exhausted.body)
+
+  /*
+   * §14.6 — **`input_error` 확정은 422다.**
+   *
+   * 소진 결과가 `input_error`인 단계(0차, §8.2)를 200으로 돌려주면 클라이언트는
+   * 「단계 완료」로 읽고 다음 단계를 호출한다. 그 뒤는 시작 조건 미충족이므로
+   * 409 `precondition`이 연쇄로 터지고, §15.1이 규정한 도달 화면
+   * (`/new?product_id={id}` — 값이 유지된 폼 + 사유)으로 **가지 못한다.**
+   *
+   * 즉 사용자에게 [입력 수정 후 재제출] 경로가 화면에서 사라진다.
+   * 같은 `input_error` 상태인데 입력 문제로 즉시 중단할 때만 422이고
+   * 소진으로 확정될 때는 200이던 것이 어긋난 지점이었다.
+   *
+   * 갈림은 **실제로 적용된 상태**로 판정한다 — 호출부가 어떤 의도였는지가
+   * 아니라 행에 무엇이 쓰였는지가 클라이언트가 보게 될 현실이다.
+   */
+  if (applied.row.status === 'input_error') {
+    return unprocessable(
+      applied.row.failure_reason ?? exhausted.detail,
+    )
+  }
+
+  return ok({ ...exhausted.body, updated_at: applied.row.updated_at })
 }
 
 /** 한 요청이 두 단계를 끝내는 경우(Step 02) 순서대로 모두 기록한다. */

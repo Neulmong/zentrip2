@@ -135,6 +135,25 @@ export function validateFormInput(input: unknown): FieldErrors {
       "일차 구분을 넣어 주세요. '1일:', '2일차', 'Day 1', '첫째 날' 형식을 인식합니다."
   }
 
+  /*
+   * 선택 항목의 상한 (§7.1).
+   *
+   * 미입력은 허용하므로 하한이 없다. 상한만 둔다 — 요약 섹션에 들어가는
+   * `여행주제`가 길어지면 화면이 무너지고, `기획메모`는 AI 프롬프트에
+   * 실리므로 25초 예산을 밀어낸다.
+   */
+  const OPTIONAL_MAX: [string, string, number][] = [
+    ['행사정보.타겟층', '행사정보 > 타겟층', 100],
+    ['행사정보.여행주제', '행사정보 > 여행주제', 200],
+    ['행사정보.기획메모', '행사정보 > 기획 메모', 1000],
+  ]
+  for (const [path, label, max] of OPTIONAL_MAX) {
+    const v = get(input, path)
+    if (typeof v === 'string' && v.trim().length > max) {
+      errors[path] = `${label}은(는) ${max}자를 넘을 수 없습니다.`
+    }
+  }
+
   // 가격 — 0 이상 정수를 `{숫자}원`으로 저장한다(§6.2). 단위는 `원` 하나로 고정이며
   // 콤마는 정규화 대상이므로 여기서 이미 제거된 형태여야 한다.
   // 검증기는 **저장될 형태**를 본다 — 서버는 자기가 쓰려는 값을 검사한다.
@@ -179,6 +198,8 @@ export function buildFormInput(raw: Record<string, string>): FormInput {
       일정원문: s('일정원문'),
       타겟층: s('타겟층'),
       여행스타일: s('여행스타일'),
+      여행주제: s('여행주제'),
+      기획메모: s('기획메모'),
     },
     숙박: {
       숙소명: s('숙소명'), 객실타입: s('객실타입'),

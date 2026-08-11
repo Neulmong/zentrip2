@@ -71,7 +71,13 @@ export function ProductActions(p: ActionsProps) {
    */
   async function regenerate() {
     setProgress('되돌리는 중…')
-    const res = await fetch(`/api/products/${p.id}/regenerate`, { method: 'POST' })
+    const res = await fetch(`/api/products/${p.id}/regenerate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      // §16.1.1 — [다시 생성]은 산출물을 폐기한다. 낡은 화면에서 누르면
+      // 다른 사람이 방금 만든 것을 지우므로 조회 시점을 함께 보낸다.
+      body: JSON.stringify({ updated_at: p.updated_at }),
+    })
     const body = await res.json().catch(() => ({}))
 
     if (!res.ok) {

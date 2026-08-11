@@ -1,7 +1,7 @@
 import { type NextRequest } from 'next/server'
-import { loadProduct, updateProduct } from '@/lib/orchestrator'
+import { loadProduct, readUpdatedAt, updateProduct } from '@/lib/orchestrator'
 import { checkPrecondition, planRestart, RESET_ON, resetCounters } from '@/lib/policy'
-import { discardAxes } from '@/lib/validation'
+import { axisVerdicts, discardAxes } from '@/lib/validation'
 import { appendLog } from '@/lib/logging'
 import { conflict, notFound, ok, serverError } from '@/lib/http'
 import type { ProductRow } from '@/lib/types'
@@ -24,7 +24,7 @@ export const maxDuration = 60
  * 확인 모달(`human_edited`일 때 「편집한 내용이 사라집니다」)은 **클라이언트 몫**이다.
  * 서버가 강제할 수단이 없고, §15.3도 화면 규정으로 적었다.
  */
-export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
 
   let p: ProductRow | null
@@ -34,6 +34,13 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     return serverError((e as Error).message)
   }
   if (!p) return notFound('상품을 찾을 수 없습니다.')
+
+  // §16.1.1 — 조회 시점 대조. [다시 생성]은 산출물을 폐기하므로, 낡은 화면에서
+  // 누르면 다른 사람이 방금 만든 것을 지운다.
+  const clientUpdatedAt = await readUpdatedAt(req)
+  if (clientUpdatedAt && clientUpdatedAt !== p.updated_at) {
+    return conflict({ reason: 'stale' })
+  }
 
   const detail = checkPrecondition('regenerate', p)
   if (detail) return conflict({ reason: 'precondition', detail })
@@ -103,6 +110,9 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     current_step: plan.currentStep,
     /** 클라이언트는 이 번호부터 순차 호출을 재개한다 — `retry_from`과 같은 체계다 */
     restart_from: plan.from,
-    axes: res.row.validation_snapshot?.axes,
+    // 판정값만 담는다 — 스냅샷 원본을 그대로 실으면 다른 라우트와 모양이 갈린다(§14.6)
+    axes: axisVerdicts(res.row.validation_snapshot),
+    // 되돌리며 행이 갱신됐다 — 이어지는 순차 호출이 쓸 새 조회 시점(§16.1.1)
+    updated_at: res.row.updated_at,
   })
 }

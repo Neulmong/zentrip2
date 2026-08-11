@@ -49,11 +49,13 @@ export function buildBrochure(cd: ConfirmedData, 핵심일정: string): Brochure
         data: {
           여행지: g.여행지, 여행기간: g.여행기간,
           타겟층: g.타겟층, 여행스타일: g.여행스타일,
+          여행주제: g.여행주제,
           핵심일정,
         },
         source: {
           여행지: '행사정보.여행지', 여행기간: '행사정보.여행기간',
           타겟층: '행사정보.타겟층', 여행스타일: '행사정보.여행스타일',
+          여행주제: '행사정보.여행주제',
           // `source`가 "generated"인 유일한 필드다(§8.7)
           핵심일정: 'generated',
         },

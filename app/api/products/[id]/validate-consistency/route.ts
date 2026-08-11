@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server'
-import { runStep } from '@/lib/orchestrator'
+import { readUpdatedAt, runStep } from '@/lib/orchestrator'
 import { ai, toLogOutput, ERROR_LABEL } from '@/lib/ai'
 import { withAxis, contentHash } from '@/lib/validation'
 import {
@@ -19,11 +19,12 @@ export const maxDuration = 60
  *
  * **2차 실패 시 이 라우트는 호출되지 않는다**(§11.1). 시작 조건이 `axis_2 = pass`다.
  */
-export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
+  const clientUpdatedAt = await readUpdatedAt(req)
 
   return runStep(
-    { route: 'validate-consistency', step: 'validation_3_completed', productId: id },
+    { route: 'validate-consistency', step: 'validation_3_completed', productId: id, clientUpdatedAt },
     async (p) => {
       const page = p.page_content as PageContent
 
@@ -40,7 +41,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
       const exhaustedWith = (items: ValidationItem[]) => ({
         patch: register({ verdict: 'fail', items }),
-        body: { current_step: 'draft_registered', items },
+        body: { current_step: 'draft_registered', axes: { axis_3: 'fail' as const }, items },
         detail: '3차 검증 재시도 소진 — draft 확정, axis_3 = fail. '
           + '편집·[다시 생성]·책임 게시 경로가 유지된다.',
         trailingLogs: ['draft_registered' as const],

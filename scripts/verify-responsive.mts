@@ -17,12 +17,22 @@
  *   npm run verify:responsive
  */
 import { mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { chromium, type Page } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
 import { FIXTURE_PAGE } from '../components/page/fixture'
 
 const BASE = process.env.TEST_BASE_URL ?? 'http://localhost:3000'
-const SHOTS = process.env.SHOT_DIR ?? 'C:/Users/leo/AppData/Local/Temp/claude/C--Users-leo-Desktop-zentrip--2-/60b83290-767e-4e5a-a826-f44f7bca7154/scratchpad/responsive'
+/**
+ * 스크린샷 보관 위치.
+ *
+ * 기본값이 특정 PC의 절대 경로(`C:/Users/leo/...`)로 박혀 있었다. 그 계정이
+ * 없는 컴퓨터에서는 남의 경로에 쓰거나 실패하고, 무엇보다 **다른 사람이
+ * 이 스크립트를 돌릴 수 없다.** 임시 폴더를 기준으로 잡아 어디서나 돌아가게 한다.
+ * 자리를 지정하려면 `SHOT_DIR` 환경 변수를 준다.
+ */
+const SHOTS = process.env.SHOT_DIR ?? join(tmpdir(), 'zentrip-responsive')
 const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
   auth: { persistSession: false },
 })
@@ -66,7 +76,8 @@ const { data: prod, error: seedError } = await db.from('products').insert({
     행사정보: {
       행사명: '반응형 실측 상품', 여행지: '제주 서귀포 일원',
       여행기간_시작: '2026-03-14', 여행기간_종료: '2026-03-17',
-      일정원문: '1일: 출발\n2일: 귀국', 타겟층: '가족', 여행스타일: '자연',
+      일정원문: '1일: 출발\n2일: 귀국', 타겟층: '가족', 여행스타일: '자연', 여행주제: '제주 걷기와 로컬 맛집 휴식',
+      기획메모: '',
     },
     숙박: { 숙소명: '제주 올레 호텔', 객실타입: '디럭스', 위치: '서귀포', 숙박일정: '3박 4일' },
     상점: { 상점명: '올레 기념품점', 상점정보: '7코스 입구' },

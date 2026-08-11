@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import type { ConflictReason, RetryFrom, ValidationItem } from './types'
+import type { AxisName, ConflictReason, RetryFrom, ValidationItem } from './types'
 
 /**
  * spec §14.6 — 응답 코드 규약. `202`는 사용하지 않는다(§4.2).
@@ -8,9 +8,22 @@ import type { ConflictReason, RetryFrom, ValidationItem } from './types'
  * reason이 없으면 클라이언트가 전부 "재호출하라"로 해석해 무한 반복한다.
  */
 
+/**
+ * 200 본문의 `axes` (§14.6). **이번 단계가 확정한 축의 판정**이다.
+ *
+ * `unknown`이었을 때 소진(`fail` 확정) 분기 6곳이 이 필드를 통째로 빠뜨려도
+ * 컴파일이 통과했다. 클라이언트는 200을 「단계 완료」로만 읽으므로(§14.6),
+ * 축이 `fail`로 굳은 것을 응답만 보고는 알 수 없었다.
+ */
+export type AxisVerdicts = Partial<Record<AxisName, 'pass' | 'fail'>>
+
 export interface StepResultBody {
   current_step: string
-  axes?: unknown
+  /**
+   * 축을 확정한 단계는 **통과·실패 어느 쪽이든 반드시 담는다.**
+   * 축을 건드리지 않는 단계(소개서 생성 성공, 페이지 생성 성공)만 생략한다.
+   */
+  axes?: AxisVerdicts
   items?: ValidationItem[]
   [k: string]: unknown
 }
@@ -51,6 +64,12 @@ type ConflictExtra =
       reason: 'retry'; retry_from: RetryFrom; items?: ValidationItem[]
       /** 429 등으로 대기가 필요할 때. 클라이언트는 이만큼 쉬었다가 재호출한다 */
       retry_after_ms?: number
+      /**
+       * 재시도 카운터를 올리면서 행이 갱신됐다 — **새 조회 시점**이다(§16.1.1).
+       * 이걸 주지 않으면 클라이언트가 낡은 값으로 재호출해 409 `stale`을 맞고,
+       * 재시도가 시작도 못 한 채 끝난다.
+       */
+      updated_at?: string
     }
   /** 시작 조건 미충족 — 재호출 금지. GET으로 재조회 후 화면 갱신 */
   | { reason: 'precondition'; detail?: string }

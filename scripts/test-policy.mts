@@ -20,6 +20,19 @@ import {
   diffSections, LENGTH_LIMITS_SAVE, moveSection, renumber, same, validateEdit,
 } from '../lib/edit-contract'
 import { LENGTH_LIMITS_GENERATE, type PageContent, type PageSection } from '../lib/pipeline/page'
+import { buildConfirmedData } from '../lib/pipeline/normalize'
+import { buildBrochure } from '../lib/pipeline/brochure'
+import { toJsonSchema, validateAgainstSchema } from '../lib/ai/schema'
+import {
+  DECOMPOSE_SCHEMA, EXPAND_SCHEMA, VALIDATION_SCHEMA,
+} from '../lib/pipeline/ai-contracts'
+import { MAX_BACKOFF_MS, backoff } from '../lib/client/run-pipeline'
+import { quotaSummary } from '../lib/ai/gemini'
+import { GoogleGenAI } from '@google/genai'
+import { readFileSync } from 'node:fs'
+
+/** 주석을 걷어낸 provider 소스 — 「retryOptions를 넘기지 않는다」를 코드로 확인한다. */
+const GEMINI_SOURCE = readFileSync(new URL('../lib/ai/gemini.ts', import.meta.url), 'utf8')
 
 let pass = 0, fail = 0
 function check(name: string, ok: boolean, got?: unknown) {
@@ -736,6 +749,254 @@ check('막힌 사유가 두 경우에 서로 다르다 (화면에 그대로 쓴�
 check('게시 중 + 신청 있음은 게시 중단 안내가 먼저다 (풀어야 할 순서)',
   (deleteGate({ status: 'published', hasApplications: true }) as { detail: string })
     .detail.includes('게시 중단'))
+
+/* ════════════════════════════════════════════════════════════════
+ * U15 — AI 출력 스키마 강제 (§4.3 · lib/ai/schema.ts)
+ *
+ * Gemini는 `responseSchema`로 제공자가 강제하지만, **예비 경로(DeepSeek)는
+ * `json_schema` strict 모드가 없어** 이 검증기가 유일한 관문이다.
+ * 여기가 조용히 통과시키면 구조가 깨진 값이 파이프라인에 그대로 들어간다.
+ * ════════════════════════════════════════════════════════════════ */
+section('U15 — AI 출력 스키마 강제 (§4.3)')
+
+const V = (v: unknown, s: unknown) => validateAgainstSchema(v, toJsonSchema(s))
+
+check('Gemini 대문자 타입이 JSON Schema 소문자로 바뀐다',
+  (toJsonSchema(DECOMPOSE_SCHEMA) as { type: string }).type === 'object'
+  && (toJsonSchema(DECOMPOSE_SCHEMA) as { properties: { 일정: { type: string } } })
+       .properties.일정.type === 'array')
+
+check('올바른 일차 분해 출력은 통과한다',
+  V({ 판정: 'pass', 일정: [{ day: '1', 원문근거: 'a', 내용: 'b' }] }, DECOMPOSE_SCHEMA).length === 0,
+  V({ 판정: 'pass', 일정: [{ day: '1', 원문근거: 'a', 내용: 'b' }] }, DECOMPOSE_SCHEMA))
+check('올바른 검증 출력은 통과한다',
+  V({ 판정: 'pass', items: [] }, VALIDATION_SCHEMA).length === 0)
+check('올바른 확장 서술 출력은 통과한다',
+  V({ days: [{ day: '1', text: 'x' }], apply: { 제목: 'a', 안내문구: 'b' } }, EXPAND_SCHEMA)
+    .length === 0)
+
+check('필수 필드 누락을 잡는다',
+  V({ 판정: 'pass' }, VALIDATION_SCHEMA).some((e) => /items.*필수/.test(e)))
+check('enum 밖의 판정값을 잡는다 (§8.2의 판정 3종)',
+  V({ 판정: 'maybe', items: [] }, VALIDATION_SCHEMA).some((e) => /허용값/.test(e)))
+check('타입 불일치를 잡는다',
+  V({ 판정: 'pass', items: 'nope' }, VALIDATION_SCHEMA).some((e) => /array/.test(e)))
+check('배열 원소 **안쪽**의 누락을 잡는다',
+  V({ days: [{ day: '1' }], apply: { 제목: 'a', 안내문구: 'b' } }, EXPAND_SCHEMA)
+    .some((e) => /days\[0\]\.text/.test(e)))
+check('최상위가 객체가 아니면 잡는다', V('문자열', EXPAND_SCHEMA).length > 0)
+check('null을 잡는다', V(null, EXPAND_SCHEMA).length > 0)
+check('실패 경로가 사람이 읽을 수 있다 (로그에 그대로 남는다)',
+  V({ days: [], apply: {} }, EXPAND_SCHEMA).join(' ').includes('$.apply.제목'),
+  V({ days: [], apply: {} }, EXPAND_SCHEMA))
+check('모르는 키워드는 무시한다 (거부하지 않는다)',
+  V({ a: 'x' }, { type: 'OBJECT', properties: { a: { type: 'STRING', minLength: 99 } } })
+    .length === 0)
+
+/* ════════════════════════════════════════════════════════════════
+ * U16 — 재시도 백오프 (§4.2 · lib/client/run-pipeline.ts)
+ *
+ * 서버가 「n초 뒤 재호출하라」고 지시했는데 클라이언트가 **더 짧게 자르면**
+ * 한도가 안 풀린 채 재호출해 429를 또 맞고, 재시도 예산 2회를 몇 초 만에
+ * 태운다. 실측에서 서버 지시값은 11·20·49·52·57·59초였다.
+ * ════════════════════════════════════════════════════════════════ */
+section('U16 — 재시도 백오프 (§4.2)')
+
+check('상한이 실측된 지시값(최대 59초)을 전부 덮는다',
+  MAX_BACKOFF_MS >= 59_000, MAX_BACKOFF_MS)
+check('상한 이하의 지시는 **그대로** 기다린다 (자르지 않는다)',
+  [11_000, 20_000, 49_000, 52_000, 57_000, 59_000]
+    .every((v) => Math.min(v, MAX_BACKOFF_MS) === v))
+check('상한을 넘는 지시만 상한으로 줄인다',
+  Math.min(120_000, MAX_BACKOFF_MS) === MAX_BACKOFF_MS)
+
+{
+  // 남은 초를 화면에 갱신하는지 — 통째로 기다리면 「멈춘 화면」과 구분되지 않는다.
+  const seen: string[] = []
+  const t0 = Date.now()
+  await backoff(2_000, '검사 중…', 1, (label) => seen.push(label))
+  const elapsed = Date.now() - t0
+
+  check('지시한 시간만큼 실제로 기다린다', elapsed >= 1_900 && elapsed < 3_500, elapsed)
+  check('1초마다 진행 표시를 갱신한다 (얼어붙은 화면이 아니다)',
+    seen.length >= 2, seen.length)
+  check('남은 초를 보여준다', seen.some((s) => /\d+초 후/.test(s)), seen[0])
+  check('원래 단계 이름을 유지한다', seen.every((s) => s.startsWith('검사 중…')), seen[0])
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * U17 — 429 진단 요약 (§4.3 · lib/ai/gemini.ts)
+ *
+ * Gemini의 429 본문은 안내 문구·링크가 앞자리를 차지하고 `quotaId`가 뒤에
+ * 온다. 메시지를 앞에서 잘라 저장하면 로그에 남는 것은 「한도 초과」뿐이고
+ * **분당인지 일일인지 구분할 수 없다.** 실제로 그 때문에 「기다리면 풀린다」로
+ * 오해했는데, 진짜는 하루 20회라 대기로는 풀리지 않는 것이었다.
+ *
+ * 아래 본문은 이 프로젝트에서 **실제로 받은 429 응답**이다.
+ * ════════════════════════════════════════════════════════════════ */
+section('U17 — 429 진단 요약 (§4.3)')
+
+const REAL_429 = JSON.stringify({
+  error: {
+    code: 429,
+    message: 'You exceeded your current quota, please check your plan and billing details. '
+      + 'For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. '
+      + 'To monitor your current usage, head to: https://ai.dev/rate-limit. \n'
+      + '* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, '
+      + 'limit: 20, model: gemini-3.5-flash\nPlease retry in 11.949744534s.',
+    status: 'RESOURCE_EXHAUSTED',
+    details: [
+      { '@type': 'type.googleapis.com/google.rpc.Help', links: [] },
+      {
+        '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+        violations: [{
+          quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+          quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier',
+          quotaDimensions: { location: 'global', model: 'gemini-3.5-flash' },
+          quotaValue: '20',
+        }],
+      },
+      { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '11s' },
+    ],
+  },
+})
+
+{
+  const summary = quotaSummary(REAL_429)
+  check('요약을 만들어 낸다', summary !== null, summary)
+  check('**일일** 한도임을 밝힌다 (대기로 풀리지 않는 종류다)',
+    summary?.includes('하루') === true, summary)
+  check('한도 값을 담는다 (20회)', summary?.includes('20') === true, summary)
+  check('quotaId를 담는다', summary?.includes('GenerateRequestsPerDayPerProjectPerModel') === true,
+    summary)
+
+  // 300자로 자르던 예전 방식이면 진단 정보가 통째로 사라진다 — 그 회귀를 막는다.
+  const OLD_CUT = 300
+  check('원본 메시지는 300자 안에 quotaId가 없다 (그래서 요약이 필요했다)',
+    !REAL_429.slice(0, OLD_CUT).includes('quotaId'))
+  check('요약을 앞에 붙이면 300자 안에서 판별된다',
+    `${summary} — ${REAL_429}`.slice(0, OLD_CUT).includes('하루'), summary)
+}
+
+check('분당 한도는 「분당」으로 표기한다',
+  quotaSummary(JSON.stringify({
+    error: { details: [{ violations: [{ quotaId: 'GenerateRequestsPerMinutePerProject-FreeTier', quotaValue: '10' }] }] },
+  }))?.includes('분당') === true)
+check('쿼터 정보가 없는 메시지는 null이다 (없는 요약을 지어내지 않는다)',
+  quotaSummary('그냥 네트워크 오류') === null)
+
+/* ════════════════════════════════════════════════════════════════
+ * U18 — SDK 자동 재시도 (§4.2 · A-14)
+ *
+ * 「재시도는 클라이언트가 같은 API를 재호출한다」가 원칙이다. SDK가 몰래
+ * 재시도하면 **그 횟수가 전부 하루 20회 쿼터에서 빠지는데** 우리 눈에는
+ * 「1회 실패」로 보여 원인을 알 수 없다.
+ *
+ * `@google/genai`는 `retryOptions`를 안 넘기면 재시도하지 않지만, 누군가
+ * 「명시적으로 꺼두자」며 `retryOptions: {}`를 넣는 순간 **기본값 5가 켜진다.**
+ * 그 함정을 여기서 막는다 — 실제로 나가는 HTTP 요청 수를 센다.
+ * ════════════════════════════════════════════════════════════════ */
+section('U18 — SDK 자동 재시도 (§4.2 · A-14)')
+
+async function countRequests(httpOptions?: Record<string, unknown>): Promise<number> {
+  let calls = 0
+  const real = globalThis.fetch
+  globalThis.fetch = (async () => {
+    calls++
+    // 429는 SDK의 기본 재시도 대상이다(408·429·5xx).
+    return new Response(JSON.stringify({ error: { code: 429, message: 'Quota exceeded' } }),
+      { status: 429, headers: { 'content-type': 'application/json' } })
+  }) as typeof globalThis.fetch
+  try {
+    const ai = new GoogleGenAI({ apiKey: 'fake', ...(httpOptions ? { httpOptions } : {}) })
+    await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: [{ role: 'user', parts: [{ text: 'x' }] }],
+      config: { abortSignal: AbortSignal.timeout(20_000) },
+    })
+  } catch { /* 429는 던진다 */ }
+  globalThis.fetch = real
+  return calls
+}
+
+{
+  const asShipped = await countRequests()
+  check('429를 받아도 HTTP 요청이 1회뿐이다 (현재 설정)', asShipped === 1, asShipped)
+
+  // 함정 재현 — retryOptions를 넘기면 attempts 기본값 5가 켜진다.
+  const withEmptyOptions = await countRequests({ retryOptions: { attempts: 2 } })
+  check('retryOptions를 넘기면 재시도가 켜진다 (넘기면 안 되는 이유)',
+    withEmptyOptions > 1, withEmptyOptions)
+
+  check('실제 provider가 retryOptions를 넘기지 않는다',
+    !/retryOptions/.test(GEMINI_SOURCE.replace(/\/\*[\s\S]*?\*\//g, '')),
+    'lib/ai/gemini.ts에 retryOptions가 있다')
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * U19 — 여행주제 · 기획메모 (§6.1·§7.4 확장)
+ *
+ * `여행스타일`이 6종 단일 선택이라 「걷기 + 맛집 + 휴식」 같은 복합 주제를
+ * 담을 수 없어 둘을 분리했다.
+ *   여행주제  값 필드 · 고객에게 **표시** · `source` 있음 · 미입력 시 채움
+ *   기획메모  참고 필드 · 고객 **미노출** · `source` 없음 · **채우지 않는다**
+ * ════════════════════════════════════════════════════════════════ */
+section('U19 — 여행주제 · 기획메모 (§6.1·§7.4)')
+
+{
+  const raw: Record<string, string> = {
+    행사명: '제주 여행', 여행지: '제주',
+    여행기간_시작: '2026-03-14', 여행기간_종료: '2026-03-17',
+    일정원문: '1일: 김해공항 출발, 올레 7코스 걷기',
+    숙소명: '롯데호텔 제주', 객실타입: '디럭스룸', 위치: '중문',
+    상점명: '기념품 숍', 상점정보: '10% 할인',
+    가격_성인: '120000', 가격_아동: '해당 없음', 식사정보: '조식 3회',
+    여행스타일: '자연',
+  }
+
+  const filled = buildFormInput({ ...raw, 여행주제: '걷기와 맛집', 기획메모: '30대 2인' })
+  check('여행주제·기획메모가 form_input에 담긴다',
+    filled.행사정보.여행주제 === '걷기와 맛집' && filled.행사정보.기획메모 === '30대 2인')
+
+  const empty = buildFormInput(raw)
+  check('미입력이면 form_input에 빈 문자열이다 (§7.4)',
+    empty.행사정보.여행주제 === '' && empty.행사정보.기획메모 === '')
+
+  const cd = buildConfirmedData(empty).data
+  check('여행주제 미입력은 `추후 추가 예정`으로 채운다 (화면에 표시되므로)',
+    cd.행사정보.여행주제 === '추후 추가 예정', cd.행사정보.여행주제)
+  check('기획메모 미입력은 **채우지 않는다** (고객에게 안 보이므로)',
+    cd.행사정보.기획메모 === '', cd.행사정보.기획메모)
+
+  const cdMemo = buildConfirmedData(filled).data
+  check('기획메모 입력분은 confirmed_data로 승계된다 (프롬프트 재료)',
+    cdMemo.행사정보.기획메모 === '30대 2인')
+
+  const br = buildBrochure(cdMemo, '요약 문장입니다.')
+  const overview = br.sections.find((s) => s.id === 'b_overview')!
+  check('소개서 개요에 여행주제가 실린다', '여행주제' in overview.data)
+  check('여행주제의 source가 `행사정보.여행주제`다',
+    overview.source.여행주제 === '행사정보.여행주제', overview.source.여행주제)
+
+  const allSources = br.sections.flatMap((s) => Object.values(s.source ?? {}))
+  check('어느 섹션의 source도 기획메모를 가리키지 않는다',
+    !allSources.some((v) => String(v).includes('기획메모')),
+    allSources.filter((v) => String(v).includes('기획메모')))
+  check('기획메모 원문이 소개서에 실리지 않는다',
+    !JSON.stringify(br).includes('30대 2인'))
+
+  // 상한 — 요약 섹션이 무너지지 않게, 프롬프트가 25초 예산을 밀어내지 않게.
+  check('여행주제 200자 초과는 거부된다',
+    !!validateFormInput(buildFormInput({ ...raw, 여행주제: '가'.repeat(201) }))['행사정보.여행주제'])
+  check('기획메모 1000자 초과는 거부된다',
+    !!validateFormInput(buildFormInput({ ...raw, 기획메모: '가'.repeat(1001) }))['행사정보.기획메모'])
+  check('상한 이내는 통과한다',
+    Object.keys(validateFormInput(buildFormInput({
+      ...raw, 여행주제: '가'.repeat(200), 기획메모: '가'.repeat(1000),
+    }))).length === 0)
+  check('타겟층 100자 초과도 거부된다 (긴 페르소나는 기획메모로 보낸다)',
+    !!validateFormInput(buildFormInput({ ...raw, 타겟층: '가'.repeat(101) }))['행사정보.타겟층'])
+}
 
 /* ── 결과 ────────────────────────────────────────────────────── */
 console.log(`\n${'─'.repeat(52)}`)

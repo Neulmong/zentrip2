@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server'
-import { runStep } from '@/lib/orchestrator'
+import { readUpdatedAt, runStep } from '@/lib/orchestrator'
 import { db } from '@/lib/supabase'
 import { ai, toLogOutput, ERROR_LABEL } from '@/lib/ai'
 import { withAxis, passedAxis, contentHash } from '@/lib/validation'
@@ -19,11 +19,12 @@ export const maxDuration = 60
  * 않으면 로그가 빠져 어떻게 임시저장에 도달했는지 알 수 없게 된다(§9.5).
  * 이때 `axis_3`은 `null`(미실행)로 남는다.
  */
-export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
+  const clientUpdatedAt = await readUpdatedAt(req)
 
   return runStep(
-    { route: 'validate-page', step: 'validation_2_completed', productId: id },
+    { route: 'validate-page', step: 'validation_2_completed', productId: id, clientUpdatedAt },
     async (p) => {
       const page = p.page_content as PageContent
 
@@ -37,7 +38,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
             content_hash: contentHash(page),
           },
         },
-        body: { current_step: 'draft_registered', items },
+        body: { current_step: 'draft_registered', axes: { axis_2: 'fail' as const }, items },
         detail: '2차 검증 재시도 소진 — draft 확정, axis_3은 미실행(null). '
           + '편집·[다시 생성]·책임 게시 경로가 유지된다.',
         // ②가 draft 전이와 로그를 함께 담당한다(§9.5)

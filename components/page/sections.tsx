@@ -120,6 +120,7 @@ export function Summary({ data, t }: SectionProps) {
       <Fields items={[
         ['여행기간', text(data, '여행기간')],
         ['여행지', text(data, '여행지')],
+        ['여행주제', text(data, '여행주제')],
         ['타겟층', text(data, '타겟층')],
         ['여행스타일', text(data, '여행스타일')],
       ]} />

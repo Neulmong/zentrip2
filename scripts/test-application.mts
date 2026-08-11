@@ -12,6 +12,7 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { FIXTURE_PAGE } from '../components/page/fixture'
+import { applicationSubject, applicationText } from '../lib/email-body'
 
 const BASE = process.env.TEST_BASE_URL ?? 'http://localhost:3000'
 const TO = process.env.TEST_EMAIL_TO ?? 'delivered@resend.dev'
@@ -45,7 +46,8 @@ async function seed(status: string) {
     form_input: {
       행사정보: {
         행사명, 여행지: '제주', 여행기간_시작: '2026-03-14', 여행기간_종료: '2026-03-17',
-        일정원문: '1일: 출발\n2일: 귀국', 타겟층: '가족', 여행스타일: '자연',
+        일정원문: '1일: 출발\n2일: 귀국', 타겟층: '가족', 여행스타일: '자연', 여행주제: '제주 걷기와 로컬 맛집 휴식',
+        기획메모: '',
       },
       숙박: { 숙소명: '제주 올레 호텔', 객실타입: '디럭스', 위치: '서귀포', 숙박일정: '3박 4일' },
       상점: { 상점명: '올레 기념품점', 상점정보: '7코스 입구' },
@@ -210,6 +212,57 @@ if (!process.env.KEEP) {
   await db.from('execution_logs').delete().eq('execution_id', EXEC)
   await db.from('products').delete().eq('execution_id', EXEC)
   console.log('\n임시 데이터 정리 완료. (KEEP=1로 보존 가능)')
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * §13.3 — 이메일 본문 구성
+ *
+ * 「신청자명, 상품명, 여행지, 여행기간, 숙소, 성인·아동 가격, 신청 인원수,
+ *  상품 페이지 URL, 문의 안내」가 **전부** 들어가야 한다.
+ *
+ * 이 검사가 없어서 소스 주석이 「9개 항목」이라고 적힌 채 남아 있었다.
+ * 개수를 주석으로 주장하지 말고 여기서 센다.
+ * ════════════════════════════════════════════════════════════════ */
+console.log('\n§13.3 이메일 본문 구성')
+{
+  const snapshot = {
+    행사명: '제주 올레 바람 여행', 여행지: '제주',
+    여행기간: '2026-03-14 ~ 2026-03-17', 숙소명: '롯데호텔 제주',
+    가격: { 성인: '120,000원', 아동: '해당 없음' },
+    url: 'https://example.test/p/jeju-olle',
+  }
+  const app = { name: '홍길동', headcount: 2, product_snapshot: snapshot }
+  const contact = process.env.CONTACT_INFO!
+  const text = applicationText(app, contact)
+
+  const REQUIRED: [string, string][] = [
+    ['신청자명', '홍길동'],
+    ['상품명', snapshot.행사명],
+    ['여행지', snapshot.여행지],
+    ['여행기간', snapshot.여행기간],
+    ['숙소', snapshot.숙소명],
+    ['성인 가격', snapshot.가격.성인],
+    ['아동 가격', snapshot.가격.아동],
+    ['신청 인원수', '2명'],
+    ['상품 페이지 URL', snapshot.url],
+    ['문의 안내', contact],
+  ]
+  for (const [label, value] of REQUIRED) {
+    check(`${label}이(가) 본문에 있다`, text.includes(value), { label, value })
+  }
+  check(`§13.3이 요구하는 항목이 ${REQUIRED.length}개 전부 있다`,
+    REQUIRED.every(([, v]) => text.includes(v)))
+
+  // §13.3 금지 — 총액 계산. 2명 × 120,000 = 240,000이 나오면 안 된다.
+  check('총액을 계산하지 않는다 (§13.3 금지)',
+    !text.includes('240,000') && !text.includes('240000'), text)
+
+  check('URL 안내 문구가 있다 (§13.3이 문구까지 규정)',
+    text.includes('상품이 마감·중단된 경우 링크가 열리지 않을 수 있습니다.'))
+  check('제목에 행사명이 들어간다',
+    applicationSubject(snapshot).includes(snapshot.행사명), applicationSubject(snapshot))
+  check('본문 데이터가 스냅샷에서만 온다 (현재 상품을 다시 읽지 않는다)',
+    !text.includes('undefined') && !text.includes('[object'), text)
 }
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`)

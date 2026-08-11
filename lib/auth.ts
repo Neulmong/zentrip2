@@ -77,28 +77,51 @@ export async function sessionIsValid(token: string | undefined): Promise<boolean
   }
 }
 
-// ── 로그인 시도 제한 (§14.2 "IP당 분당 5회") ────────────────────
-const WINDOW_MS = 60_000
-const MAX_ATTEMPTS = 5
-const attempts = new Map<string, number[]>()
-
-/**
+/* ── 로그인 시도 제한 (§14.2 "IP당 분당 5회") ──────────────────────
+ *
+ * **세는 것은 실패뿐이다.** 이 제한의 목적은 비밀번호 무차별 대입을 막는
+ * 것이므로, 세어야 할 것은 「비밀번호를 틀린 횟수」다.
+ *
+ * 성공까지 세면 정상 사용자가 자기 자신을 잠근다 — 실제로 테스트 스위트를
+ * 연속 실행했을 때 뒤쪽이 전부 「로그인 실패」로 떨어졌다. 공격자는 어차피
+ * 틀리므로 제한이 약해지지 않고, 막히는 쪽은 제대로 로그인하는 사람뿐이다.
+ *
+ * 성공하면 기록을 **지운다**. 비밀번호를 몇 번 헷갈렸다가 맞힌 사람이
+ * 그 뒤 1분간 잠기는 것도 같은 이유로 틀렸다 — 무차별 대입이 아니다.
+ *
  * ⚠ 알려진 한계: 인스턴스 메모리 기반이라 서버리스에서는 인스턴스별로 집계된다.
  * 데모 규모에서는 충분하지만, 엄밀한 전역 제한이 필요하면 저장소로 옮겨야 한다.
- */
+ * ───────────────────────────────────────────────────────────────── */
+const WINDOW_MS = 60_000
+const MAX_ATTEMPTS = 5
+const failures = new Map<string, number[]>()
+
+function recentFailures(ip: string, now: number): number[] {
+  return (failures.get(ip) ?? []).filter((t) => now - t < WINDOW_MS)
+}
+
+/** 검사만 한다 — 기록하지 않는다. 기록은 `recordFailedAttempt`의 몫이다. */
 export function rateLimitExceeded(ip: string): boolean {
+  return recentFailures(ip, Date.now()).length >= MAX_ATTEMPTS
+}
+
+/** 비밀번호가 틀렸을 때만 부른다. */
+export function recordFailedAttempt(ip: string): void {
   const now = Date.now()
-  const recent = (attempts.get(ip) ?? []).filter((t) => now - t < WINDOW_MS)
-  if (recent.length >= MAX_ATTEMPTS) {
-    attempts.set(ip, recent)
-    return true
-  }
+  const recent = recentFailures(ip, now)
   recent.push(now)
-  attempts.set(ip, recent)
-  if (attempts.size > 1000) {
-    for (const [k, v] of attempts) if (v.every((t) => now - t >= WINDOW_MS)) attempts.delete(k)
+  failures.set(ip, recent)
+
+  if (failures.size > 1000) {
+    for (const [k, v] of failures) {
+      if (v.every((t) => now - t >= WINDOW_MS)) failures.delete(k)
+    }
   }
-  return false
+}
+
+/** 로그인에 성공했다. 그 IP의 실패 이력을 지운다. */
+export function clearFailedAttempts(ip: string): void {
+  failures.delete(ip)
 }
 
 export function clientIp(headers: Headers): string {

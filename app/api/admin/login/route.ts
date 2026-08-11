@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import {
   SESSION_COOKIE, SESSION_MAX_AGE_SEC,
-  clientIp, issueSession, passwordMatches, rateLimitExceeded,
+  clearFailedAttempts, clientIp, issueSession, passwordMatches,
+  rateLimitExceeded, recordFailedAttempt,
 } from '@/lib/auth'
 
 /** spec §14.2 — 인증 불필요(로그인 화면에서 호출). middleware의 공개 경로다. */
@@ -25,9 +26,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (!(await passwordMatches(password))) {
+    // 무차별 대입으로 세는 것은 **여기뿐이다** — 성공은 세지 않는다(§14.2).
+    recordFailedAttempt(ip)
     // 어떤 부분이 틀렸는지 알려주지 않는다.
     return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
   }
+
+  // 맞혔다 — 그동안의 실패 이력을 지운다. 몇 번 헷갈렸다가 맞힌 사람을
+  // 그 뒤 1분간 잠그는 것은 이 제한의 목적이 아니다.
+  clearFailedAttempts(ip)
 
   const res = NextResponse.json({ ok: true })
   res.cookies.set({

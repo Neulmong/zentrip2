@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server'
-import { runStep } from '@/lib/orchestrator'
+import { readUpdatedAt, runStep } from '@/lib/orchestrator'
 import { ai, toLogOutput, ERROR_LABEL } from '@/lib/ai'
 import { withAxis, passedAxis } from '@/lib/validation'
 import {
@@ -17,11 +17,12 @@ export const maxDuration = 60
  * 소개서는 이미 만들어졌고 사용자 입력에는 문제가 없으므로, 검토 화면에서
  * 실패 항목을 보여주고 [다시 생성]·[입력 수정]을 제공하는 것이 맞다(§8.4).
  */
-export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
+  const clientUpdatedAt = await readUpdatedAt(req)
 
   return runStep(
-    { route: 'validate-brochure', step: 'validation_1_completed', productId: id },
+    { route: 'validate-brochure', step: 'validation_1_completed', productId: id, clientUpdatedAt },
     async (p) => {
       const exhaustedWith = (items: ValidationItem[]) => ({
         patch: {
@@ -29,7 +30,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
           validation_snapshot: withAxis(p.validation_snapshot, p.attempt_no, 'axis_1',
             { verdict: 'fail' as const, items }),
         },
-        body: { current_step: 'validation_1_completed', items },
+        body: { current_step: 'validation_1_completed', axes: { axis_1: 'fail' as const }, items },
         detail: '1차 검증 재시도 소진 — brochure_ready + axis_1 = fail 확정. '
           + '[상품 생성]이 잠기고 [다시 생성]·[입력 수정]이 제공된다.',
       })

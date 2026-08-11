@@ -36,6 +36,30 @@ const REFUSAL_REASONS = new Set<string>([
   FinishReason.PROHIBITED_CONTENT, FinishReason.SPII, FinishReason.IMAGE_SAFETY,
 ])
 
+/**
+ * 429 응답에서 **어떤 한도인지**를 뽑아 앞으로 끌어낸다.
+ *
+ * Gemini의 429 본문은 안내 문구·링크가 300자를 넘게 차지하고, 정작 필요한
+ * `quotaId`는 그 뒤에 온다. 메시지를 앞에서 잘라 저장하면 로그에 남는 것은
+ * 「한도 초과」뿐이고, **분당 한도인지 일일 한도인지 구분할 수 없다.**
+ * 실제로 그 때문에 원인 파악이 늦어졌다 — 기다리면 풀리는 문제로 오해했는데
+ * 실제로는 `GenerateRequestsPerDayPerProjectPerModel-FreeTier`(하루 20회)라
+ * 대기로는 풀리지 않는 것이었다.
+ */
+export function quotaSummary(msg: string): string | null {
+  const id = /"quotaId":\s*"([^"]+)"/.exec(msg)?.[1]
+  const value = /"quotaValue":\s*"?(\d+)"?/.exec(msg)?.[1]
+  const metric = /Quota exceeded for metric:\s*([^\s,\\]+)/.exec(msg)?.[1]
+  if (!id && !value && !metric) return null
+
+  const per = id?.includes('PerDay') ? '하루' : id?.includes('PerMinute') ? '분당' : null
+  return [
+    per && value ? `${per} ${value}회 한도` : null,
+    id ? `quotaId=${id}` : null,
+    metric ? `metric=${metric}` : null,
+  ].filter(Boolean).join(' · ')
+}
+
 function classify(err: unknown): { type: AiErrorType; detail: string; retryAfterMs?: number } {
   const e = err as { name?: string; message?: string; status?: number }
   const msg = e?.message ?? String(err)
@@ -45,15 +69,18 @@ function classify(err: unknown): { type: AiErrorType; detail: string; retryAfter
   }
   const code = Number(msg.match(/"code":\s*(\d+)/)?.[1] ?? e?.status ?? 0)
   if (code === 429) {
-    // 무료 티어는 분당 한도(RPM)가 낮아 짧은 구간에 호출이 몰리면 걸린다.
     // 제공자가 retryDelay를 주면 그만큼, 없으면 분 경계를 넘기도록 기본 20초 쉰다.
+    // ⚠ **일일 한도는 대기로 풀리지 않는다** — 아래 요약이 그 구분을 남긴다.
     const secs = Number(/"retryDelay":\s*"(\d+)s"/.exec(msg)?.[1] ?? 0)
+    const quota = quotaSummary(msg)
     return {
-      type: 'rate_limited', detail: msg.slice(0, 300),
+      type: 'rate_limited',
+      // 판별 정보를 **맨 앞에** 둔다. 뒤에 두면 잘려서 다시 못 읽는다.
+      detail: [quota, msg].filter(Boolean).join(' — ').slice(0, 1200),
       retryAfterMs: (secs > 0 ? secs : 20) * 1000,
     }
   }
-  return { type: 'api_error', detail: `${code || '?'} ${msg.slice(0, 300)}` }
+  return { type: 'api_error', detail: `${code || '?'} ${msg}`.slice(0, 1200) }
 }
 
 function readUsage(u: unknown): AiUsage {
@@ -66,6 +93,21 @@ function readUsage(u: unknown): AiUsage {
   }
 }
 
+/**
+ * ⚠ **`httpOptions.retryOptions`를 넘기지 마라** (§4.2 · A-14).
+ *
+ * `@google/genai`는 `retryOptions`가 **없으면 재시도하지 않는다**
+ * (`apiCall`: `if (!retryOptions) return runFetch()`). 넘기는 순간 p-retry가
+ * 켜지고, `attempts`를 생략하면 그때 기본값 **5**가 적용된다 — 재시도 대상에
+ * **429가 포함**되므로 한도에 한 번 걸리면 조용히 5번 호출되고 그 5번이 전부
+ * **하루 20회 쿼터에서 빠진다.**
+ *
+ * 타입 문서의 「If not specified, default to 5」는 `retryOptions`를 넘겼을 때
+ * `attempts` 필드의 기본값을 말한다. 옵션 자체를 안 넘긴 경우가 아니다.
+ *
+ * 재시도 판단은 §11.6의 카운터가 하고 재호출은 클라이언트가 한다.
+ * 실측: 429 응답에 대해 나가는 HTTP 요청 **1회**(`test:policy` U18).
+ */
 export function createGeminiProvider(apiKey: string, model = DEFAULT_MODEL): AiProvider {
   const ai = new GoogleGenAI({ apiKey })
 

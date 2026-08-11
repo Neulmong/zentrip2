@@ -62,6 +62,25 @@ export function discardAxes(
   return { ...base, attempt_no, axes, verdict: computeVerdict(axes) }
 }
 
+/**
+ * 스냅샷의 축 → §14.6 응답의 `axes` 판정 맵.
+ *
+ * 응답의 `axes`는 **판정값만** 담는다(`{axis_0: "pass"}`). 스냅샷 원본은
+ * `{verdict, items, skipped}` 객체라 모양이 다르므로, 그대로 실어 보내면
+ * 같은 필드가 라우트마다 두 가지 모양이 된다 — 클라이언트가 판정을 읽지
+ * 못한다. 미실행 축(`null`)은 키 자체를 넣지 않는다.
+ */
+export function axisVerdicts(
+  snapshot: ValidationSnapshot | null,
+): Partial<Record<AxisName, 'pass' | 'fail'>> {
+  const out: Partial<Record<AxisName, 'pass' | 'fail'>> = {}
+  for (const a of ALL_AXES) {
+    const v = snapshot?.axes?.[a]?.verdict
+    if (v) out[a] = v
+  }
+  return out
+}
+
 /** 실패 1건짜리 축 결과. 생성 실패를 축 실패로 기록할 때 쓴다(§8.3). */
 export function failedAxis(item: ValidationItem, skipped?: string[]): AxisResult {
   return { verdict: 'fail', items: [item], ...(skipped ? { skipped } : {}) }

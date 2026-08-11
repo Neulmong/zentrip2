@@ -61,7 +61,8 @@ for (const [k, v] of Object.entries({
   숙소명: '롯데호텔 제주', 객실타입: '디럭스룸', 위치: '중문',
   상점명: '제주 로컬 기념품 숍', 상점정보: '여행객 10% 할인',
   가격_성인: '120000', 가격_아동: '해당 없음', 가격_기타: '항공료 별도',
-  식사정보: '조식 3회, 중식 2회, 석식 1회', 여행스타일: '자연',
+  식사정보: '조식 3회, 중식 2회, 석식 1회', 여행스타일: '자연', 여행주제: '제주 걷기와 로컬 맛집 휴식',
+  기획메모: '',
 })) fd.set(k, v)
 
 const created = await (await fetch(`${BASE}/api/products`, {
@@ -71,12 +72,28 @@ check('상품 등록 200 + product_id', typeof created.product_id === 'string', 
 if (!created.product_id) { console.error('여기서 멈춘다.'); process.exit(1) }
 const pid: string = created.product_id
 
+
+/**
+ * §16.1.1 — 조회 시점을 **이어서 나른다.** 실제 클라이언트가 그렇게 하므로
+ * (`lib/client/run-pipeline.ts`) 보내지 않는 하니스는 잠금이 걸린 앱을
+ * 잠금 없는 앱처럼 재게 된다.
+ */
+let updatedAt: string | undefined = await (async () => {
+  const r = await fetch(`${BASE}/api/products/${pid}`, { headers: { cookie } })
+  const seen = await r.json().catch(() => ({}))
+  return typeof seen?.updated_at === 'string' ? seen.updated_at : undefined
+})()
+
 const post = async (path: string, body?: unknown) => {
   const r = await fetch(`${BASE}/api/products/${pid}/${path}`, {
     method: 'POST', headers: { cookie, 'content-type': 'application/json' },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    body: JSON.stringify({ ...(updatedAt ? { updated_at: updatedAt } : {}), ...(body ?? {}) }),
   })
-  return { status: r.status, body: await r.json().catch(() => ({})) }
+  const parsed = { status: r.status, body: await r.json().catch(() => ({})) }
+  // 행이 갱신됐으면 새 값으로 바꿔 든다 — 200이든 409 retry든.
+  const next = (parsed.body as { updated_at?: unknown })?.updated_at
+  if (typeof next === 'string') updatedAt = next
+  return parsed
 }
 
 /**
@@ -115,13 +132,43 @@ async function step(path: string, tries = 3) {
 }
 const row = async () => (await db.from('products').select('*').eq('id', pid).single()).data!
 
+/**
+ * 한 묶음을 **실제 클라이언트와 같은 규칙으로** 돌린다(`lib/client/run-pipeline.ts`).
+ *
+ * 멈추는 조건이 둘이다 — 둘 다 「더 호출해도 소용없다」는 뜻이고,
+ * 그 상태에서 다음 단계를 부르면 §14.5의 시작 조건에서 409 precondition만 나온다:
+ *
+ *   422           입력 문제로 중단(§14.6) → 폼 화면으로 이동
+ *   200 + axes fail  검증 실패 확정(§14.6) → 검토 화면으로 이동
+ *
+ * 멈춘 뒤의 단계를 계속 호출하면 **실패가 부풀려져** 진짜 원인이 묻힌다.
+ * 앱보다 멍청한 하니스는 앱을 잘못 재는 것이므로 여기서 같은 규칙을 쓴다.
+ */
+let halted: string | null = null
+async function runGroup(names: string[]) {
+  for (const name of names) {
+    if (halted) {
+      console.log(`     ⏭  ${name} — ${halted}로 이미 멈춤 (클라이언트는 호출하지 않는다)`)
+      continue
+    }
+    const r = await step(name)
+
+    if (r.status === 422) {
+      halted = '입력 오류(422)'
+      check(`${name} 200 (fail 확정 아님)`, false,
+        { status: 422, failure_reason: r.body?.failure_reason, 다음화면: `/new?product_id=${pid}` })
+      continue
+    }
+
+    const bad = failedAxis(r.body)
+    if (r.status === 200 && bad) halted = `${bad} fail 확정`
+    check(`${name} 200 (fail 확정 아님)`, r.status === 200 && !bad, r)
+  }
+}
+
 /* ══ 0:50 소개서 생성 = 4요청 ════════════════════════════════════ */
 cue('0:50', '[소개서 생성] — 클라이언트가 4요청을 순차 호출 (§8.5)')
-for (const name of ['decompose', 'brochure', 'validate-brochure']) {
-  const r = await step(name)
-  const bad = failedAxis(r.body)
-  check(`${name} 200 (fail 확정 아님)`, r.status === 200 && !bad, r)
-}
+await runGroup(['decompose', 'brochure', 'validate-brochure'])
 const afterBrochure = await row()
 check('status = brochure_ready (§15.2)', afterBrochure.status === 'brochure_ready',
   afterBrochure.status)
@@ -136,11 +183,7 @@ check('소개서 검토 화면에 8섹션이 그려진다',
 
 /* ══ 1:15 상품 생성 = 3요청 ══════════════════════════════════════ */
 cue('1:15', '[상품 생성] — 3요청 순차 호출 (§9.6)')
-for (const name of ['page', 'validate-page', 'validate-consistency']) {
-  const r = await step(name)
-  const bad = failedAxis(r.body)
-  check(`${name} 200 (fail 확정 아님)`, r.status === 200 && !bad, r)
-}
+await runGroup(['page', 'validate-page', 'validate-consistency'])
 const afterPage = await row()
 check('status = draft (§15.2)', afterPage.status === 'draft', afterPage.status)
 check('검증 4축 전부 pass (§20 1:15 — 절대 자르지 않는 컷)',
