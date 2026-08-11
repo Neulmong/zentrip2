@@ -191,6 +191,53 @@ export function publishProcedure(p: StatusInput): PublishProcedure {
 /** §15.2 — [게시]로 `published`에 갈 수 있는 상태. `input_error`에는 경로가 없다(§11.5). */
 export const PUBLISHABLE_STATUSES: ProductStatus[] = ['draft', 'reviewing', 'unpublished']
 
+/* ── 삭제 게이트 (§12.4 · #18) ─────────────────────────────────── */
+
+/**
+ * §12.4가 금지하는 상태는 `published` 하나다. 나머지 6개는 전부 삭제할 수 있고,
+ * **`generating`도 포함된다** — 「진행 주체가 사라진 상품을 정리하는 것이 이
+ * 기능의 주 용도」라고 §12.4가 명시한다(§15.1.1).
+ *
+ * 그래서 목록을 열거하지 않고 `published`만 뺀다. 열거하면 상태가 늘 때
+ * 빠뜨리고, 그때 「지울 수 없는 상품」이 조용히 생긴다.
+ */
+export const UNDELETABLE_STATUS: ProductStatus = 'published'
+
+export interface DeleteInput {
+  status: ProductStatus
+  /** 이 상품에 `applications` 행이 1건 이상 있는가 */
+  hasApplications: boolean
+}
+
+export type DeleteGate =
+  | { ok: true }
+  /** §14.6 — 미충족은 409 `precondition` + 사유. 재호출로는 풀리지 않는다 */
+  | { ok: false; detail: string }
+
+/**
+ * 서버의 최종 판정 (§14.4 #18 · §12.4).
+ *
+ * 신청이 있으면 막는 이유는 §12.3이 신청 데이터 보존을 규정하기 때문이다 —
+ * 상품만 지우면 고아 신청이 남는다. DB의 `on delete restrict`가 같은 것을
+ * 강제하지만(§5.3) 그쪽은 오류 메시지가 영문 제약 이름이라 화면에 쓸 수 없다.
+ * 판정을 여기서 하고 DB 제약은 최후 방어선으로 둔다.
+ */
+export function deleteGate(p: DeleteInput): DeleteGate {
+  if (p.status === UNDELETABLE_STATUS) {
+    return {
+      ok: false,
+      detail: '게시 중인 상품은 삭제할 수 없습니다. 먼저 [게시 중단]을 해주세요.',
+    }
+  }
+  if (p.hasApplications) {
+    return {
+      ok: false,
+      detail: '신청 내역이 있는 상품은 삭제할 수 없습니다. 신청 내역을 먼저 삭제해 주세요.',
+    }
+  }
+  return { ok: true }
+}
+
 export interface PublishInput extends StatusInput {
   slug: string | null
   /** `page_content`가 있는가. 없으면 공개할 내용 자체가 없다 */

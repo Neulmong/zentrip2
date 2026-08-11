@@ -14,7 +14,7 @@ import { RETRY_COUNTERS, RETRY_LIMIT, type ProductRow, type ValidationSnapshot }
 import { validateFormInput, buildFormInput, tripDays, hasDayMarker, combineTripPeriod } from '../lib/form-validation'
 import {
   describeStatus, screenPath, verificationBadge, editBadge,
-  publishGate, publishProcedure, PUBLISHABLE_STATUSES,
+  publishGate, publishProcedure, PUBLISHABLE_STATUSES, deleteGate,
 } from '../lib/status-view'
 import {
   diffSections, LENGTH_LIMITS_SAVE, moveSection, renumber, same, validateEdit,
@@ -708,6 +708,34 @@ for (const status of ['draft', 'reviewing', 'unpublished', 'generating', 'input_
 check('게시 중단은 확인을 받는다 (공개 페이지가 즉시 404가 된다)',
   !!describeStatus(product({ status: 'published', validation_snapshot: passSnap }))
     .buttons.find((b) => b.key === 'unpublish')?.confirm)
+
+/* ── U14. 상품 삭제 (§12.4·§14.4 #18) ───────────────────────── */
+section('U14 — 상품 삭제 (§12.4)')
+
+const ALL_STATUSES = [
+  'generating', 'input_error', 'brochure_ready', 'draft', 'reviewing', 'published', 'unpublished',
+] as const
+
+check('published만 삭제할 수 없다',
+  !deleteGate({ status: 'published', hasApplications: false }).ok)
+for (const status of ALL_STATUSES.filter((s) => s !== 'published')) {
+  check(`${status}는 삭제할 수 있다`,
+    deleteGate({ status, hasApplications: false }).ok)
+}
+// §12.4 — 「진행 주체가 사라진 상품을 정리하는 것이 이 기능의 주 용도」
+check('generating도 삭제할 수 있다 (§15.1.1 정리 용도)',
+  deleteGate({ status: 'generating', hasApplications: false }).ok)
+
+check('신청이 있으면 어느 상태에서도 삭제할 수 없다',
+  ALL_STATUSES.every((status) => !deleteGate({ status, hasApplications: true }).ok))
+check('막힌 사유가 두 경우에 서로 다르다 (화면에 그대로 쓴다)',
+  deleteGate({ status: 'published', hasApplications: false }).ok === false
+  && deleteGate({ status: 'draft', hasApplications: true }).ok === false
+  && (deleteGate({ status: 'published', hasApplications: false }) as { detail: string }).detail
+     !== (deleteGate({ status: 'draft', hasApplications: true }) as { detail: string }).detail)
+check('게시 중 + 신청 있음은 게시 중단 안내가 먼저다 (풀어야 할 순서)',
+  (deleteGate({ status: 'published', hasApplications: true }) as { detail: string })
+    .detail.includes('게시 중단'))
 
 /* ── 결과 ────────────────────────────────────────────────────── */
 console.log(`\n${'─'.repeat(52)}`)

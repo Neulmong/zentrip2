@@ -8,6 +8,7 @@ import type { LogStep } from '@/lib/types'
 import { VERDICT_LABEL, type AxisName, type ValidationItem } from '@/lib/types'
 import type { BrochureContent, BrochureSection } from '@/lib/pipeline/brochure'
 import { StatusBadges } from '@/components/admin/badges'
+import { DeleteProduct } from '@/components/admin/DeleteProduct'
 import { ProductActions } from './actions'
 
 /**
@@ -261,6 +262,15 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         updated_at={p.updated_at}
         // §11.5 책임 게시 모달은 실패 항목 **전체**를 열람시켜야 한다
         failed_items={failedItems}
+      />
+
+      {/* §12.4 — §15.1 표에 없는 별도 규정이라 별도 자리에 둔다 */}
+      <DeleteProduct
+        id={p.id}
+        행사명={p.form_input?.행사정보?.행사명 ?? '(행사명 없음)'}
+        status={p.status}
+        hasApplications={applications.length > 0}
+        updated_at={p.updated_at}
       />
     </main>
   )
