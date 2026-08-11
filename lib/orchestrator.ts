@@ -31,6 +31,20 @@ export async function loadProduct(id: string): Promise<ProductRow | null> {
 }
 
 /**
+ * 실행 로그 뷰(§14.3)의 조회 경로. `execution_id`에는 UNIQUE 제약이 있다(§5.1).
+ *
+ * 상품이 없어도 로그는 남아 있을 수 있다 — §12.4가 상품 삭제 시 로그를
+ * `product_id = null`로 보존하도록 규정하므로, 호출부는 `null`을 「로그 화면을
+ * 못 그린다」가 아니라 「상품 정보 없이 그린다」로 다뤄야 한다.
+ */
+export async function loadProductByExecution(execution_id: string): Promise<ProductRow | null> {
+  const { data, error } = await db()
+    .from('products').select('*').eq('execution_id', execution_id).maybeSingle()
+  if (error) throw new Error(`상품 조회 실패: ${error.message}`)
+  return (data as ProductRow | null) ?? null
+}
+
+/**
  * 공개 페이지(`/p/{slug}`)와 신청 접수(§13.2 2항)의 조회 경로.
  *
  * **상태 조건을 호출부에 맡기지 않고 쿼리에 넣는다.** §4.1은 「`published` 외

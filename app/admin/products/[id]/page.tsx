@@ -76,9 +76,13 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           <h1 className="text-2xl font-semibold tracking-tight">
             {p.form_input?.행사정보?.행사명 ?? '(행사명 없음)'}
           </h1>
-          <Link href="/admin" className="shrink-0 text-sm text-neutral-500 hover:text-neutral-900">
-            목록
-          </Link>
+          <div className="flex shrink-0 gap-4 text-sm text-neutral-500">
+            {/* §20 마지막 컷이 로그 화면이다. 상세에서 한 번에 넘어갈 수 있어야 한다 */}
+            <Link href={`/admin/logs/${p.execution_id}`} className="hover:text-neutral-900">
+              실행 로그
+            </Link>
+            <Link href="/admin" className="hover:text-neutral-900">목록</Link>
+          </div>
         </div>
         {/* §10.4 — 검증축·편집축은 서로 독립이라 동시에 붙을 수 있다 */}
         <StatusBadges p={p} className="mt-3" />

@@ -15,6 +15,7 @@
     "test:pipeline": "tsx --env-file=.env.local scripts/test-pipeline.mts",
     "test:publish": "tsx --env-file=.env.local scripts/test-publish.mts",
     "test:application": "tsx --env-file=.env.local scripts/test-application.mts",
+    "test:logs": "tsx --env-file=.env.local scripts/test-logs.mts",
     "probe:solar": "tsx --env-file=.env.local scripts/probe-solar.mts"
   },
   "dependencies": {

@@ -46,6 +46,46 @@ export async function appendLog(entry: LogEntry): Promise<void> {
   }
 }
 
+/* ── 조회 (§14.3 실행 로그 뷰) ─────────────────────────────────── */
+
+export interface LogRow extends LogEntry {
+  id: number
+  created_at: string
+}
+
+/**
+ * 한 실행의 전체 이력. **필터를 걸지 않는다** — §14.3이 「단일 화면에서 전체
+ * 이력과 이상 플래그를 모두 확인」을 요구하므로 탭 분류는 화면에서 한다.
+ * 서버에서 `category`로 걸러 오면 탭을 바꿀 때마다 재조회가 필요하다.
+ *
+ * `id` 순서로 정렬한다. `created_at`은 밀리초까지만 저장되므로(§5.4) 같은
+ * 요청 안에서 연달아 쓴 두 행이 같은 값을 가질 수 있고, 그러면 §13.2의
+ * 「로그가 메일보다 먼저」 같은 순서가 화면에서 뒤집혀 보인다.
+ */
+export async function loadLogs(execution_id: string): Promise<LogRow[]> {
+  const { data, error } = await db()
+    .from('execution_logs').select('*')
+    .eq('execution_id', execution_id)
+    .order('id', { ascending: true })
+  if (error) throw new Error(`로그 조회 실패: ${error.message}`)
+  return (data ?? []) as LogRow[]
+}
+
+export interface FlagRow extends FlagEntry {
+  id: number
+  detected_at: string
+}
+
+/** 감지된 것만 있다(§5.5). 「이상 없음」 행은 애초에 기록되지 않는다. */
+export async function loadFlags(execution_id: string): Promise<FlagRow[]> {
+  const { data, error } = await db()
+    .from('abnormality_flags').select('*')
+    .eq('execution_id', execution_id)
+    .order('id', { ascending: true })
+  if (error) throw new Error(`이상 플래그 조회 실패: ${error.message}`)
+  return (data ?? []) as FlagRow[]
+}
+
 /* ────────────────────────────────────────────────────────────────
  * abnormality_flags (§5.5)
  * ──────────────────────────────────────────────────────────────── */
