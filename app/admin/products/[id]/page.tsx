@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import { loadProduct } from '@/lib/orchestrator'
 import { VERDICT_LABEL, type AxisName, type ValidationItem } from '@/lib/types'
 import type { BrochureContent, BrochureSection } from '@/lib/pipeline/brochure'
-import { BrochureActions } from './actions'
+import { StatusBadges } from '@/components/admin/badges'
+import { ProductActions } from './actions'
 
 /**
  * spec §14.1·§8.9 — 상품 상세 = 소개서 검토 화면.
@@ -66,7 +67,6 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const snap = p.validation_snapshot
   const axes: AxisName[] = ['axis_0', 'axis_1', 'axis_2', 'axis_3']
   const brochure = p.brochure_content as BrochureContent | null
-  const axis1 = snap?.axes?.axis_1
   const failedItems: ValidationItem[] = axes.flatMap((a) => snap?.axes?.[a]?.items ?? [])
 
   return (
@@ -80,8 +80,10 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             목록
           </Link>
         </div>
+        {/* §10.4 — 검증축·편집축은 서로 독립이라 동시에 붙을 수 있다 */}
+        <StatusBadges p={p} className="mt-3" />
+
         <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-neutral-600">
-          <div><dt className="inline text-neutral-400">상태 </dt><dd className="inline font-medium">{p.status}</dd></div>
           <div><dt className="inline text-neutral-400">단계 </dt><dd className="inline">{p.current_step}</dd></div>
           <div><dt className="inline text-neutral-400">시도 </dt><dd className="inline">{p.attempt_no}회차</dd></div>
           {p.slug && <div><dt className="inline text-neutral-400">slug </dt><dd className="inline font-mono text-xs">{p.slug}</dd></div>}
@@ -152,9 +154,15 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         </p>
       )}
 
-      {p.status === 'brochure_ready' && (
-        <BrochureActions productId={p.id} canCreate={axis1?.verdict === 'pass'} />
-      )}
+      {/* 상태별 버튼 (§15.1) — 어떤 버튼을 그릴지는 규칙표가 정한다 */}
+      <ProductActions
+        id={p.id}
+        current_step={p.current_step}
+        status={p.status}
+        validation_snapshot={p.validation_snapshot}
+        human_edited={p.human_edited}
+        publish_override_at={p.publish_override_at}
+      />
     </main>
   )
 }

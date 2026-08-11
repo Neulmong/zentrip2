@@ -4,7 +4,10 @@
  * 분리한 이유: 여기가 2.2 → 2.4에서 뒤집힌 규정이 가장 많이 모인 곳이라
  * 단독으로 검증할 수 있어야 한다(`npm run test:policy`).
  */
-import { RETRY_LIMIT, type ProductRow, type RetryCounter, type RetryCounts } from './types'
+import {
+  RETRY_LIMIT,
+  type AxisName, type CurrentStep, type ProductRow, type RetryCounter, type RetryCounts,
+} from './types'
 import { axisPassed } from './validation'
 
 /* ════════════════════════════════════════════════════════════════
@@ -97,6 +100,89 @@ export function checkPrecondition(route: RouteKey, p: ProductRow): string | null
   const pc = PRECONDITIONS[route]
   return pc.ok(p) ? null : pc.detail
 }
+
+/* ════════════════════════════════════════════════════════════════
+ * 되돌림 범위 (§15.3) — [다시 생성] · [처음부터 다시] · 입력 재제출
+ *
+ * ⚠ `validation_snapshot`을 통째로 비우면 §14.5의 시작 조건
+ *   (`axis_0 = pass` · `axis_1 = pass`)을 충족할 수 없어 **재실행 자체가
+ *   거부된다.** 시작점 이전 축은 반드시 보존한다.
+ * ════════════════════════════════════════════════════════════════ */
+
+/** 재실행 시작점 — §14.4 표의 라우트 번호. `retry_from`과 같은 체계다. */
+export type RestartPoint = 2 | 3 | 5
+
+/** 되돌리며 비울 산출물 컬럼. */
+export type OutputColumn = 'confirmed_data' | 'brochure_content' | 'page_content'
+
+export interface RestartPlan {
+  from: RestartPoint
+  /** `current_step`을 이 값으로 되돌린다 — 시작점의 직전 단계다 */
+  currentStep: CurrentStep
+  /** 폐기할 축. 시작점 **이후**만 해당한다 */
+  discard: AxisName[]
+  /** 비울 산출물. 시작점 **이후**에 만들어지는 것 전부 */
+  clear: OutputColumn[]
+}
+
+/**
+ * 시작점별 되돌림 3종.
+ *
+ * ## 산출물을 「시작점 이후 전부」 비우는 근거
+ *
+ * §15.3의 표는 `brochure_ready` 행의 폐기 산출물로 `brochure_content`만
+ * 적었지만, 같은 절의 본문 규칙은 **「폐기: 시작점 이후의 산출물」**이고
+ * `generating` 행의 같은 칸도 「시작점 이후 산출물」이라고 적혀 있다.
+ *
+ * 소개서를 다시 만들면서 그 소개서에서 파생된 `page_content`를 남겨두면,
+ * 페이지의 `source`가 **이미 사라진 소개서**를 가리키게 된다 —
+ * §16.1의 값 무결성이 깨지는 상태다. 그래서 본문 규칙을 따른다.
+ * 어차피 다음 [상품 생성]이 덮어쓰므로 잃는 것도 없다.
+ */
+const AT_DECOMPOSE: RestartPlan = {
+  from: 2, currentStep: 'pipeline_started',
+  discard: ['axis_0', 'axis_1', 'axis_2', 'axis_3'],
+  clear: ['confirmed_data', 'brochure_content', 'page_content'],
+}
+const AT_BROCHURE: RestartPlan = {
+  from: 3, currentStep: 'normalization_validated',
+  discard: ['axis_1', 'axis_2', 'axis_3'],
+  clear: ['brochure_content', 'page_content'],
+}
+const AT_PAGE: RestartPlan = {
+  from: 5, currentStep: 'validation_1_completed',
+  discard: ['axis_2', 'axis_3'],
+  clear: ['page_content'],
+}
+
+/**
+ * [다시 생성](§15.3) · [처음부터 다시](§15.1.1)의 되돌림 계획.
+ *
+ * | 이전 상태 | 시작점 | 근거 |
+ * |---|---|---|
+ * | `brochure_ready` | §8.3 ③ `/brochure` | 소개서가 불만이라 누르는 버튼이다 |
+ * | `draft` | §9.5 ① `/page` | 소개서는 통과했고 페이지만 다시 만든다 |
+ * | `generating` | 축 판정으로 결정 | 어디까지 진행됐는지 모른다 |
+ *
+ * `brochure_ready`에서 `axis_1 = pass`여도 §8.3 ③으로 간다 — 축으로 판정하면
+ * ⑤로 가버려서 「소개서를 다시 만든다」는 이 버튼의 의미가 사라진다.
+ * `generating`만 축으로 판정하는 이유는 그 상태에서 진행 지점을 알 수 없기 때문이다.
+ */
+export function planRestart(p: ProductRow): RestartPlan {
+  if (p.status === 'brochure_ready') return AT_BROCHURE
+  if (p.status === 'draft') return AT_PAGE
+
+  // generating — §14.5와 같은 「재료 기준」이다
+  if (axisPassed(p, 'axis_1')) return AT_PAGE
+  if (axisPassed(p, 'axis_0')) return AT_BROCHURE
+  return AT_DECOMPOSE
+}
+
+/**
+ * 입력 재제출(§14.4 #17)의 되돌림. **언제나 §8.2 ②부터다.**
+ * `form_input`이 바뀌었으므로 그것에서 파생된 모든 산출물과 축이 무효다.
+ */
+export const RESUBMIT_PLAN: RestartPlan = AT_DECOMPOSE
 
 /* ════════════════════════════════════════════════════════════════
  * 재시도 카운터 (§11.6) — **4종**, 예산 비공유

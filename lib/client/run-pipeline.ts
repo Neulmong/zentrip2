@@ -27,6 +27,43 @@ export const PAGE_PHASES: Phase[] = [
   { num: 7, path: 'validate-consistency', label: '소개서와 대조 중…' },
 ]
 
+/**
+ * §15.1.1 — `current_step` → 다음 호출 대상.
+ * **이 표가 클라이언트 재개 규칙의 단일 출처다.**
+ *
+ * `validation_3_completed`·`draft_registered`는 없다 — 그 단계가 끝나면 `draft`로
+ * 전이하므로 `generating`에서 나타날 수 없고, 따라서 재개 대상도 아니다.
+ */
+const RESUME_AT: Record<string, number> = {
+  pipeline_started: 2,
+  normalization_validated: 3,
+  brochure_generated: 4,
+  validation_1_completed: 5,
+  page_generated: 6,
+  validation_2_completed: 7,
+}
+
+/**
+ * 라우트 번호부터 **그 묶음의 끝까지**를 돌려준다.
+ *
+ * 소개서(②③④)와 페이지(⑤⑥⑦)는 서로 다른 사용자 조작이므로 이어 붙이지 않는다 —
+ * ④가 끝나면 기획자가 소개서를 검토하고 [상품 생성]을 눌러야 ⑤가 시작된다(§8.5·§9.6).
+ * 한 번에 ⑦까지 달리면 검토 단계가 사라진다.
+ */
+export function phasesFrom(num: number): Phase[] {
+  for (const group of [BROCHURE_PHASES, PAGE_PHASES]) {
+    const i = group.findIndex((p) => p.num === num)
+    if (i >= 0) return group.slice(i)
+  }
+  return []
+}
+
+/** [이어서 진행](§15.1.1) — 멈춘 지점부터 남은 단계. */
+export function resumePhases(currentStep: string): Phase[] {
+  const num = RESUME_AT[currentStep]
+  return num === undefined ? [] : phasesFrom(num)
+}
+
 export type PipelineOutcome =
   | { kind: 'done'; body: Record<string, unknown> }
   /** 입력 문제로 중단 — 폼으로 돌아가 사유를 표시한다(§14.6 422) */
