@@ -162,6 +162,9 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         validation_snapshot={p.validation_snapshot}
         human_edited={p.human_edited}
         publish_override_at={p.publish_override_at}
+        updated_at={p.updated_at}
+        // §11.5 책임 게시 모달은 실패 항목 **전체**를 열람시켜야 한다
+        failed_items={failedItems}
       />
     </main>
   )

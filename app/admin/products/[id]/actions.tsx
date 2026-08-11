@@ -5,8 +5,12 @@ import { useRouter } from 'next/navigation'
 import {
   runPipeline, phasesFrom, resumePhases, PAGE_PHASES, type Phase,
 } from '@/lib/client/run-pipeline'
-import { describeStatus, type ActionButton, type StatusInput } from '@/lib/status-view'
+import {
+  describeStatus, publishProcedure, type ActionButton, type StatusInput,
+} from '@/lib/status-view'
 import { isAvailable } from '@/components/admin/available'
+import { PublishDialog } from '@/components/admin/PublishDialog'
+import type { ValidationItem } from '@/lib/types'
 
 /**
  * 상세 화면의 상태별 버튼 (§15.1) — **실행 지점**.
@@ -22,6 +26,10 @@ import { isAvailable } from '@/components/admin/available'
 export interface ActionsProps extends StatusInput {
   id: string
   current_step: string
+  /** §16.1.1 — 게시·게시 중단이 되돌려 보낼 「읽은 시점」 */
+  updated_at: string
+  /** §11.5 책임 게시 모달이 **전부** 열람시켜야 하는 실패 항목 */
+  failed_items: ValidationItem[]
 }
 
 export function ProductActions(p: ActionsProps) {
@@ -29,6 +37,8 @@ export function ProductActions(p: ActionsProps) {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** 열려 있으면 그 모드의 게시 확인 모달을 띄운다(§11.5) */
+  const [dialog, setDialog] = useState<'override' | 'acknowledge' | null>(null)
 
   const view = describeStatus(p)
   const buttons = view.buttons.filter((b) => isAvailable(b.key))
@@ -80,8 +90,57 @@ export function ProductActions(p: ActionsProps) {
     await run(phasesFrom(body.restart_from))
   }
 
+  /**
+   * 게시 (§11.5 → #12) · 게시 중단 (#13).
+   *
+   * §14.6 — #12의 미통과는 **403**이다. 클라이언트는 재호출하지 않고 버튼을
+   * 비활성 상태로 두고 사유를 표시한다. 재호출로 풀리는 문제가 아니다.
+   */
+  async function togglePublish(path: 'publish' | 'unpublish', override = false) {
+    setBusy(true)
+    setError(null)
+    setProgress(path === 'publish' ? '게시 중…' : '게시 중단 중…')
+
+    const res = await fetch(`/api/products/${p.id}/${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ updated_at: p.updated_at, ...(override ? { override } : {}) }),
+    }).catch(() => null)
+
+    setProgress(null)
+    setBusy(false)
+    setDialog(null)
+
+    if (!res) { setError('네트워크 오류가 발생했습니다. 다시 시도해 주세요.'); return }
+    const body = await res.json().catch(() => ({}))
+
+    if (res.ok) { router.refresh(); return }
+
+    if (res.status === 403) {
+      setError(`게시할 수 없습니다 — ${body.reason ?? '게시 게이트를 통과하지 못했습니다.'}`)
+      return
+    }
+    if (res.status === 409 && (body.reason === 'stale' || body.reason === 'precondition')) {
+      setError('다른 곳에서 이 상품이 변경됐습니다. 새로고침 후 다시 시도해 주세요.')
+      return
+    }
+    setError(body.message ?? body.reason ?? `요청이 실패했습니다 (${res.status}).`)
+  }
+
   async function handle(b: ActionButton) {
-    // §11.5·§15.3의 명시적 확인. 책임 게시의 실패 항목 열람 모달은 5단계에서 붙인다.
+    /*
+     * 게시는 확인 절차가 §11.5의 규정이라 `window.confirm`으로 대체할 수 없다 —
+     * 실패 항목 **전체 열람**과 체크박스 게이트를 담을 수 없기 때문이다.
+     * 나머지 확인(§15.3 [다시 생성], §12.3 [게시 중단])은 문장 하나라 확인창으로 족하다.
+     */
+    if (b.key === 'publish') {
+      const proc = publishProcedure(p)
+      if (proc.kind === 'plain') { await togglePublish('publish'); return }
+      if (proc.kind === 'blocked') { setError(proc.reason); return }
+      setDialog(proc.kind)
+      return
+    }
+
     if (b.confirm && !window.confirm(b.confirm)) return
 
     setBusy(true)
@@ -98,6 +157,12 @@ export function ProductActions(p: ActionsProps) {
         case 'restart':
         case 'regenerate':
           await regenerate()
+          break
+        case 'edit':
+          router.push(`/admin/products/${p.id}/edit`)
+          break
+        case 'unpublish':
+          await togglePublish('unpublish')
           break
         case 'edit-input':
         case 'resubmit':
@@ -141,6 +206,16 @@ export function ProductActions(p: ActionsProps) {
       ))}
 
       {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
+
+      {dialog && (
+        <PublishDialog
+          mode={dialog}
+          items={p.failed_items}
+          busy={busy}
+          onCancel={() => setDialog(null)}
+          onConfirm={(override) => togglePublish('publish', override)}
+        />
+      )}
     </div>
   )
 }

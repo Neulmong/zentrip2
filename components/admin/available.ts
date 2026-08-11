@@ -13,11 +13,14 @@ import type { ButtonKey } from '@/lib/status-view'
  * | 버튼 | 언제 지우나 |
  * |---|---|
  * | ~~`edit`~~ | ~~4단계~~ — 완료(`/admin/products/{id}/edit`) |
- * | `publish` · `unpublish` | 5단계 — API #12·#13 |
+ * | ~~`publish` · `unpublish`~~ | ~~5단계~~ — 완료(API #12·#13) |
  *
- * **이 파일은 6단계가 끝나면 통째로 지운다.**
+ * **§15.1의 버튼 9종이 전부 연결됐다.** 목록이 비었으므로 `isAvailable()`은
+ * 항상 `true`다 — 6단계(공개 페이지)가 끝나면 이 파일과 호출부를 함께 지운다.
+ * 지금 지우지 않는 이유는 그 정리가 5단계 커밋에 섞이면 무엇이 게시 구현이고
+ * 무엇이 비계 철거인지 diff에서 갈라지지 않기 때문이다.
  */
-const UNAVAILABLE: readonly ButtonKey[] = ['publish', 'unpublish']
+const UNAVAILABLE: readonly ButtonKey[] = []
 
 export function isAvailable(key: ButtonKey): boolean {
   return !UNAVAILABLE.includes(key)

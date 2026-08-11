@@ -12,7 +12,10 @@ import { computeVerdict, discardAxes, withAxis, contentHash, passedAxis, failedA
 import { maskName, maskEmail, maskPhone, maskPii } from '../lib/mask'
 import { RETRY_COUNTERS, RETRY_LIMIT, type ProductRow, type ValidationSnapshot } from '../lib/types'
 import { validateFormInput, buildFormInput, tripDays, hasDayMarker, combineTripPeriod } from '../lib/form-validation'
-import { describeStatus, screenPath, verificationBadge, editBadge } from '../lib/status-view'
+import {
+  describeStatus, screenPath, verificationBadge, editBadge,
+  publishGate, publishProcedure, PUBLISHABLE_STATUSES,
+} from '../lib/status-view'
 import {
   diffSections, LENGTH_LIMITS_SAVE, moveSection, renumber, same, validateEdit,
 } from '../lib/edit-contract'
@@ -612,6 +615,96 @@ check('생성 시 4종의 상한이 편집 저장 시와 일치한다',
   && LENGTH_LIMITS_GENERATE['일차별 서술'] === LENGTH_LIMITS_SAVE['일차별 서술']
   && LENGTH_LIMITS_GENERATE['섹션 제목'] === LENGTH_LIMITS_SAVE['섹션 제목'])
 check('편집 저장 시 강제하는 것은 6종이다', Object.keys(LENGTH_LIMITS_SAVE).length === 6)
+
+/* ── P11. 게시 게이트 (§11.5·§12.2·§14.5 #12) ───────────────── */
+section('P11 — 게시 게이트 (§11.5·§12.2)')
+
+/** 게시 가능한 최소 조건을 갖춘 상품. */
+const publishable = (over: Partial<ProductRow> = {}) => {
+  const p = product({
+    status: 'draft', slug: 'jeju-trip', page_content: {},
+    validation_snapshot: passSnap, ...over,
+  })
+  return {
+    status: p.status, validation_snapshot: p.validation_snapshot,
+    human_edited: p.human_edited, publish_override_at: p.publish_override_at,
+    slug: p.slug, hasPageContent: !!p.page_content,
+  }
+}
+
+check('pass + 편집 없음 → 확인 없이 게시', publishProcedure(publishable()).kind === 'plain')
+check('pass + 사람 편집됨 → 확인 필요 (§11.5)',
+  publishProcedure(publishable({ human_edited: true })).kind === 'acknowledge')
+check('fail → 책임 게시 절차',
+  publishProcedure(publishable({ validation_snapshot: failSnap })).kind === 'override')
+check('미검증 → 게시 경로 없음 (없는 것을 통과로 읽지 않는다)',
+  publishProcedure(publishable({ validation_snapshot: null })).kind === 'blocked')
+
+check('pass는 그냥 통과한다', publishGate(publishable()).ok)
+check('통과 시 override는 false다',
+  publishGate(publishable()) as { ok: true; override: boolean } ? !(publishGate(publishable()) as { ok: true; override: boolean }).override : false)
+
+// §11.5 — 확인 모달은 화면 규정이라 서버가 강제하지 않는다(DB에 남는 것이 없다)
+check('pass + human_edited도 서버는 플래그 없이 통과시킨다',
+  publishGate(publishable({ human_edited: true })).ok)
+
+// §11.5 — 책임 게시는 기록되는 결정이므로 요청에 의사가 있어야 한다
+check('fail은 override 없이 거부한다',
+  !publishGate(publishable({ validation_snapshot: failSnap })).ok)
+check('fail + override:true는 통과한다',
+  publishGate(publishable({ validation_snapshot: failSnap }), { override: true }).ok)
+check('fail + override로 통과하면 override 플래그가 켜진다',
+  (publishGate(publishable({ validation_snapshot: failSnap }), { override: true }) as
+    { ok: true; override: boolean }).override === true)
+check('미검증은 override로도 열리지 않는다 (열람할 실패 항목 자체가 없다)',
+  !publishGate(publishable({ validation_snapshot: null }), { override: true }).ok)
+
+// §15.2 전이표 — [게시]로 published에 갈 수 있는 상태는 3개다
+check('draft에서 게시 가능', publishGate(publishable({ status: 'draft' })).ok)
+check('reviewing에서 게시 가능', publishGate(publishable({ status: 'reviewing' })).ok)
+check('unpublished에서 재게시 가능', publishGate(publishable({ status: 'unpublished' })).ok)
+check('published를 다시 게시하지 않는다', !publishGate(publishable({ status: 'published' })).ok)
+for (const status of ['input_error', 'generating', 'brochure_ready'] as const) {
+  check(`${status}에는 게시 경로가 없다`, !publishGate(publishable({ status })).ok)
+}
+check('§15.2 전이표와 PUBLISHABLE_STATUSES가 일치한다',
+  PUBLISHABLE_STATUSES.length === 3
+  && ['draft', 'reviewing', 'unpublished'].every((s) => PUBLISHABLE_STATUSES.includes(s as never)))
+
+// 공개할 것이 없으면 게시하지 않는다
+check('page_content가 없으면 게시 거부',
+  !publishGate({ ...publishable(), hasPageContent: false }).ok)
+check('slug가 없으면 게시 거부', !publishGate({ ...publishable(), slug: null }).ok)
+
+// 버튼 표기와 서버 판정이 같은 함수를 쓴다 — 활성 버튼이 403으로 튕기지 않는다
+check('버튼이 비활성인 경우와 게이트가 막는 경우가 일치한다',
+  ['draft', 'reviewing', 'unpublished'].every((status) => {
+    for (const snap of [passSnap, failSnap, null]) {
+      const p = product({ status: status as never, validation_snapshot: snap })
+      const b = describeStatus(p).buttons.find((x) => x.key === 'publish')
+      const gate = publishGate(publishable({ status: status as never, validation_snapshot: snap }))
+      // 비활성 버튼 ↔ 게이트가 override로도 열지 못하는 경우
+      const gateHard = !publishGate(
+        publishable({ status: status as never, validation_snapshot: snap }), { override: true }).ok
+      if (!!b?.disabled !== gateHard) return false
+      // 확인이 필요한 버튼 ↔ 게이트가 플래그 없이는 막는 경우
+      if (b?.label === '책임 게시' && gate.ok) return false
+    }
+    return true
+  }))
+
+/* ── U13. 게시 중단 (§12.3·§14.5 #13) ───────────────────────── */
+section('U13 — 게시 중단 (§12.3)')
+
+check('published에서만 중단할 수 있다',
+  checkPrecondition('unpublish', product({ status: 'published' })) === null)
+for (const status of ['draft', 'reviewing', 'unpublished', 'generating', 'input_error', 'brochure_ready'] as const) {
+  check(`${status}에서는 중단할 수 없다 (409 precondition)`,
+    checkPrecondition('unpublish', product({ status })) !== null)
+}
+check('게시 중단은 확인을 받는다 (공개 페이지가 즉시 404가 된다)',
+  !!describeStatus(product({ status: 'published', validation_snapshot: passSnap }))
+    .buttons.find((b) => b.key === 'unpublish')?.confirm)
 
 /* ── 결과 ────────────────────────────────────────────────────── */
 console.log(`\n${'─'.repeat(52)}`)

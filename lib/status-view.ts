@@ -139,30 +139,104 @@ export function buttonTarget(key: ButtonKey, productId: string): string {
  * 같은 게이트의 두 얼굴이지 서로 다른 버튼이 아니다. 두 절을 모두 만족한다.
  */
 function publishButton(p: StatusInput): ActionButton {
+  const proc = publishProcedure(p)
+
+  switch (proc.kind) {
+    case 'override':
+      return {
+        key: 'publish', label: '책임 게시',
+        confirm: '검증 실패 항목을 모두 확인했으며 책임하에 게시합니다.',
+      }
+    case 'blocked':
+      return {
+        key: 'publish', label: '게시', disabled: true, disabledReason: proc.reason,
+      }
+    case 'acknowledge':
+      // 편집분은 AI 검증 대상이 아니다 — 게시 전에 그 사실을 알린다(§10.4·§11.5)
+      return { key: 'publish', label: '게시', confirm: '편집된 내용은 AI 검증 대상이 아닙니다.' }
+    case 'plain':
+      return { key: 'publish', label: '게시' }
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * 게시 게이트 (§11.5) — **버튼 표기와 서버 판정의 공통 뿌리**
+ *
+ * 화면이 활성화한 버튼이 서버에서 403으로 튕기면(또는 그 반대) 게이트가
+ * 두 개 있는 것과 같다. verdict 축을 함수 하나로 뽑아 양쪽이 나눠 쓴다.
+ * ════════════════════════════════════════════════════════════════ */
+
+export type PublishProcedure =
+  /** 게시 경로가 없다 — verdict가 없으면 통과로 볼 근거가 없다 */
+  | { kind: 'blocked'; reason: string }
+  /** `verdict = fail` → 실패 항목 전체 열람 + 책임 확인 후 `publish_override_at` 기록 */
+  | { kind: 'override' }
+  /** `pass` + `human_edited` → 「편집분은 검증 대상이 아니다」 확인 */
+  | { kind: 'acknowledge' }
+  /** `pass` + 편집 없음 → 확인 없이 게시 */
+  | { kind: 'plain' }
+
+export function publishProcedure(p: StatusInput): PublishProcedure {
   const verdict = verdictOf(p)
-
-  if (verdict === 'fail') {
-    return {
-      key: 'publish',
-      label: '책임 게시',
-      confirm: '검증 실패 항목을 모두 확인했으며 책임하에 게시합니다.',
-    }
-  }
-
+  if (verdict === 'fail') return { kind: 'override' }
   if (verdict === null) {
-    // 검증이 한 축도 실행되지 않았다. 통과로 볼 근거가 없다.
     return {
-      key: 'publish', label: '게시', disabled: true,
-      disabledReason: '검증 결과가 없습니다. [다시 생성]으로 검증을 실행해 주세요.',
+      kind: 'blocked',
+      reason: '검증 결과가 없습니다. [다시 생성]으로 검증을 실행해 주세요.',
+    }
+  }
+  return p.human_edited ? { kind: 'acknowledge' } : { kind: 'plain' }
+}
+
+/** §15.2 — [게시]로 `published`에 갈 수 있는 상태. `input_error`에는 경로가 없다(§11.5). */
+export const PUBLISHABLE_STATUSES: ProductStatus[] = ['draft', 'reviewing', 'unpublished']
+
+export interface PublishInput extends StatusInput {
+  slug: string | null
+  /** `page_content`가 있는가. 없으면 공개할 내용 자체가 없다 */
+  hasPageContent: boolean
+}
+
+export type PublishGate =
+  | { ok: true; override: boolean }
+  /** §14.6 — #12의 미통과는 409가 아니라 **403**이다 */
+  | { ok: false; reason: string }
+
+/**
+ * 서버의 최종 판정 (§14.4 #12 · §14.5).
+ *
+ * `override`를 요구하는 이유: `verdict = fail`의 게시는 `publish_override_at`과
+ * `publish_override` 로그를 남기는 **기록되는 결정**이다(§11.5). 요청에 그
+ * 의사가 없으면 사고로 눌린 것과 구분할 수 없으므로, 클라이언트의 모달을
+ * 믿지 않고 요청 본문으로 받는다.
+ *
+ * 반대로 `pass` + `human_edited`의 확인은 DB에 아무것도 남기지 않는 **화면
+ * 규정**이라 서버가 강제하지 않는다 — 강제하면 §11.5에 없는 조건이 늘어난다.
+ */
+export function publishGate(p: PublishInput, opts: { override?: boolean } = {}): PublishGate {
+  if (p.status === 'published') {
+    return { ok: false, reason: '이미 게시된 상품입니다.' }
+  }
+  if (!PUBLISHABLE_STATUSES.includes(p.status)) {
+    return { ok: false, reason: `${p.status} 상태에는 게시 경로가 없습니다(§11.5).` }
+  }
+  if (!p.hasPageContent) {
+    return { ok: false, reason: '상품 페이지가 없습니다. 먼저 [상품 생성]을 실행해 주세요.' }
+  }
+  if (!p.slug) {
+    return { ok: false, reason: '공개 주소(slug)가 없습니다.' }
+  }
+
+  const proc = publishProcedure(p)
+  if (proc.kind === 'blocked') return { ok: false, reason: proc.reason }
+  if (proc.kind === 'override' && !opts.override) {
+    return {
+      ok: false,
+      reason: '검증 실패 항목을 확인하고 책임 게시에 동의해야 게시할 수 있습니다(§11.5).',
     }
   }
 
-  return {
-    key: 'publish',
-    label: '게시',
-    // 편집분은 AI 검증 대상이 아니다 — 게시 전에 그 사실을 알린다(§10.4·§11.5)
-    ...(p.human_edited ? { confirm: '편집된 내용은 AI 검증 대상이 아닙니다.' } : {}),
-  }
+  return { ok: true, override: proc.kind === 'override' }
 }
 
 /** [다시 생성] (§15.3). 편집분이 있으면 사라진다는 것을 먼저 알린다. */
@@ -252,7 +326,16 @@ export function describeStatus(p: StatusInput): StatusView {
         label: '게시됨', screen: 'editor', showsFailedItems: failed, isPublic: true,
         buttons: [
           { key: 'edit', label: '편집' },
-          { key: 'unpublish', label: '게시 중단' },
+          {
+            key: 'unpublish', label: '게시 중단',
+            /*
+             * §12.3에 확인 절차 규정은 없다. 그래도 확인을 받는 이유: 이 버튼은
+             * **공개 중인 페이지를 즉시 404로 만든다.** 되돌릴 수는 있지만
+             * 그 사이 링크를 탄 고객은 빈손으로 돌아간다. [편집] 옆에 나란히
+             * 있어 오클릭 거리도 짧다.
+             */
+            confirm: '공개 페이지가 즉시 접속되지 않게 됩니다. 이미 접수된 신청은 그대로 보관됩니다.',
+          },
         ],
       }
 

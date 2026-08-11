@@ -245,6 +245,23 @@ export function Editor(props: EditorProps) {
         >{busy ? '저장 중…' : '저장'}</button>
       </header>
 
+      {/*
+        * §15.2 — 「`published` 상태에서의 편집은 즉시 공개 페이지에 반영된다.
+        * 게시본/작업본 분리(스테이징)는 도입하지 않으며, 편집기 상단에 경고를 표시한다.」
+        * 스테이징이 없으므로 이 한 줄이 유일한 안전장치다.
+        */}
+      {props.status === 'published' && (
+        <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-900">
+          이 상품은 현재 게시 중입니다 — 저장 시 즉시 반영됩니다.
+          {slug && (
+            <a
+              href={`/p/${slug}`} target="_blank" rel="noreferrer"
+              className="ml-3 font-medium underline"
+            >공개 페이지 보기</a>
+          )}
+        </div>
+      )}
+
       {notice && (
         <div className={`shrink-0 border-b px-5 py-2 text-sm ${
           notice.kind === 'saved' ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
