@@ -21,7 +21,11 @@ import {
 } from '../lib/edit-contract'
 import { LENGTH_LIMITS_GENERATE, type PageContent, type PageSection } from '../lib/pipeline/page'
 import { buildConfirmedData } from '../lib/pipeline/normalize'
-import { buildBrochure } from '../lib/pipeline/brochure'
+import { assertFactsUnchanged, buildBrochure, checkBrochure } from '../lib/pipeline/brochure'
+import { buildPage, checkPage } from '../lib/pipeline/page'
+import { resolveTheme } from '../lib/pipeline/theme'
+import { findMemoLeaks } from '../lib/pipeline/memo-leak'
+import { verifyAxis0 } from '../lib/pipeline/axis0'
 import { toJsonSchema, validateAgainstSchema } from '../lib/ai/schema'
 import {
   DECOMPOSE_SCHEMA, EXPAND_SCHEMA, VALIDATION_SCHEMA,
@@ -1043,6 +1047,102 @@ check('주 경로도 SDK 자동 재시도를 끈다 (§4.2 — 25초 예산)',
   /maxRetries:\s*0/.test(DEEPSEEK_SOURCE))
 check('주 경로 타임아웃이 공용 상수를 쓴다 (25초가 한 곳에서 온다)',
   /timeout:\s*AI_TIMEOUT_MS/.test(DEEPSEEK_SOURCE))
+
+/* ── 하네스 체인에 새로 들어간 검사 2종 ─────────────────────── */
+
+/*
+ * `tonal-manner-apply`(보호값 검증)와 `memo-leak-check`는 매니페스트가 체인에
+ * 선언했지만 라우트 코드에는 없던 검사다. 체인에 넣는 순간 **정상 산출물을
+ * 반려할 위험**이 생긴다 — 그러면 데모가 첫 요청에서 죽는다.
+ *
+ * 그래서 두 방향을 다 고정한다: 정상 산출물에 0건, 조작에는 1건 이상.
+ */
+section('하네스 체인 — 새 검사가 정상 산출물을 반려하지 않는다')
+
+{
+  const fi = form({ 여행스타일: '자연', 여행주제: '걷기와 맛집' })
+  const cd = buildConfirmedData(fi).data
+  cd.행사정보.일정 = [
+    { day: '1', 원문근거: '1일: 김해공항 출발, 올레 7코스 걷기, 중식·석식 제공',
+      내용: '김해공항에서 출발해 올레 7코스를 걷습니다.' },
+    { day: '2', 원문근거: '2일: 성산일출봉 관람',
+      내용: '성산일출봉을 관람합니다.' },
+    { day: '3', 원문근거: '', 내용: '추후 추가 예정' },
+    { day: '4', 원문근거: '', 내용: '추후 추가 예정' },
+  ]
+
+  const br = buildBrochure(cd, '올레 7코스를 걷고 성산일출봉을 관람합니다.')
+
+  const 보호값 = assertFactsUnchanged(cd, br)
+  check('tonal-manner-apply: 정상 소개서에 보호값 위반 0건', 보호값.length === 0, 보호값)
+  check('brochure-contract-check: 정상 소개서에 계약 위반 0건',
+    checkBrochure(br).length === 0, checkBrochure(br))
+
+  // 조작 방향 — 값이 바뀌면 반드시 잡아야 한다
+  const 조작 = structuredClone(br)
+  const price = 조작.sections.find((s) => s.id === 'b_price')!
+  price.data.성인 = '130000원'
+  check('tonal-manner-apply: 가격을 바꾸면 잡는다', assertFactsUnchanged(cd, 조작).length > 0)
+
+  // 페이지 쪽도 같은 방식으로 확인한다
+  const theme = resolveTheme(cd.행사정보.여행스타일)
+  const expanded = new Map(cd.행사정보.일정.map((d) => [d.day, d.내용]))
+  const pageContent = buildPage({
+    cd, theme, slots: new Set<string>(), expanded,
+    apply: { 제목: '신청 안내', 안내문구: '아래 양식으로 신청해 주세요. 확인 후 연락드립니다.' },
+  })
+  check('page-contract-check: 정상 페이지에 계약 위반 0건',
+    checkPage(pageContent, new Set()).length === 0, checkPage(pageContent, new Set()))
+
+  const { 기획메모, ...메모제외 } = cd.행사정보
+  const 확정값 = JSON.stringify({ ...cd, 행사정보: 메모제외 })
+  const 서술: [string, string][] = [
+    ...[...expanded.entries()].map(([d, t]) => [`days[${d}].text`, t] as [string, string]),
+    ['apply.제목', '신청 안내'],
+    ['apply.안내문구', '아래 양식으로 신청해 주세요. 확인 후 연락드립니다.'],
+  ]
+  check('memo-leak-check: 메모가 비면 유출 0건',
+    findMemoLeaks(기획메모, 확정값, 서술).length === 0)
+  check('memo-leak-check: 메모에만 있는 숫자가 서술에 나오면 잡는다',
+    findMemoLeaks('30대 2인 가족', 확정값,
+      [['days[1].text', '30대 두 분이 함께 걷습니다.']]).length > 0)
+}
+
+/* ── 0차 — 표시와 실패를 분리한다 (§6.3 판정 3단계) ─────────── */
+
+section('0차 — 명사구는 표시만, 확정 위반만 실패')
+
+{
+  const fi = form()
+  const cd = buildConfirmedData(fi).data
+  cd.행사정보.일정 = [
+    { day: '1', 원문근거: '1일: 김해공항 출발, 올레 7코스 걷기, 중식·석식 제공',
+      내용: '김해공항에서 출발해 올레 7코스를 걷습니다. 중식과 석식이 제공됩니다.' },
+    { day: '2', 원문근거: '2일: 성산일출봉 관람', 내용: '성산일출봉을 관람합니다.' },
+    { day: '3', 원문근거: '', 내용: '추후 추가 예정' },
+    { day: '4', 원문근거: '', 내용: '추후 추가 예정' },
+  ]
+
+  const r = verifyAxis0(fi, cd, 4)
+  check('정상 분해 결과의 확정 위반은 0건 (어미 활용을 실패로 세지 않는다)',
+    r.items.length === 0, r.items)
+
+  const 창작 = structuredClone(cd)
+  창작.행사정보.일정[1].내용 = '우도로 이동해 성산일출봉을 관람합니다.'
+  const r2 = verifyAxis0(fi, 창작, 4)
+  check('입력에 없는 «우도»는 위반 후보로 표시된다',
+    r2.위반후보.some((n) => n.후보.includes('우도')), r2.위반후보.map((n) => n.후보))
+  check('그래도 0차 실패로 세지 않는다 (3단계는 AI의 몫 — §6.3)',
+    r2.items.length === 0, r2.items)
+
+  const 일수틀림 = structuredClone(cd)
+  일수틀림.행사정보.일정 = 일수틀림.행사정보.일정.slice(0, 3)
+  check('일차 수 불일치는 확정 위반이다', verifyAxis0(fi, 일수틀림, 4).items.length > 0)
+
+  const 위조 = structuredClone(cd)
+  위조.행사정보.일정[0].원문근거 = '일정원문에 없는 문장입니다'
+  check('원문근거 위조는 확정 위반이다', verifyAxis0(fi, 위조, 4).items.length > 0)
+}
 
 /* ── 결과 ────────────────────────────────────────────────────── */
 console.log(`\n${'─'.repeat(52)}`)

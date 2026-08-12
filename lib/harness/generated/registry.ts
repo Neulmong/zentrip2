@@ -33,6 +33,9 @@ export interface RouteSpec {
   readonly counter: string | null
   readonly retry_from: number | null
   readonly ai_budget: number
+  readonly entry?: { readonly from: string; readonly to: string; readonly reset: string }
+  readonly materials?: readonly string[]
+  readonly driven_by?: string
   readonly skills: readonly { readonly name: string; readonly args?: Readonly<Record<string, unknown>> }[]
 }
 
@@ -57,7 +60,7 @@ export const PROMPT_HASHES = {
   "itinerary-decomposition": "4f11348221a9",
 } as const
 
-export const SKILLS: Readonly<Record<string, SkillSpec>> = {
+export const SKILLS = {
   "input-guard": {
     "kind": "mechanical",
     "ai": 0,
@@ -75,8 +78,7 @@ export const SKILLS: Readonly<Record<string, SkillSpec>> = {
     "ai": 0,
     "impl": "pipeline/normalize#normalizeFields",
     "asserts": [
-      "변경이력_존재",
-      "3종_외_변형_0건"
+      "변경이력_존재"
     ],
     "does": "정규화 3종(날짜·금액 콤마·공백) + 여행기간 2필드 결합 1종"
   },
@@ -117,6 +119,12 @@ export const SKILLS: Readonly<Record<string, SkillSpec>> = {
     "ai": 0,
     "impl": "pipeline/brochure#checkBrochure",
     "does": "섹션 8개·순서·source 누락 0건·미치환 토큰 0건·길이 계약"
+  },
+  "memo-leak-check": {
+    "kind": "mechanical",
+    "ai": 0,
+    "impl": "pipeline/memo-leak#findMemoLeaks",
+    "does": "기획메모에만 있는 숫자가 서술 필드에 노출됐는지 검사한다. 소개서·페이지 양쪽 체인에 들어간다"
   },
   "fact-check": {
     "kind": "ai",
@@ -187,15 +195,23 @@ export const SKILLS: Readonly<Record<string, SkillSpec>> = {
     "implemented_by": "lib/orchestrator.ts#runStep",
     "does": "3차 통과 시 draft 전이. 하네스 바깥(R7)"
   }
-} as const
+} as const satisfies Readonly<Record<string, SkillSpec>>
 
-export const ROUTES: Readonly<Record<string, RouteSpec>> = {
+/**
+ * ⚠️ 주석 대신 `satisfies`를 쓴다.
+ *
+ * `: Readonly<Record<string, RouteSpec>>`로 적으면 키가 `string`으로 넓어져
+ * `RouteKey`가 사실상 `string`이 된다. 그러면 라우트 이름을 잘못 적어도
+ * 컴파일이 통과한다 — 배선 오타가 런타임까지 살아남는 경로다.
+ */
+export const ROUTES = {
   "products": {
     "agent": "intake-agent",
     "step": "pipeline_started",
     "counter": null,
     "retry_from": null,
     "ai_budget": 0,
+    "driven_by": "route",
     "skills": [
       {
         "name": "input-guard"
@@ -234,7 +250,10 @@ export const ROUTES: Readonly<Record<string, RouteSpec>> = {
     "ai_budget": 1,
     "skills": [
       {
-        "name": "intro-content-fill"
+        "name": "intro-content-fill",
+        "args": {
+          "label": "intro-overview"
+        }
       },
       {
         "name": "intro-template-writer"
@@ -244,6 +263,12 @@ export const ROUTES: Readonly<Record<string, RouteSpec>> = {
       },
       {
         "name": "brochure-contract-check"
+      },
+      {
+        "name": "memo-leak-check",
+        "args": {
+          "target": "brochure"
+        }
       }
     ]
   },
@@ -258,7 +283,8 @@ export const ROUTES: Readonly<Record<string, RouteSpec>> = {
         "name": "fact-check",
         "args": {
           "target": "brochure",
-          "axis": "axis_1"
+          "axis": "axis_1",
+          "label": "fact-check-1"
         }
       }
     ]
@@ -269,6 +295,15 @@ export const ROUTES: Readonly<Record<string, RouteSpec>> = {
     "counter": "page",
     "retry_from": 5,
     "ai_budget": 1,
+    "entry": {
+      "from": "brochure_ready",
+      "to": "generating",
+      "reset": "product-create"
+    },
+    "materials": [
+      "image_slots",
+      "used_slugs"
+    ],
     "skills": [
       {
         "name": "theme-design-token-match"
@@ -283,6 +318,12 @@ export const ROUTES: Readonly<Record<string, RouteSpec>> = {
         "name": "page-contract-check"
       },
       {
+        "name": "memo-leak-check",
+        "args": {
+          "target": "page"
+        }
+      },
+      {
         "name": "slug-issue"
       }
     ]
@@ -293,12 +334,16 @@ export const ROUTES: Readonly<Record<string, RouteSpec>> = {
     "counter": "page",
     "retry_from": 5,
     "ai_budget": 1,
+    "materials": [
+      "image_slots"
+    ],
     "skills": [
       {
         "name": "fact-check",
         "args": {
           "target": "page",
-          "axis": "axis_2"
+          "axis": "axis_2",
+          "label": "fact-check-2"
         }
       }
     ]
@@ -315,9 +360,9 @@ export const ROUTES: Readonly<Record<string, RouteSpec>> = {
       }
     ]
   }
-} as const
+} as const satisfies Readonly<Record<string, RouteSpec>>
 
-export const AGENTS: Readonly<Record<string, { readonly routes: readonly string[] }>> = {
+export const AGENTS = {
   "intake-agent": {
     "routes": [
       "products",
@@ -344,7 +389,7 @@ export const AGENTS: Readonly<Record<string, { readonly routes: readonly string[
   "log-monitor-agent": {
     "routes": []
   }
-} as const
+} as const satisfies Readonly<Record<string, { readonly routes: readonly string[] }>>
 
 export type RouteKey = keyof typeof ROUTES
 export type AiSkillName = keyof typeof PROMPTS

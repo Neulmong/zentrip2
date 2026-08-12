@@ -40,6 +40,11 @@ interface Skill {
   asserts?: string[]
   does?: string
 }
+interface Entry {
+  from: string
+  to: string
+  reset: string
+}
 interface Route {
   agent: string
   step: string
@@ -47,6 +52,11 @@ interface Route {
   counter: string | null
   retry_from: number | null
   ai_budget: number
+  /** 단계 실행 **전** 상태 전이 — [상품 생성] 진입 1건뿐이다 (§14.5 #5) */
+  entry?: Entry
+  /** 스킬 실행 전에 적재할 DB 재료. 스킬은 순수 함수로 남는다 */
+  materials?: string[]
+  driven_by?: string
   skills: { name: string; args?: Record<string, unknown> }[]
 }
 interface Manifest {
@@ -209,6 +219,9 @@ export interface RouteSpec {
   readonly counter: string | null
   readonly retry_from: number | null
   readonly ai_budget: number
+  readonly entry?: { readonly from: string; readonly to: string; readonly reset: string }
+  readonly materials?: readonly string[]
+  readonly driven_by?: string
   readonly skills: readonly { readonly name: string; readonly args?: Readonly<Record<string, unknown>> }[]
 }
 
@@ -225,7 +238,7 @@ export const PROMPT_HASHES = {
 ${aiSkills.map((n) => `  ${lit(n)}: ${lit(sha(prompts[n]))},`).join('\n')}
 } as const
 
-export const SKILLS: Readonly<Record<string, SkillSpec>> = ${JSON.stringify(
+export const SKILLS = ${JSON.stringify(
   Object.fromEntries(Object.entries(manifest.skills).map(([n, s]) => [n, {
     kind: s.kind, ai: s.ai,
     ...(s.effort ? { effort: s.effort } : {}),
@@ -234,18 +247,29 @@ export const SKILLS: Readonly<Record<string, SkillSpec>> = ${JSON.stringify(
     ...(s.implemented_by ? { implemented_by: s.implemented_by } : {}),
     ...(s.asserts ? { asserts: s.asserts } : {}),
     ...(s.does ? { does: s.does } : {}),
-  }])), null, 2)} as const
+  }])), null, 2)} as const satisfies Readonly<Record<string, SkillSpec>>
 
-export const ROUTES: Readonly<Record<string, RouteSpec>> = ${JSON.stringify(
+/**
+ * ⚠️ 주석 대신 \`satisfies\`를 쓴다.
+ *
+ * \`: Readonly<Record<string, RouteSpec>>\`로 적으면 키가 \`string\`으로 넓어져
+ * \`RouteKey\`가 사실상 \`string\`이 된다. 그러면 라우트 이름을 잘못 적어도
+ * 컴파일이 통과한다 — 배선 오타가 런타임까지 살아남는 경로다.
+ */
+export const ROUTES = ${JSON.stringify(
   Object.fromEntries(Object.entries(manifest.routes).map(([rk, r]) => [rk, {
     agent: r.agent, step: r.step,
     ...(r.extra_steps ? { extra_steps: r.extra_steps } : {}),
     counter: r.counter, retry_from: r.retry_from,
-    ai_budget: r.ai_budget, skills: r.skills,
-  }])), null, 2)} as const
+    ai_budget: r.ai_budget,
+    ...(r.entry ? { entry: { from: r.entry.from, to: r.entry.to, reset: r.entry.reset } } : {}),
+    ...(r.materials ? { materials: r.materials } : {}),
+    ...(r.driven_by ? { driven_by: r.driven_by } : {}),
+    skills: r.skills,
+  }])), null, 2)} as const satisfies Readonly<Record<string, RouteSpec>>
 
-export const AGENTS: Readonly<Record<string, { readonly routes: readonly string[] }>> = ${JSON.stringify(
-  Object.fromEntries(Object.entries(manifest.agents).map(([a, c]) => [a, { routes: c.routes }])), null, 2)} as const
+export const AGENTS = ${JSON.stringify(
+  Object.fromEntries(Object.entries(manifest.agents).map(([a, c]) => [a, { routes: c.routes }])), null, 2)} as const satisfies Readonly<Record<string, { readonly routes: readonly string[] }>>
 
 export type RouteKey = keyof typeof ROUTES
 export type AiSkillName = keyof typeof PROMPTS

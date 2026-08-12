@@ -105,6 +105,14 @@ export type StepOutcome =
       logOutput?: unknown
       /** 주 단계 **뒤에** 남길 단계명 — draft 전이처럼 순서가 규정인 경우(§9.5) */
       trailingLogs?: LogStep[]
+      /**
+       * 일차 부족 채움이 있었다면 그 번호들 (`itinerary_partial` 판정용, §5.5).
+       *
+       * `cfg.partialDays`가 아니라 여기 있는 이유: 몇 일차가 채워졌는지는
+       * **작업을 해 봐야 안다.** cfg는 작업 전에 만들어지므로 호출부가 그 값을
+       * 넣을 수 없었고, 그래서 이상 5종 중 이 하나가 발화하지 않았다.
+       */
+      partialDays?: string[]
     }
   /**
    * 생성 실패 또는 검증 실패.
@@ -222,7 +230,8 @@ export async function runStep(
     await writeLogs(cfg, product, applied.row, 'pass', retryIndex, outcome.logOutput,
       outcome.trailingLogs)
     await detectAbnormalities({
-      ...flagBase, retry_counts: applied.row.retry_counts, partialDays: cfg.partialDays,
+      ...flagBase, retry_counts: applied.row.retry_counts,
+      partialDays: outcome.partialDays ?? cfg.partialDays,
     })
     // 행이 갱신됐다 — 다음 단계가 쓸 새 조회 시점을 함께 준다(§16.1.1).
     return ok({ ...outcome.body, updated_at: applied.row.updated_at })
