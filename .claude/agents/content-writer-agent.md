@@ -32,8 +32,13 @@ model: inherit
 | 2 | `intro-template-writer` | 0 | 8섹션 뼈대 조립 + `source` 배치 + 값 치환 |
 | 3 | `tonal-manner-apply` | 0 | 보호값 검증 — 사실정보 변경 0건 확인 |
 | 4 | `brochure-contract-check` | 0 | 섹션·순서·`source` 누락·미치환 토큰·길이 |
+| 5 | `memo-leak-check` | 0 | 기획메모의 숫자가 서술 필드에 샜는지 (`args.target: brochure`) |
 
 **AI가 1번인 이유:** 조립(2번)이 `핵심일정` 값을 필요로 한다. 순서를 바꿀 수 없다.
+
+**`memo-leak-check`가 마지막인 이유:** 계약 검사 **뒤**에 온다. 구조가 깨진 상태에서는
+어느 필드가 서술 필드인지도 신뢰할 수 없다. 이 스킬은 `page` 체인에도 들어간다 —
+규칙의 유일한 출처는 `.claude/skills/memo-leak-check/SKILL.md`다.
 
 > **2.2에서 바뀐 점.** 이전에는 `intro-content-fill`이 "치환·조사 처리, 일차별 서술 채움"을 하고
 > `tonal-manner-apply`가 "같은 호출 안에서" 어투를 다듬었다 — 1AI호출 제약을 프롬프트 하나에

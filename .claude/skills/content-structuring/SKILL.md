@@ -8,12 +8,21 @@ description: 확정 데이터표와 소개서 내용을 상품 페이지 콘텐�
 - 소개서의 압축 서술을 페이지용 확장 서술로 늘린다.
 - `source` 맵을 승계해 2차·3차 검증이 성립하게 한다.
 
-## 실행 조건
-- 호출 주체: web-builder-agent (workflow Step 05의 **첫 번째** 스킬)
-- 선행 조건: `status = brochure_ready` **AND** `validation_snapshot.axes.axis_1.verdict = pass`
+## 배선
+
+`manifest.json`이 유일한 출처다. 요약: `web-builder-agent` · `page` 체인 **2번** ·
+**AI 1회**(`effort: generate` · `EXPAND_SCHEMA`).
+
+앞에 `theme-design-token-match`(1번)가 있고, 뒤에 `web-content-structure-gen`(3) ·
+`page-contract-check`(4) · `memo-leak-check`(5) · `slug-issue`(6)가 온다.
+
+**라우트 ⑤의 AI 1회는 전부 이 스킬이 쓴다.** 이전 판본은 `web-content-structure-gen`과
+"같은 프롬프트의 연속 단계"로 AI 1회를 나눠 쓴다고 적었으나, 하네스에서는 성립하지 않는다 —
+`ai_budget`은 스킬 단위로 대조되고(규약 R3), 조립은 AI 0회 기계 처리다.
+
+- 시작 조건(재료 기준 §14.5): `status ∈ {brochure_ready, generating}` · `brochure_content` 존재 · `axis_1 = pass`
 - 실행 시점: 페이지 생성 1회당 1회
-- AI 호출: **1회.** Step 05가 쓸 수 있는 AI 호출 1회가 이 스킬과 `web-content-structure-gen`에 함께 배정된다(같은 프롬프트의 연속 단계)
-- 실행하는 경우: 2차·3차 검증 실패로 재시도할 때 — **이 스킬부터** 다시 실행한다(확정 데이터표·소개서는 유지)
+- 재시도: 2차·3차 검증 실패로 되돌아오면 체인 1번부터 다시 실행한다(확정 데이터표·소개서는 유지)
 
 ## 입력
 

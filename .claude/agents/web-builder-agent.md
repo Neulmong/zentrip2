@@ -34,7 +34,14 @@ model: inherit
 | 2 | `content-structuring` | **1** | 일차별 확장 서술 + `apply` 안내 문구 |
 | 3 | `web-content-structure-gen` | 0 | 9섹션 조립 + `source` 승계 |
 | 4 | `page-contract-check` | 0 | 섹션·순서·이미지 슬롯·길이 계약 4종 |
-| 5 | `slug-issue` | 0 | slug 발급 |
+| 5 | `memo-leak-check` | 0 | 기획메모의 숫자가 서술 필드에 샜는지 (`args.target: page`) |
+| 6 | `slug-issue` | 0 | slug 발급 |
+
+`memo-leak-check`는 계약 검사 **뒤**에 온다 — 구조가 깨진 상태에서는 어느 필드가 서술
+필드인지도 신뢰할 수 없다. `brochure` 체인에도 같은 스킬이 들어간다.
+
+`slug-issue`가 마지막인 이유: 앞선 검사가 하나라도 실패했으면 발급하지 않는다. 그 요청은
+어차피 실패로 돌아가고, slug를 미리 잡아 두면 다음 시도에서 쓸 이름이 하나 줄어든다.
 
 > **2.2에서 바뀐 점.** 이전에는 `content-structuring`과 `web-content-structure-gen`이
 > "같은 프롬프트의 연속 단계"였다 — 1AI호출 제약을 프롬프트 하나에 두 일을 넣어 우회한 것이다.

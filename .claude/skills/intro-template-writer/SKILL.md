@@ -4,17 +4,27 @@ description: 여행 상품 소개서의 표준 섹션 뼈대를 구성한다. �
 ---
 
 ## 목적
-- 소개서 8개 섹션의 뼈대와 치환 토큰 배치를 확정한다.
-- 각 사실정보 필드에 `source` 경로를 미리 심어, 뒤 단계에서 값만 채우면 검증 가능한 구조가 되게 한다.
+- 소개서 8개 섹션의 뼈대를 조립하고, 확정 데이터표의 값을 **기계로 치환해** 채운다.
+- 각 사실정보 필드에 `source` 경로를 배치해, 뒤 단계의 검증이 성립하는 구조로 만든다.
 
-## 실행 조건
-- 호출 주체: content-writer-agent (workflow Step 03의 **첫 번째** 스킬)
-- 선행 조건: Step 02가 끝나 `confirmed_data`가 존재하고 `current_step = normalization_validated`
+## 배선
+
+`manifest.json`이 유일한 출처다. 요약: `content-writer-agent` · `brochure` 체인 **2번** ·
+**AI 0회** · `impl: pipeline/brochure#buildBrochure`.
+
+앞에 `intro-content-fill`(1번)이 있다 — 개요의 `핵심일정` 문장을 받아야 조립할 수 있으므로
+**이 스킬이 첫 번째가 아니다.** 뒤에 `tonal-manner-apply`(3) · `brochure-contract-check`(4) ·
+`memo-leak-check`(5)가 온다.
+
+**값 치환은 여기서 한다.** §8.7에서 `source`가 `"generated"`인 필드는 `overview.핵심일정`
+하나뿐이고, 나머지는 전부 `confirmed_data`의 값을 옮기는 치환이다. AI를 쓰지 않는 이유가
+이것이다 — 값을 AI에게 다시 쓰게 하면 1차 검증 실패의 최대 원인이 된다.
+
+- 시작 조건(재료 기준 §14.5): `status = generating` · `confirmed_data` 존재 · `axis_0 = pass`.
+  **`current_step` 값으로 판정하지 않는다** — 재시도·되돌림 중에는 앞뒤가 맞지 않는 순간이 있다
 - 실행 시점: 소개서 생성 1회당 1회
-- AI 호출: **0회.** 뼈대는 고정 구조이므로 기계 조립이다
-- 실행하지 않는 경우
-  - 1차 검증 실패로 재시도할 때 — **뼈대는 그대로 두고 `intro-content-fill`부터 다시 실행한다**
-  - Step 05 이후(상품 페이지 단계) — 페이지 뼈대는 `web-content-structure-gen`이 담당한다
+- 재시도: 1차 검증 실패로 되돌아오면 체인 1번부터 전부 다시 실행한다. 뼈대만 남기지 않는다
+- 실행하지 않는 경우: 상품 페이지 생성(라우트 ⑤) — 페이지 뼈대는 `web-content-structure-gen`이 담당한다
 
 ## 입력
 

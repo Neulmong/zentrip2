@@ -22,7 +22,7 @@ description: 재시도 누적·중단 확정·검증 반복 실패·처리 지�
 |---|---|---|---|
 | `execution_id` | string | 필수 | 판단 범위 |
 | 방금 기록한 로그 | object | 필수 | `execution-log-collection` 출력 + 입력값 |
-| `retry_counts` | object | 필수 | `{brochure, page, consistency}` |
+| `retry_counts` | object | 필수 | `{normalization, brochure, page, consistency}` **4종**(§11.6). 0차는 `normalization`을 쓰며 `brochure`와 예산을 공유하지 않는다 |
 | `attempt_no` | number | 필수 | 현재 시도 회차 |
 | 요청 소요 시간 | number | 필수 | 밀리초. 지연 감지용 |
 | 누적 로그 | array of object | 필수 | 같은 `attempt_no`의 이전 행들. 반복 실패 판정용 |
@@ -82,7 +82,9 @@ description: 재시도 누적·중단 확정·검증 반복 실패·처리 지�
 
 - **감지된 경우에만** 기록한다. "이상 없음", "정상" 류 항목을 남기지 않는다.
 - 한 단계에서 여러 이상이 감지되면 **유형별로 각각 1행**을 기록한다. 하나로 묶지 않는다.
-- 같은 유형이 같은 단계에서 반복 감지되면 중복 기록하지 않는다(단계 + 유형 조합당 1회).
+- 중복 기록 범위는 **`(execution_id, attempt_no, step, type)` 조합당 1행**이다(§5.5).
+  `attempt_no`가 빠지면 [다시 생성] 후 같은 문제가 되풀이돼도 기록되지 않는다 —
+  사람이 다시 시킨 회차는 별개의 관측이다.
 - `detail`은 사람이 읽고 바로 판단할 수 있게 쓴다. 숫자·임계값·다음에 일어날 일을 포함한다.
 - `execution_id` 단위로 누적한다. `attempt_no`가 올라가도 이전 플래그를 삭제하지 않는다.
 

@@ -81,7 +81,7 @@ description: 서버 라우트 안에서 에이전트 1개를 호출하고, 재�
 |---|---|---|
 | `execution_id` | `products` | 로그 추적 단위. 재시도·재제출에도 유지 |
 | `attempt_no` | `products` | 사람이 다시 시킨 회차 |
-| `retry_counts` | `products` (jsonb) | `{brochure, page, consistency}` 3종 |
+| `retry_counts` | `products` (jsonb) | `{normalization, brochure, page, consistency}` **4종** — 예산 비공유(§11.6) |
 | `status` | `products` | 7종(spec §15.1) |
 | `current_step` | `products` | 클라이언트가 다음 호출 대상을 판단하는 근거 |
 | `validation_snapshot` | `products` (jsonb) | 4축 결과 |
@@ -108,9 +108,9 @@ description: 서버 라우트 안에서 에이전트 1개를 호출하고, 재�
 
 | 항목 | 규정 |
 |---|---|
-| 카운터 | **3종**: `brochure` · `page` · `consistency` |
-| 상한 | 각 **2회**(총 3회 시도) |
-| 0차 실패 | `brochure` 카운터를 공유한다 |
+| 카운터 | **4종**: `normalization` · `brochure` · `page` · `consistency` |
+| 상한 | 각 **2회**(총 3회 시도). **예산을 공유하지 않는다** — 4종이 각자 2회다 |
+| 0차 실패 | **`normalization`을 올린다.** `brochure`와 공유하지 않는다(§11.6) |
 | 폼 검증·일차 분해 실패 | **카운터 미적용.** 사용자 재입력이므로 재시도가 아니다 |
 | 초기화 | Step 01, [다시 생성], `input_error` 재제출 시 전부 0 |
 | 재시도 실행 | **하지 않는다.** 카운터만 올리고 409를 반환한다. 재호출은 클라이언트가 한다 |
@@ -123,23 +123,49 @@ description: 서버 라우트 안에서 에이전트 1개를 호출하고, 재�
 | 202 | (사용하지 않음) | — |
 | 400 | 입력 규칙 위반 | 폼 화면에 필드별 오류 표시 |
 | 403 | 게시 게이트 미통과 | 게시 버튼 비활성 유지 |
-| 409 | 검증 실패 + 재시도 여력 있음 / 선행 조건 미충족 / slug 중복 | 지정 단계부터 재호출 |
+| 409 | 검증 실패 + 재시도 여력 있음 / 선행 조건 미충족 / 조회 시점 불일치 / slug 중복 | `reason`에 따라 분기 |
 | 422 | 입력 문제로 중단(`input_error`) | 폼 화면으로 이동, 사유 표시 |
+
+### 409에는 `reason`이 반드시 붙는다 (§14.6)
+
+코드만으로는 클라이언트가 무엇을 해야 할지 알 수 없다. 재시도할 상황과 화면을 새로고침할
+상황이 같은 409이기 때문이다. **5종이며 이 목록 밖의 값을 만들지 않는다.**
+
+| `reason` | 언제 | 클라이언트 동작 |
+|---|---|---|
+| `retry` | 검증·생성 실패 + 재시도 여력 있음 | `retry_from`이 가리키는 단계부터 재호출 |
+| `precondition` | 시작 조건 미충족 | 재호출하지 않는다. 현재 상태를 다시 읽는다 |
+| `stale` | 보낸 `updated_at`이 DB와 다름(§16.1.1) | 화면을 새로 읽는다. **자동 재시도하지 않는다** |
+| `slug_conflict` | slug 중복이 해소되지 않음 | 다른 slug를 입력받는다 |
+| `product_not_published` | 게시되지 않은 상품에 공개 동작 | 게시 상태를 다시 읽는다 |
 
 **`202` + 폴링 방식은 사용하지 않는다.** 서버리스에서 응답 후 실행이 종료될 수 있고, `after()`를 써도 `maxDuration`이 늘어나지 않아 긴 작업을 백그라운드로 넘기는 효과가 없다(spec §4.2).
 
 ## 선행 조건 표
 
-| 라우트 | 선행 조건 | 미충족 시 |
+**시작 조건은 `current_step` 값으로 판정하지 않는다(§14.5).** 「산출물이 존재하는가 + 선행 축이
+통과했는가」라는 **재료 기준**으로 본다. `current_step`은 클라이언트가 다음 호출을 고르는
+표시값일 뿐이고, 재시도·되돌림 중에는 앞뒤가 맞지 않는 순간이 생긴다.
+
+유일한 출처는 `lib/policy.ts`의 `PRECONDITIONS`다. 아래는 사람이 읽기 위한 사본이다.
+
+| 라우트 | 선행 조건 (재료 기준) | 미충족 시 |
 |---|---|---|
-| `/decompose` | `status = generating`, `form_input` 존재 | 409 |
-| `/brochure` | `current_step = normalization_validated` | 409 |
-| `/validate-brochure` | `brochure_content` 존재 | 409 |
-| `/page` | `status = brochure_ready` **AND** `axis_1 = pass` | 409 |
-| `/validate-page` | `page_content` 존재 | 409 |
-| `/validate-consistency` | **`axis_2 = pass`** | 409 |
-| `/content` (편집) | `status ∈ {draft, reviewing, published, unpublished}` | 409 |
-| `/slug` | `status ∈ {draft, reviewing}` | 409 |
+| `/decompose` | `status = generating` · `form_input` 존재 | 409 `precondition` |
+| `/brochure` | `status = generating` · `confirmed_data` 존재 · `axis_0 = pass` | 409 `precondition` |
+| `/validate-brochure` | `status = generating` · `brochure_content` 존재 | 409 `precondition` |
+| `/page` | `status ∈ {brochure_ready, generating}` · `brochure_content` 존재 · `axis_1 = pass` | 409 `precondition` |
+| `/validate-page` | `status = generating` · `page_content` 존재 | 409 `precondition` |
+| `/validate-consistency` | `status = generating` · `page_content` 존재 · `axis_2 = pass` | 409 `precondition` |
+| `/content` (편집) | `page_content` 존재 · `status ∈ {draft, reviewing, published, unpublished}` | 409 `precondition` |
+| `/slug` | `status ∈ {draft, reviewing}` | 409 `precondition` |
+| `/form-input` | `status = input_error` | 409 `precondition` |
+
+`/page`가 두 상태를 허용하는 이유: [상품 생성]을 누른 시점은 `brochure_ready`이고,
+2·3차 실패로 되돌아와 재호출할 때는 이미 `generating`이다.
+
+`status = generating`은 재시도를 막지 않는다. 이 조건이 막는 것은 이미 `draft`·`published`가
+된 상품에 생성 라우트를 다시 호출하는 경우뿐이다.
 | `/publish` | 게시 게이트 통과(spec §11.5) | 403 |
 | `/regenerate` | `status ∈ {brochure_ready, draft}` | 409 |
 | `/applications` | 대상 상품 `status = published` | 409 |

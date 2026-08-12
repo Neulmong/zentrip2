@@ -6,34 +6,41 @@ description: 상품 페이지의 page_content JSON 콘텐츠 모델을 완성한
 ## 목적
 - `page_content` 콘텐츠 모델을 최종 형태로 완성한다.
 - 콘텐츠 길이 계약을 적용해 반응형 보증이 성립하게 한다.
-- slug 후보를 발급한다.
 
 > **1.0에서 바뀐 점**: 이 스킬은 웹페이지 **HTML을 생성**하고 반응형 렌더링 검사를 받는 대상이었다. 2.2에서는 **JSON 콘텐츠 모델만** 생성하며, 렌더링은 고정 React 컴포넌트가 담당하고 반응형은 컴포넌트 사전 검증으로 보증한다(spec §9.1·§17.1).
 
-## 실행 조건
-- 호출 주체: web-builder-agent (workflow Step 05의 **세 번째이자 마지막** 스킬)
-- 선행 조건: `content-structuring`의 구조화 결과와 `theme-design-token-match`의 테마 키가 존재함
-- 실행 시점: 페이지 생성 1회당 1회, 가장 마지막
-- AI 호출: `content-structuring`과 같은 AI 호출 1회 안의 마지막 단계로 실행한다. **별도 호출을 추가하지 않는다**(spec §4.2)
-- 실행하는 경우: 2차·3차 검증 실패로 재시도할 때 — `content-structuring`부터 함께 다시 실행한다
+## 배선
+
+`manifest.json`이 유일한 출처다. 요약: `web-builder-agent` · `page` 체인 **3번** ·
+**AI 0회** · `impl: pipeline/page#buildPage`.
+
+앞의 두 스킬이 만든 재료를 받아 조립한다 — `theme-design-token-match`(1번)의 테마 키와
+`content-structuring`(2번)의 확장 서술이 있어야 한다. 체인의 마지막이 아니다:
+뒤에 `page-contract-check`(4) · `memo-leak-check`(5) · `slug-issue`(6)가 온다.
+
+**AI를 쓰지 않는다.** 이전 판본은 `content-structuring`과 "같은 AI 호출 1회 안의 마지막
+단계"로 적혀 있었으나, 하네스에서는 **AI가 서술만 쓰고 조립은 기계가 한다.** §9.3에서
+`source: "generated"`인 필드는 `itinerary.days[].text`와 `apply` 2종뿐이므로 값 필드를
+AI에게 다시 쓰게 할 이유가 없다. 스킬 두 개가 AI 호출 하나를 나눠 쓰는 구조는 규약 R2·R3에서
+성립하지 않는다 — `ai_budget`은 스킬 단위로 대조된다.
 
 ## 입력
 
 | 항목 | 형식 | 필수 | 설명 |
 |---|---|---|---|
-| 구조화 결과 | array of object | 필수 | `content-structuring` 출력 |
+| 확정 데이터표 | object(JSON) | 필수 | 값의 출처 |
+| 구조화 결과 | array of object | 필수 | `content-structuring` 출력 (확장 서술 + `apply` 문구) |
 | 테마 키 | string | 필수 | `theme-design-token-match` 출력 |
-| 행사명 | string | 필수 | slug 발급 판단용 |
-| 기존 slug 목록 | array of string | 필수 | 중복 검사용 |
+| 이미지 슬롯 목록 | array of string | 필수 | 업로드된 슬롯. 없는 슬롯을 만들지 않는다(§16.1) |
 
 ## 출력
 
 | 항목 | 형식 | 설명 |
 |---|---|---|
-| `page_content` | object(JSON) | 최종 콘텐츠 모델 |
-| slug 후보 | string | 발급된 slug |
-| slug 발급 방식 | `"행사명변환"` \| `"무작위"` | 어느 규칙으로 만들었는지 |
-| 길이 계약 검사 | array of object | `{경로, 항목, 글자수, 상한, 판정}` |
+| `page_content` | object(JSON) | 최종 콘텐츠 모델. **이것 하나뿐이다** |
+
+slug는 반환하지 않는다 — `slug-issue`(체인 6번)의 산출물이다.
+길이 계약 판정도 반환하지 않는다 — `page-contract-check`(체인 4번)가 검사한다.
 
 ```json
 {
@@ -57,18 +64,12 @@ description: 상품 페이지의 page_content JSON 콘텐츠 모델을 완성한
                     "행사정보요약.행사명": "행사정보.행사명", "행사정보요약.여행기간": "행사정보.여행기간",
                     "제목": "generated", "안내문구": "generated" } }
     ]
-  },
-  "slug_후보": "p-k3m9x2",
-  "slug_발급방식": "무작위",
-  "길이계약검사": [
-    { "경로": "sec_hero.data.headline", "항목": "hero.headline", "글자수": 11, "상한": 40, "판정": "통과" },
-    { "경로": "sec_itinerary.data.days[0].text", "항목": "일차별 서술", "글자수": 87, "상한": 200, "판정": "통과" }
-  ]
+  }
 }
 ```
 
 ## 산출물
-- 파일 산출물 없음. 반환값이 `products.page_content`와 `products.slug`에 저장된다.
+- 파일 산출물 없음. 반환값이 `products.page_content`에 저장된다(`products.slug`는 `slug-issue`의 몫이다).
 - 전달 대상: web-builder-agent → 서버 라우트가 DB에 저장 → 로그 `page_generated`
 - `draft-registration`은 2·3차 검증 통과 후 별도로 실행된다. **이 스킬이 draft 등록을 하지 않는다.**
 
@@ -90,7 +91,9 @@ description: 상품 페이지의 page_content JSON 콘텐츠 모델을 완성한
 - 모든 섹션은 `visible: true`로 시작한다.
 - `sec_apply`의 **신청 폼 필드 구성(이름·이메일·연락처·인원수·동의)은 콘텐츠 모델에 넣지 않는다.** 고정 컴포넌트가 렌더링하며 편집 불가다(spec §13.1).
 
-## 콘텐츠 길이 계약 (6종)
+## 콘텐츠 길이 계약 — 생성 시점은 4종이다 (§17.1)
+
+이 스킬이 조립할 때 지켜야 하는 상한이다.
 
 | 항목 | 상한 | 초과 시 |
 |---|---:|---|
@@ -98,31 +101,26 @@ description: 상품 페이지의 page_content JSON 콘텐츠 모델을 완성한
 | `hero.subcopy` | 80자 | 실패 |
 | 일차별 서술 | 200자 | 실패 |
 | 섹션 제목 | 30자 | 실패 |
-| `free_text` 블록 | 500자 | 실패 (편집기 삽입 블록) |
-| `notice` 블록 | 300자 | 실패 (편집기 삽입 블록) |
+
+**나머지 2종(`free_text` 500자·`notice` 300자)은 여기 없다.** 그 둘은 사람이 편집기에서
+끼워 넣는 블록이라 **생성 시점에는 존재하지 않는다.** 6종을 생성 단계에서 요구하면
+실행할 수 없는 규정이 된다. 6종은 **편집 저장 시점**의 계약이다.
+
+| 시점 | 계약 | 검사 주체 |
+|---|---|---|
+| 생성 (라우트 ⑤) | **4종** | `page-contract-check` |
+| 편집 저장 (`PATCH /content`) | **6종** | `lib/edit-contract.ts` |
+
+검사는 이 스킬이 하지 않는다. **`page-contract-check`가 한다**(규약 R2 — 조립과 검사는 다른 일이다).
+상한 값의 유일한 출처는 `.claude/skills/page-contract-check/SKILL.md`다.
 
 `hero.headline`은 `행사정보.행사명` 값 그대로이며 폼에서 40자 상한이 이미 강제된다(spec §7.1). 그래도 초과가 발생하면 **자르지 않고 실패로 반환한다** — 값 부분 삭제는 spec §16.1 위반이다.
 
-## slug 발급 규칙
+## slug — 이 스킬의 일이 아니다
 
-```text
-IF 행사명이 영문·숫자·공백만으로 구성
-  THEN 공백 → 하이픈, 소문자화, URL 예약문자 제거 → slug 후보
-       slug_발급방식 = "행사명변환"
-ELSE
-  p-{6자 base36} 발급        ← 한글이 한 글자라도 있으면 로마자 변환을 시도하지 않는다
-       slug_발급방식 = "무작위"
-
-IF slug 후보가 기존 slug 목록에 있음
-  THEN -2, -3 … 접미사를 붙여 중복을 피한다
-```
-
-| 항목 | 규정 |
-|---|---|
-| 허용 문자 | 영문 소문자·숫자·하이픈만 |
-| 로마자 변환 | **금지.** 표기 왜곡(`제주` → `jeju`/`cheju`)을 낳고 규칙이 모호해진다 |
-| 기획자 수정 | `draft`/`reviewing` 상태에서 편집기로 변경 가능(spec §12.1) |
-| 게시 후 | 변경 불가 |
+**`slug-issue` 스킬이 발급한다**(규약 R2 — 스킬은 단일 기능). 이 스킬은 slug를 만들지도
+읽지도 않는다. 발급 규칙·충돌 접미사·로마자 변환 금지의 유일한 출처는
+`.claude/skills/slug-issue/SKILL.md`이며, 체인에서 이 스킬보다 **뒤**에 온다.
 
 ## 반응형 보증 (검사 단계가 아니다)
 
@@ -130,7 +128,7 @@ IF slug 후보가 기존 slug 목록에 있음
 
 | 계약 | 내용 |
 |---|---|
-| 길이 계약 | 위 6종 상한 준수 |
+| 길이 계약 | 위 **4종** 상한 준수 (생성 시점) |
 | 이미지 참조 | 슬롯 이름만 담는다. 크기·비율·로딩 방식은 컴포넌트가 정한다 |
 | 표·긴 텍스트 | 콘텐츠 모델에 레이아웃 지시를 넣지 않는다. 컴포넌트가 `overflow-x: auto`를 처리한다 |
 | 금지 | **"반응형 검사 통과"를 기록하지 않는다.** 실제 검사 없는 형식적 기록이 된다(spec §17.1) |
