@@ -449,6 +449,39 @@ check('brochure_ready에서 입력을 교체할 수 있다 (§15.1의 [입력 �
 check('draft에서는 입력을 교체할 수 없다 (편집기로 고친다)',
   checkPrecondition('form-input', product({ status: 'draft' })) !== null)
 
+/*
+ * 같은 대조를 나머지 버튼에도 — **한 곳에서 어긋났으면 다른 곳도 봐야 한다.**
+ *
+ * 버튼이 라우트로 이어지는 것은 5종이고(`publish`·`unpublish`는 위에서 이미 본다)
+ * 여기서 남은 것은 `regenerate`/`restart` → #8, `create-page` → #5다.
+ * 재료 조건이 붙은 #5는 **재료를 충족시킨 상품**으로 상태 부분만 본다 — 재료가
+ * 없어서 막히는 것과 상태가 안 맞아서 막히는 것은 다른 이야기다.
+ */
+for (const status of [
+  'generating', 'input_error', 'brochure_ready', 'draft', 'reviewing', 'published', 'unpublished',
+] as const) {
+  const p = product({ status, validation_snapshot: passSnap })
+  const hasRestart = keysOf(p).some((k) => k === 'regenerate' || k === 'restart')
+  check(`${status}: [다시 생성]·[처음부터 다시] 버튼과 #8 전제조건이 일치한다`,
+    hasRestart === (checkPrecondition('regenerate', p) === null))
+
+  /*
+   * #5는 **한쪽 방향만** 본다 — 「버튼이 있으면 서버가 허용해야 한다」.
+   *
+   * 역방향은 성립하지 않고, 그것이 정상이다. `generating`에서 #5가 허용되는 이유는
+   * 2·3차 실패로 **재호출**할 때 이미 generating이기 때문이고(`policy.ts` #5 주석),
+   * 그 경로는 사람이 누르는 버튼이 아니라 [이어서 진행]이 부른다(§15.1.1).
+   * 양방향으로 걸면 이 정상 동작이 실패로 잡힌다 — 실제로 그렇게 잡혔다.
+   */
+  const ready = product({
+    status, validation_snapshot: passSnap, brochure_content: {} as ProductRow['brochure_content'],
+  })
+  if (keysOf(ready).includes('create-page')) {
+    check(`${status}: [상품 생성] 버튼이 있으면 #5가 허용한다`,
+      checkPrecondition('page', ready) === null)
+  }
+}
+
 /* ── S10. 배지 2종 (§10.4) ──────────────────────────────────── */
 section('S10 — 배지 2종은 서로 독립이다 (§10.4)')
 
