@@ -260,3 +260,132 @@ CLAUDE.md도 함께 뒤집는다. `.claude/`는 더 이상 "🚫 구현 중 참�
 AI 호출 0회를 유지하려면(절대원칙 1·§4.2) 이 한계는 피할 수 없다. 모든 스킬을 AI로 돌리면
 요청당 호출이 3배가 되고 페이지 확장이 이미 §5.5의 20초 임계에 붙어 있으므로 데모가 깨진다.
 `kind: ai` 스킬 6개에서는 SKILL.md가 프롬프트 **그 자체**이며, 이쪽이 문서가 완전히 load-bearing인 지점이다.
+
+---
+
+# 7. 인계 — 2026-08-12 시점 (여기서 멈췄다)
+
+**전환은 끝났다.** 이 절부터는 계획이 아니라 **실제로 무엇이 되어 있고 무엇이 남았는지**의 기록이다.
+다른 사람이 이 폴더를 열었을 때 이 절만 읽으면 이어서 작업할 수 있어야 한다.
+
+## 7.1 지금 어떻게 돌아가는가
+
+```
+POST /api/products/{id}/decompose        ← 라우트는 3줄이다
+  └ runAgent('decompose', {req, productId})       lib/harness/run.ts
+      ├ routeSpec()                              .claude/harness/manifest.json 조회
+      ├ applyEntry()                             manifest.entry (page 라우트만)
+      └ runStep()                                 lib/orchestrator.ts — 하네스 바깥(R7)
+          └ runChain()                            선언된 순서대로 스킬 실행
+              ├ optional-field-fill      mechanical  AI 0회
+              ├ data-normalization       mechanical  AI 0회
+              ├ itinerary-decomposition  ai          AI 1회 ← 예산 대조 후 호출
+              └ axis0-verification       mechanical  AI 0회
+          └ OUTCOME['decompose']                   lib/harness/agents/intake-agent.ts
+                                                   → StepOutcome (응답코드·복귀 경로)
+```
+
+**무엇이 어떤 순서로 실행되는지는 코드가 아니라 `manifest.json`이 답한다.**
+라우트 6개는 자기 이름만 안다. 프롬프트는 SKILL.md에만 있고 빌드 타임에 구워진다.
+
+| 파일 | 역할 |
+|---|---|
+| `.claude/harness/manifest.json` | 🔒 배선의 유일한 출처. 라우트 7 · 에이전트 5 · 스킬 21 |
+| `.claude/skills/<n>/SKILL.md` | 🔒 `## 프롬프트` 펜스가 시스템 프롬프트 그 자체 (ai 스킬 5개) |
+| `lib/harness/generated/registry.ts` | 자동 생성. 직접 편집 금지 — `npm run build:harness`가 덮어쓴다 |
+| `lib/harness/run.ts` | `runAgent` — 라우트가 부르는 유일한 함수 |
+| `lib/harness/loader.ts` | 매니페스트 조회 + `assertBudget` (R3 기계 강제) |
+| `lib/harness/context.ts` | 스킬 체인이 공유하는 자료 버스. 스킬은 서로를 모른다 |
+| `lib/harness/impls.ts` | mechanical 스킬 11종 등록표 |
+| `lib/harness/ai-skills.ts` | ai 스킬 5종. system은 `promptOf()`에서만 온다 |
+| `lib/harness/agents/*.ts` | 라우트별 `StepOutcome` 매핑 — 응답코드는 에이전트의 일 |
+| `lib/harness/materials.ts` | DB 재료 적재. 스킬을 순수 함수로 남긴다 |
+
+## 7.2 실측 검증 (2026-08-12)
+
+```
+npm run test:demo      43 통과 · 0 실패   ← §20 대본 관통. AI 6회 · 1:16
+npm run test:harness  103 통과 · 0 실패 · 1 격차
+npm run test:policy   247 통과 · 0 실패
+npx tsc --noEmit       0
+npm run lint           0
+npm run build          통과
+```
+
+`test:demo`는 **개발 서버가 떠 있어야 한다.** 4축 전부 pass → draft → 게시 →
+비로그인 `/p/{slug}` → 신청 → 이메일 → 로그 14행 순서까지 확인된다.
+
+### ⚠️ dev 서버가 죽으면 페이지가 전부 500이 된다
+
+첫 관통 시도에서 실패 9건이 났고 원인은 코드가 아니라 **고아 dev 서버**였다.
+`.next/dev/logs/next-development.log`에 `write EPIPE`가 10초마다 쌓이면
+그 서버의 렌더 워커가 죽은 상태이며(`Jest worker encountered 2 child process
+exceptions`) 모든 React 페이지가 500을 낸다. **API 라우트는 정상 응답하므로
+파이프라인 테스트만 보면 정상으로 보인다.**
+
+`/p/존재하지-않는-slug`가 404가 아니라 500이면 그 상황이다. 서버를 재시작한다.
+
+## 7.3 남은 일 — 우선순위 순
+
+### ① 문서 재기준화 마무리 (2건 남음 · 30분)
+
+`.claude/`가 실행 근거이므로 **문서에 남은 2.2 값은 그대로 실행된다.**
+verdict 2건은 고쳤고(커밋 `2442ea8`), 아래가 남았다:
+
+| 파일 | 고칠 것 | spec |
+|---|---|---|
+| `.claude/skills/product-orchestrator/SKILL.md` | 111행 「카운터 **3종**」 → 4종(`normalization`·`brochure`·`page`·`consistency`) · 113행 「0차 실패는 `brochure` 카운터를 공유한다」 → **0차는 `normalization`을 쓴다** · 84행 `retry_counts` 3종 → 4종 | §11.6 |
+| `.claude/skills/abnormality-detection/SKILL.md` | 25행 `{brochure, page, consistency}` → 4종 | §11.6·§5.5 |
+
+두 파일은 `kind: spec`이라 **체인에서 실행되지 않는다**(R7). 즉 코드 동작은 이미 4종으로
+맞다 — 고치는 이유는 다음 사람이 문서를 믿고 3종으로 구현하는 것을 막기 위해서다.
+근거는 CLAUDE.md의 「2.2 → 2.6에서 뒤집힌 값」 대조표.
+
+### ② 미결정 3건 (판단 필요)
+
+| 항목 | 상태 | 판단 |
+|---|---|---|
+| `form-input` 라우트를 매니페스트에 넣을까 | `validateFormInput`이 `PATCH /form-input`에서도 불린다 | **넣는 쪽.** `ai_budget: 0`인 두 번째 라우트가 된다. 지금은 라우트가 impl을 직접 부르므로 배선이 문서에 없다 |
+| `tonal-manner-apply` 유지 | 체인에 있고 정상 산출물에 0건임이 실측됨 | 유지. 회귀 감지용이고 AI 0회다 |
+| `consistency-check`를 mechanical로 내릴까 | 3차 축의 의미와 §20 1:15 검증 배지가 바뀐다 | **데모 후.** AI 6 → 5로 줄지만 지금 건드릴 이유가 없다 |
+
+### ③ 데모 후 (건드리면 재실측 필요)
+
+| 항목 | 왜 미뤘나 |
+|---|---|
+| user 메시지 지시문을 SKILL.md로 (`test:harness`의 ⏳ 1건) | 옮기면 user 메시지 바이트가 흔들린다. `npm run probe:deepseek` 재실측이 필요하다 |
+| spec §6.3 판정 3단계 (AI가 명사구 후보를 판정) | `DECOMPOSE_SCHEMA`에 자기검증 필드가 붙고 프롬프트가 바뀐다 → 캐시 적중·바이트 동일이 깨진다. 지금은 2단계까지만 하고 후보를 로그에 남긴다. 창작은 1·2차 `fact-check`가 잡으므로 유일한 방어선이 아니다 |
+
+## 7.4 이어서 작업하는 사람이 먼저 읽을 것
+
+1. **`CLAUDE.md`의 🔒 하네스 규약 R1~R7** — 코드 작성에도 적용되는 규약이다. 예외는 없다
+2. **`CLAUDE.md`의 「2.2 → 2.6에서 뒤집힌 값」 대조표** — 문서를 고칠 때마다 이 표로 대조한다
+3. **`.claude/harness/manifest.json`** — 배선을 알고 싶으면 코드가 아니라 이 파일이다
+
+### 규칙 3개만 지키면 된다
+
+- **순서를 바꾸려면** `manifest.json`을 고친다. 코드가 아니다
+- **프롬프트를 바꾸려면** SKILL.md의 `## 프롬프트` 펜스를 고치고 `npm run build:harness`
+- **커밋 전에** `npm run test:harness` — 실패하면 커밋하지 않는다
+
+### 되돌림
+
+`git tag demo-fallback` → `6f0289b`. 규약·매니페스트·검사기만 들어간 **문서 커밋**이고
+`app/`·`lib/`의 코드는 전환 전 상태다. 즉 이 태그를 꺼내면 라우트가 직접 `ai()`를
+부르는 옛 경로로 시연할 수 있다.
+
+단 그 시점에 남아 있는 결함 2건을 알고 써야 한다:
+- §5.5 `itinerary_partial` 이상 플래그가 발화하지 않는다 (`7b606a4`에서 수정)
+- 0차 명사구 검사가 정상 서술을 반려할 수 있다 (`2478d87`에서 수정)
+
+### 전환 이후 커밋 (태그 → HEAD)
+
+| 커밋 | 내용 |
+|---|---|
+| `524e09f` | 프롬프트 5개를 SKILL.md로 이식 — 바이트 동일 |
+| `8e1528d` | 코드젠 `.claude/` → `registry.ts` · 드리프트 검사 |
+| `1f20caa` | impl 함수 4개 — `buildConfirmedData` 분할 · `verifyAxis0` · 보호값 검증 |
+| `2478d87` | 0차 명사구 판정을 spec §6.3 구조로 (표시 ≠ 실패) |
+| `7b606a4` | `lib/harness/` 런타임 — `runAgent` · 예산 기계 강제 · `itinerary_partial` 수정 |
+| `cd77f99` | 라우트 6개 전환 · `*_SYSTEM` 5개 삭제 |
+| `2442ea8` | 로그 verdict 재기준화 |
