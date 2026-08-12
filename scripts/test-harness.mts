@@ -14,6 +14,7 @@
  *   npm run test:harness
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
@@ -227,6 +228,43 @@ const RUNTIME = [
 for (const [rel, what] of RUNTIME) {
   if (existsSync(p(rel))) check(`${rel} — ${what}`, true)
   else pending(`${rel} — ${what}`, '미구현')
+}
+
+/* ── 9. 드리프트 — 커밋된 산출물이 .claude/와 일치하는가 ────── */
+
+section('9. 코드젠 산출물 드리프트')
+
+const REG = p('lib', 'harness', 'generated', 'registry.ts')
+if (!existsSync(REG)) {
+  pending('registry.ts 드리프트 검사', '산출물이 없다 — npm run build:harness')
+} else {
+  const reg = readFileSync(REG, 'utf8')
+
+  /** SKILL.md의 `## 프롬프트` 펜스를 코드젠과 같은 규칙으로 뽑는다 */
+  function fenceOf(skill: string): string | null {
+    const md = readFileSync(p('.claude', 'skills', skill, 'SKILL.md'), 'utf8').replace(/\r\n/g, '\n')
+    const sec = md.split(/^## /m).find((s) => s.startsWith('프롬프트'))
+    if (!sec) return null
+    const open = '```text\n'
+    const i = sec.indexOf(open)
+    if (i < 0) return null
+    const start = i + open.length
+    const end = sec.indexOf('\n```', start)
+    return end < 0 ? null : sec.slice(start, end)
+  }
+
+  for (const [name, s] of Object.entries(m.skills)) {
+    if (s.kind !== 'ai') continue
+    const f = fenceOf(name)
+    if (f === null) { check(`${name}: 프롬프트 펜스 추출`, false); continue }
+    const want = createHash('sha256').update(f, 'utf8').digest('hex').slice(0, 12)
+    // registry.ts의 PROMPT_HASHES에 박힌 값과 대조한다
+    const got = new RegExp(`"${name}": "([0-9a-f]{12})"`).exec(reg)?.[1]
+    check(`${name}: SKILL.md ↔ registry.ts 해시 일치`, got === want, { registry: got, skillMd: want })
+  }
+
+  check('registry.ts의 라우트 수가 매니페스트와 같다',
+    (reg.match(/"agent":/g) ?? []).length === Object.keys(m.routes).length)
 }
 
 /* ── 결과 ────────────────────────────────────────────────────── */
