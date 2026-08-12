@@ -159,3 +159,60 @@ export function checkDayCount(cd: ConfirmedData, tripDays: number): ValidationIt
     `일차 수가 여행기간과 다릅니다. 초과·미달은 허용되지 않습니다.`,
     'confirmed_data.행사정보.일정')]
 }
+
+/**
+ * 스킬 `axis0-verification` — 0차 기계 검증 **4종 집계**.
+ *
+ * 이전에는 이 조립이 `decompose` 라우트 안에 흩어져 있었다. 스킬로 올리면서
+ * 명사구 판정의 허용 폭(2자 접두 일치)도 여기로 들어왔다 — 라우트에 두면
+ * 그 폭이 규정 문서 어디에도 안 남는다.
+ *
+ * **AI를 쓰지 않는다.** 0차는 전부 기계 판정이다(§11.1) — AI가 자기 생성물을
+ * 자기가 검사하는 구조에만 의존하지 않는다.
+ *
+ * 항목을 모아서 반환한다. 첫 위반에서 멈추지 않는다 — 기획자가 한 번에 다 보고
+ * 고쳐야 한다. 0건이면 통과다. **재시도 여부는 판단하지 않는다**(규약 R7).
+ */
+export function verifyAxis0(
+  fi: FormInput, cd: ConfirmedData, tripDays: number,
+): ValidationItem[] {
+  const items: ValidationItem[] = [
+    ...checkNormalization(fi, cd),
+    ...checkDayCount(cd, tripDays),
+    ...checkEvidence(cd),
+  ]
+
+  /*
+   * 명사구 후보 — 원문근거에도 다른 확정 값에도 없는 것은 창작이다(§6.3).
+   *
+   * ⚠️ **알려진 결함 — 이 검사는 현재 발동하지 않는다.**
+   *
+   * 두 번째 조건의 `haystack`이 `JSON.stringify(cd)`이고, 여기에는 검사 대상인
+   * `일정[].내용`이 **포함된다.** 후보는 그 `내용`에서 뽑았으므로 후보의 앞 2자는
+   * 항상 haystack에 있다 → 조건이 언제나 참 → 검사가 절대 실패를 내지 않는다.
+   * 실측 확인: 「성산일출봉과 우도를 방문합니다」(«우도»는 입력에 없다) → 위반 0건.
+   *
+   * `checkNouns` 자체는 올바르다. 그쪽 haystack은 `원문근거 + others`이고
+   * `others`에 `일정[].내용`이 없으므로 `근거존재`가 정확히 `false`로 나온다.
+   * 2자 접두 허용은 복합어 분해를 감안한 것이므로 **`checkNouns`와 같은 출처**
+   * (원문근거 + others)에 대해 적용해야 했다.
+   *
+   * **지금 고치지 않는 이유:** 검사를 살리면 0차가 실제 반려를 내기 시작한다.
+   * 오탐률을 모르는 상태에서 데모(2026-08-14) 직전에 켜면 재시도 폭주나
+   * `input_error`로 대본이 죽을 수 있다. 하네스 전환은 동작을 바꾸지 않는 작업이므로
+   * 라우트에 있던 동작을 **그대로** 옮긴다. 고치기 전에 `probe:deepseek`으로
+   * 실제 AI 출력에 대한 오탐률을 재야 한다.
+   */
+  const haystack = JSON.stringify(cd)
+  for (const n of checkNouns(cd)) {
+    if (n.근거존재 || haystack.includes(n.후보.slice(0, 2))) continue
+    items.push(item(
+      '입력 외 고유명사', '행사정보.일정',
+      '(원문근거 또는 확정 데이터표의 값)', n.후보,
+      `${n.day}일차 서술의 «${n.후보}»가 입력 어디에도 없습니다.`,
+      `confirmed_data.행사정보.일정[${n.day}].내용`,
+    ))
+  }
+
+  return items
+}

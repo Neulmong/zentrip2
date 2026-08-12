@@ -143,3 +143,52 @@ export function checkBrochure(b: BrochureContent): string[] {
 
   return errors
 }
+
+/**
+ * 스킬 `tonal-manner-apply` — 보호값 검증. **변경 0건을 스스로 확인한다.**
+ *
+ * `source` 맵이 가리키는 `confirmed_data` 경로의 값과 소개서에 담긴 값이 같은지
+ * 본다. `source`가 `"generated"`인 필드는 대조 대상이 아니다 — AI가 쓴 서술이다.
+ *
+ * ## 이 검사의 성격을 정직하게 적어 둔다
+ *
+ * `buildBrochure`가 값을 기계로 치환하므로 **지금은 구조적으로 같을 수밖에 없다.**
+ * 즉 이것은 현재 동작을 의심하는 검사가 아니라, 누군가 조립부에 값 변형을
+ * 끼워 넣었을 때 **1차 검증(AI 호출)까지 가기 전에** 잡는 회귀 가드다.
+ *
+ * 1차 검증이 `form_input` 기준으로 더 엄격하게 같은 것을 보므로 이 스킬의 값은
+ * 낮다. 남긴 이유는 AI 호출 없이 즉시 잡히기 때문이다 — 실패 원인을
+ * 「조립부가 값을 바꿨다」로 좁혀 준다.
+ */
+export function assertFactsUnchanged(cd: ConfirmedData, b: BrochureContent): string[] {
+  const reasons: string[] = []
+  const bag = cd as unknown as Record<string, Record<string, unknown>>
+
+  for (const sec of b.sections) {
+    for (const [field, path] of Object.entries(sec.source ?? {})) {
+      if (path === 'generated') continue
+
+      const [key, sub] = path.split('.')
+      const expected = bag[key]?.[sub]
+      if (expected === undefined) {
+        reasons.push(`${sec.id}.${field}: source가 가리키는 «${path}»가 확정 데이터표에 없습니다.`)
+        continue
+      }
+      // 배열(일정)은 여기서 값 단위로 비교하지 않는다 — 일차별 서술은
+      // `일정[n].내용`이고 0차 검증이 이미 원문근거 범위를 확인했다.
+      if (Array.isArray(expected)) continue
+
+      const got = sec.data[field]
+      if (typeof got !== 'string' && typeof got !== 'number') continue
+
+      if (String(got) !== String(expected)) {
+        reasons.push(
+          `${sec.id}.${field}: 확정 데이터표는 «${String(expected)}»인데 `
+          + `소개서는 «${String(got)}»입니다. 조립 과정에서 값이 바뀌었습니다.`,
+        )
+      }
+    }
+  }
+
+  return reasons
+}

@@ -77,25 +77,73 @@ export interface NormalizeChange {
   적용규칙: '날짜' | '금액' | '공백' | '결합' | '채움'
 }
 
-/** 선택 항목 미입력을 `추후 추가 예정`으로 채운다(§6.1). 값 생성이 아니라 표기다. */
-function fill(v: string, changes: NormalizeChange[], path: string): string {
-  const s = normalizeSpace(v)
-  if (s !== '') return s
-  changes.push({ 경로: path, 원본값: '', 정규화값: PLACEHOLDER, 적용규칙: '채움' })
-  return PLACEHOLDER
-}
-
 function space(v: string, changes: NormalizeChange[], path: string): string {
   const out = normalizeSpace(v)
   if (out !== v) changes.push({ 경로: path, 원본값: v, 정규화값: out, 적용규칙: '공백' })
   return out
 }
 
+/* ════════════════════════════════════════════════════════════════
+ * 스킬 경계 (하네스 규약 R2 — 스킬은 단일 기능)
+ *
+ *   optional-field-fill  →  fillOptional      선택 항목 채움만
+ *   data-normalization   →  normalizeFields   정규화 3종 + 결합 1종만
+ *
+ * `buildConfirmedData`는 둘을 이어 붙인 것으로 남긴다 — 기존 호출부와
+ * `test:policy`가 그대로 동작해야 하고, 두 스킬을 한 번에 쓰는 자리도 있다.
+ * ════════════════════════════════════════════════════════════════ */
+
 /**
- * `confirmed_data`를 만든다. 일정 배열은 AI 분해 결과를 나중에 넣으므로
+ * 채움 대상 — **화면에 표시되는 선택 필드 9개**.
+ *
+ * `행사정보.기획메모`가 여기 없는 것이 핵심이다. 그 필드는 고객에게 표시되지 않는
+ * 참고 자료이므로 미입력이면 빈 문자열로 남고, 그때는 AI 프롬프트에도 싣지 않는다.
+ * `추후 추가 예정`으로 채우면 AI가 그 문자열을 어조 참고 자료로 읽는다.
+ */
+export const FILL_FIELDS = [
+  '행사정보.여행스타일', '행사정보.타겟층', '행사정보.여행주제',
+  '숙박.숙박일정',
+  '항공편.공항', '항공편.항공사', '항공편.편명', '항공편.출발시간', '항공편.도착시간',
+] as const
+
+type Bag = Record<string, Record<string, string>>
+
+/**
+ * 스킬 `optional-field-fill` — 선택 항목 미입력을 `추후 추가 예정`으로 채운다.
+ *
+ * 이것만 한다. 정규화하지 않고(그건 `normalizeFields`), 관문 검사도 하지 않는다
+ * (그건 `input-guard`, 라우트 ①). 값이 있으면 손대지 않으므로 반환값의 키 집합은
+ * 입력과 항상 같다.
+ *
+ * 공백만 있는 문자열도 미입력으로 본다 — `"  "`가 화면에 빈칸으로 보이기 때문이다.
+ * 단 **채울 때만** 공백을 판정에 쓰고, 값이 있으면 원본을 그대로 넘긴다.
+ */
+export function fillOptional(
+  fi: FormInput,
+): { filled: FormInput; changes: NormalizeChange[]; 채운경로: string[] } {
+  const filled = structuredClone(fi)
+  const changes: NormalizeChange[] = []
+  const 채운경로: string[] = []
+
+  for (const path of FILL_FIELDS) {
+    const [key, sub] = path.split('.')
+    const bag = (filled as unknown as Bag)[key]
+    if (normalizeSpace(bag[sub] ?? '') !== '') continue
+    bag[sub] = PLACEHOLDER
+    changes.push({ 경로: path, 원본값: '', 정규화값: PLACEHOLDER, 적용규칙: '채움' })
+    채운경로.push(path)
+  }
+
+  return { filled, changes, 채운경로 }
+}
+
+/**
+ * 스킬 `data-normalization` — 정규화 3종(날짜·금액 콤마·공백) + 결합 1종.
+ *
+ * 채움은 이미 끝났다고 가정한다. 일정 배열은 AI 분해 결과를 나중에 넣으므로
  * 여기서는 빈 배열로 둔다.
  */
-export function buildConfirmedData(
+export function normalizeFields(
   fi: FormInput,
 ): { data: ConfirmedData; changes: NormalizeChange[] } {
   const changes: NormalizeChange[] = []
@@ -132,9 +180,9 @@ export function buildConfirmedData(
         // 자유 서술 필드 — 공백 규칙만 적용한다(§6.2)
         일정원문: space(fi.행사정보.일정원문, changes, '행사정보.일정원문'),
         일정: [],
-        여행스타일: fill(fi.행사정보.여행스타일, changes, '행사정보.여행스타일'),
-        타겟층: fill(fi.행사정보.타겟층, changes, '행사정보.타겟층'),
-        여행주제: fill(fi.행사정보.여행주제, changes, '행사정보.여행주제'),
+        여행스타일: space(fi.행사정보.여행스타일, changes, '행사정보.여행스타일'),
+        타겟층: space(fi.행사정보.타겟층, changes, '행사정보.타겟층'),
+        여행주제: space(fi.행사정보.여행주제, changes, '행사정보.여행주제'),
         // 채우지 않는다 — 고객에게 보이지 않는 필드다(§6.1의 채움 목적 밖).
         기획메모: space(fi.행사정보.기획메모, changes, '행사정보.기획메모'),
       },
@@ -142,7 +190,7 @@ export function buildConfirmedData(
         숙소명: space(fi.숙박.숙소명, changes, '숙박.숙소명'),
         객실타입: space(fi.숙박.객실타입, changes, '숙박.객실타입'),
         위치: space(fi.숙박.위치, changes, '숙박.위치'),
-        숙박일정: fill(fi.숙박.숙박일정, changes, '숙박.숙박일정'),
+        숙박일정: space(fi.숙박.숙박일정, changes, '숙박.숙박일정'),
       },
       상점: {
         상점명: space(fi.상점.상점명, changes, '상점.상점명'),
@@ -156,12 +204,29 @@ export function buildConfirmedData(
       },
       식사: { 식사정보: space(fi.식사.식사정보, changes, '식사.식사정보') },
       항공편: {
-        공항: fill(fi.항공편.공항, changes, '항공편.공항'),
-        항공사: fill(fi.항공편.항공사, changes, '항공편.항공사'),
-        편명: fill(fi.항공편.편명, changes, '항공편.편명'),
-        출발시간: fill(fi.항공편.출발시간, changes, '항공편.출발시간'),
-        도착시간: fill(fi.항공편.도착시간, changes, '항공편.도착시간'),
+        공항: space(fi.항공편.공항, changes, '항공편.공항'),
+        항공사: space(fi.항공편.항공사, changes, '항공편.항공사'),
+        편명: space(fi.항공편.편명, changes, '항공편.편명'),
+        출발시간: space(fi.항공편.출발시간, changes, '항공편.출발시간'),
+        도착시간: space(fi.항공편.도착시간, changes, '항공편.도착시간'),
       },
     },
   }
+}
+
+/**
+ * 두 스킬을 이어 붙인 것. **채움 → 정규화** 순서다.
+ *
+ * 순서를 뒤집으면 안 된다 — 정규화를 먼저 하면 `"  "`가 `""`가 되어 채움 대상
+ * 판정이 달라지고, 채움으로 넣은 `추후 추가 예정`이 금액·날짜 규칙을 타게 된다.
+ *
+ * 하네스에서는 `decompose` 체인의 1·2번 스킬이 이 순서를 그대로 밟는다.
+ * 이 함수는 두 스킬을 한 번에 쓰는 자리(테스트·기존 호출부)를 위해 남긴다.
+ */
+export function buildConfirmedData(
+  fi: FormInput,
+): { data: ConfirmedData; changes: NormalizeChange[]; 채운경로: string[] } {
+  const a = fillOptional(fi)
+  const b = normalizeFields(a.filled)
+  return { data: b.data, changes: [...a.changes, ...b.changes], 채운경로: a.채운경로 }
 }

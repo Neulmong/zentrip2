@@ -174,7 +174,7 @@ for (const [name, s] of Object.entries(m.skills)) {
   const src = readFileSync(file, 'utf8')
   const found = new RegExp(`export\\s+(async\\s+)?(function|const)\\s+${sym}\\b`).test(src)
   if (found) check(`${name}: ${ref}`, true)
-  else if (String(m.skills[name].impl ?? '').length && /^(new|split_from)/.test(String((m.skills[name] as Record<string, unknown>).status ?? '')))
+  else if (String(m.skills[name].impl ?? '').length && /^(new|split_from)/.test(String((m.skills[name] as unknown as Record<string, unknown>).status ?? '')))
     pending(`${name}: ${ref}`, '미구현 — 매니페스트가 목표를 선언했고 코드가 따라와야 한다 (R6)')
   else check(`${name}: ${ref} — export 존재`, false, `${sym} not exported from ${file}`)
 }
