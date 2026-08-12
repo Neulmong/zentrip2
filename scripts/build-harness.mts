@@ -174,8 +174,7 @@ const lit = (s: string) => JSON.stringify(s)
 
 const aiSkills = Object.keys(prompts).sort()
 
-const out = `/* eslint-disable */
-/**
+const out = `/**
  * ⚠️ 자동 생성 파일 — 직접 편집하지 마라.
  *
  *   생성: npm run build:harness  (scripts/build-harness.mts)

@@ -145,10 +145,28 @@ export function checkNouns(cd: ConfirmedData): NounCandidate[] {
     if (d.내용 === PLACEHOLDER) continue
     const haystack = `${d.원문근거} ${others}`
     for (const 후보 of extractNouns(d.내용)) {
-      out.push({ day: d.day, 후보, 근거존재: haystack.includes(후보) })
+      out.push({ day: d.day, 후보, 근거존재: hasEvidence(후보, haystack) })
     }
   }
   return out
+}
+
+/**
+ * 후보에 근거가 있는가. **haystack은 `원문근거 + others`여야 한다** —
+ * 검사 대상인 `일정[].내용`을 넣으면 후보가 거기서 왔으므로 항상 참이 되어
+ * 검사가 죽는다(이전 결함).
+ *
+ * `NOUN_PREFIX_LEN`자 접두 일치까지 근거로 인정한다. 복합어 분해 때문에 필요하다 —
+ * 원문근거가 «올레 7코스»인데 AI가 «올레길»이라 쓰면 완전 일치로는 창작으로 잡힌다.
+ * 접두 2자(«올레»)가 근거에 있으면 통과시킨다.
+ *
+ * 값을 키우면 창작이 통과하고, 줄이면 정상 서술이 반려된다. **실측으로 정한다.**
+ */
+export const NOUN_PREFIX_LEN = 2
+
+function hasEvidence(후보: string, haystack: string): boolean {
+  if (haystack.includes(후보)) return true
+  return 후보.length > NOUN_PREFIX_LEN && haystack.includes(후보.slice(0, NOUN_PREFIX_LEN))
 }
 
 /** 일차 수는 여행기간 일수와 **정확히 일치**해야 한다(§6.3·§11.2). */
@@ -173,9 +191,21 @@ export function checkDayCount(cd: ConfirmedData, tripDays: number): ValidationIt
  * 항목을 모아서 반환한다. 첫 위반에서 멈추지 않는다 — 기획자가 한 번에 다 보고
  * 고쳐야 한다. 0건이면 통과다. **재시도 여부는 판단하지 않는다**(규약 R7).
  */
+export interface Axis0Result {
+  /** 기계가 **확정한** 위반. 0차 실패 판정의 근거다 */
+  items: ValidationItem[]
+  /**
+   * §6.3 판정 2단계의 「위반 후보로 **표시**」.
+   *
+   * **실패로 세지 않는다.** 3단계(AI가 조사·어미 변화 등 정상 변형을 제외하고
+   * 실제 위반인지 판정)가 아직 구현되지 않았다. 로그에 남겨 추적만 한다.
+   */
+  위반후보: NounCandidate[]
+}
+
 export function verifyAxis0(
   fi: FormInput, cd: ConfirmedData, tripDays: number,
-): ValidationItem[] {
+): Axis0Result {
   const items: ValidationItem[] = [
     ...checkNormalization(fi, cd),
     ...checkDayCount(cd, tripDays),
@@ -183,36 +213,29 @@ export function verifyAxis0(
   ]
 
   /*
-   * 명사구 후보 — 원문근거에도 다른 확정 값에도 없는 것은 창작이다(§6.3).
+   * 명사구 후보 (§6.3 판정 2단계) — **표시만 한다. 실패로 만들지 않는다.**
    *
-   * ⚠️ **알려진 결함 — 이 검사는 현재 발동하지 않는다.**
+   * spec §6.3의 3단계 표가 주체를 이렇게 나눈다:
+   *   2단계 기계 — 후보 추출 + 포함 검사. 미존재 후보는 「위반 후보로 표시」
+   *   3단계 AI   — 표시된 후보가 실제 위반인지, **조사·어미 변화 등 정상 변형을 제외하고** 판정
    *
-   * 두 번째 조건의 `haystack`이 `JSON.stringify(cd)`이고, 여기에는 검사 대상인
-   * `일정[].내용`이 **포함된다.** 후보는 그 `내용`에서 뽑았으므로 후보의 앞 2자는
-   * 항상 haystack에 있다 → 조건이 언제나 참 → 검사가 절대 실패를 내지 않는다.
-   * 실측 확인: 「성산일출봉과 우도를 방문합니다」(«우도»는 입력에 없다) → 위반 0건.
+   * 어미 변화를 걸러내는 일이 3단계(AI)에 배정되어 있다는 것이 핵심이다.
+   * 2단계를 하드 실패로 쓰면 그 판정을 기계가 대신하게 되는데, `extractNouns`는
+   * `[가-힣]{2,}`로 모든 한국어 토큰을 잡고 `PARTICLES`는 조사만 벗기므로
+   * **동사 활용형을 명사구로 오인한다.**
    *
-   * `checkNouns` 자체는 올바르다. 그쪽 haystack은 `원문근거 + others`이고
-   * `others`에 `일정[].내용`이 없으므로 `근거존재`가 정확히 `false`로 나온다.
-   * 2자 접두 허용은 복합어 분해를 감안한 것이므로 **`checkNouns`와 같은 출처**
-   * (원문근거 + others)에 대해 적용해야 했다.
+   * 실측(정상 서술 4일차분): 후보 25개 중 8개가 무근거로 표시되고, 그 8개가
+   * «걷습니다» «숙박하십니다» «보내시며» «이용하실» «있습니다» «마치고» 같은
+   * 활용형과 «지역» «일정» 같은 일반명사였다. 하드 실패로 쓰면 정상 산출물이
+   * 매번 반려된다.
    *
-   * **지금 고치지 않는 이유:** 검사를 살리면 0차가 실제 반려를 내기 시작한다.
-   * 오탐률을 모르는 상태에서 데모(2026-08-14) 직전에 켜면 재시도 폭주나
-   * `input_error`로 대본이 죽을 수 있다. 하네스 전환은 동작을 바꾸지 않는 작업이므로
-   * 라우트에 있던 동작을 **그대로** 옮긴다. 고치기 전에 `probe:deepseek`으로
-   * 실제 AI 출력에 대한 오탐률을 재야 한다.
+   * 이전 라우트 코드는 `JSON.stringify(cd)`를 haystack으로 써서 후보가 항상
+   * 발견되게 만들어 놓았고(검사 대상인 `일정[].내용`이 그 문자열에 포함된다),
+   * 결과적으로 하드 실패가 나지 않았다 — **틀린 방법으로 맞는 결과**를 내고 있었다.
+   * 그 우연을 spec대로 된 구조로 바꾼다.
+   *
+   * 창작이 여기서 안 잡혀도 1·2차 검증(`fact-check`)이 「입력에 없는 지명·시설·
+   * 경유지·관광지 등장」을 실패로 잡는다. 0차의 이 항목은 유일한 방어선이 아니다.
    */
-  const haystack = JSON.stringify(cd)
-  for (const n of checkNouns(cd)) {
-    if (n.근거존재 || haystack.includes(n.후보.slice(0, 2))) continue
-    items.push(item(
-      '입력 외 고유명사', '행사정보.일정',
-      '(원문근거 또는 확정 데이터표의 값)', n.후보,
-      `${n.day}일차 서술의 «${n.후보}»가 입력 어디에도 없습니다.`,
-      `confirmed_data.행사정보.일정[${n.day}].내용`,
-    ))
-  }
-
-  return items
+  return { items, 위반후보: checkNouns(cd).filter((n) => !n.근거존재) }
 }
