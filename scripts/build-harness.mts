@@ -35,6 +35,17 @@ interface Skill {
   effort?: 'generate' | 'validate'
   schema?: string
   prompt_sections?: string[]
+  /**
+   * user 메시지의 **지시문** 섹션. `변형키 → SKILL.md 섹션명`.
+   *
+   * 데이터 조립(입력 JSON을 엮는 코드)은 TS에 남는다 — 요청마다 값이 달라져
+   * 문서로 동결할 수 없다. 하지만 그 앞뒤에 붙는 **지시 문장**은 프롬프트이고,
+   * R4에 따라 SKILL.md가 유일한 출처여야 한다.
+   *
+   * 변형키가 있는 이유: `fact-check`는 대상(`brochure`/`page`)에 따라 지시가
+   * 다르다. `default` 하나만 쓰는 스킬이 대부분이다.
+   */
+  user_prompt_sections?: Record<string, string>
   impl?: string
   implemented_by?: string
   asserts?: string[]
@@ -118,6 +129,7 @@ function fence(sectionBody: string): string | null {
 }
 
 const prompts: Record<string, string> = {}
+const userPrompts: Record<string, Record<string, string>> = {}
 
 for (const [name, skill] of Object.entries(manifest.skills)) {
   if (skill.kind !== 'ai') continue
@@ -153,6 +165,22 @@ for (const [name, skill] of Object.entries(manifest.skills)) {
   const prompt = parts.join('\n\n')
   if (!prompt.trim()) { fatal(`${name}: 프롬프트가 비어 있다`); continue }
   prompts[name] = prompt
+
+  /* user 지시문 — 있으면 변형키별로 굽는다 */
+  for (const [variant, secName] of Object.entries(skill.user_prompt_sections ?? {})) {
+    const body = section(md, secName)
+    if (body === null) {
+      fatal(`${name}: user 지시문 섹션 «## ${secName}»가 SKILL.md에 없다 (변형 «${variant}»)`)
+      continue
+    }
+    const f = fence(body)
+    if (f === null) {
+      fatal(`${name}: «## ${secName}» 안에 \`\`\`text 펜스가 정확히 1개 있어야 한다`)
+      continue
+    }
+    if (!f.trim()) { fatal(`${name}: user 지시문 «${variant}»가 비어 있다`); continue }
+    ;(userPrompts[name] ??= {})[variant] = f
+  }
 }
 
 /* ── 배선 검산 (코드젠도 자기 입력을 믿지 않는다) ───────────── */
@@ -251,6 +279,22 @@ ${aiSkills.map((n) => `  ${lit(n)}: ${lit(prompts[n])},`).join('\n')}
 /** 감사용 — SKILL.md를 고치면 이 값이 바뀐다 (문서가 load-bearing임의 증거) */
 export const PROMPT_HASHES = {
 ${aiSkills.map((n) => `  ${lit(n)}: ${lit(sha(prompts[n]))},`).join('\n')}
+} as const
+
+/**
+ * user 메시지의 **지시문**. 데이터 조립은 TS가 하고 지시 문장은 여기서 온다.
+ *
+ * 변형키가 있는 이유: \`fact-check\`는 대상(brochure/page)에 따라 지시가 다르다.
+ *
+ * 시스템 프롬프트와 달리 이것은 **캐시 프리픽스가 아니다** — DeepSeek 컨텍스트
+ * 캐시는 최장 공통 접두를 잡는데 system이 앞에 오므로, user 쪽 변경은 system
+ * 프리픽스 적중을 깨지 않는다.
+ */
+export const USER_PROMPTS = {
+${Object.keys(userPrompts).sort().map((n) => `  ${lit(n)}: {\n`
+  + Object.keys(userPrompts[n]).sort()
+    .map((v) => `    ${lit(v)}: ${lit(userPrompts[n][v])},`).join('\n')
+  + '\n  },').join('\n')}
 } as const
 
 export const SKILLS = ${JSON.stringify(

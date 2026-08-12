@@ -58,6 +58,31 @@ export const PROMPT_HASHES = {
   "itinerary-decomposition": "4f11348221a9",
 } as const
 
+/**
+ * user 메시지의 **지시문**. 데이터 조립은 TS가 하고 지시 문장은 여기서 온다.
+ *
+ * 변형키가 있는 이유: `fact-check`는 대상(brochure/page)에 따라 지시가 다르다.
+ *
+ * 시스템 프롬프트와 달리 이것은 **캐시 프리픽스가 아니다** — DeepSeek 컨텍스트
+ * 캐시는 최장 공통 접두를 잡는데 system이 앞에 오므로, user 쪽 변경은 system
+ * 프리픽스 적중을 깨지 않는다.
+ */
+export const USER_PROMPTS = {
+  "content-structuring": {
+    "default": "각 일차의 확장 서술과 신청 섹션의 제목·안내문구를 만들어라.",
+  },
+  "fact-check": {
+    "brochure": "각 섹션의 source가 가리키는 경로를 form_input에 적용해 값을 대조하라.\nsource가 \"generated\"인 필드는 값 대조 대신 \"입력에 없는 요소가 섞였는가\"만 본다.",
+    "page": "각 섹션의 source가 가리키는 경로를 form_input에 적용해 값을 대조하라.\n추가로 확인할 것:\n- image_slot·image_slots 값이 위 목록의 슬롯과 같은가 (빈 문자열은 미업로드로 정상)\n- hero.headline이 행사명 그대로이고 40자 이내인가\n- apply 내부의 가격요약·행사정보요약이 price·hero와 일치하는가\n- 테마 적용으로 섹션 구성·문구·사실정보가 바뀌지 않았는가",
+  },
+  "intro-content-fill": {
+    "default": "아래 일차별 서술을 근거로 「핵심일정」을 2~3문장으로 요약하라.",
+  },
+  "itinerary-decomposition": {
+    "default": "참고 (다른 확정 값 — 여기 있는 표현은 내용에 써도 된다):",
+  },
+} as const
+
 export const SKILLS = {
   "input-guard": {
     "kind": "mechanical",

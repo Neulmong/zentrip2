@@ -1,6 +1,6 @@
 import 'server-only'
 import {
-  AGENTS, HARNESS_VERSION, PROMPTS, ROUTES, SKILLS,
+  AGENTS, HARNESS_VERSION, PROMPTS, ROUTES, SKILLS, USER_PROMPTS,
   type RouteSpec, type SkillSpec,
 } from './generated/registry'
 
@@ -71,6 +71,24 @@ export function promptOf(skill: string): string {
     )
   }
   return prompt
+}
+
+/**
+ * user 메시지의 **지시문**. 데이터 조립은 TS가 하고 지시 문장은 SKILL.md에서 온다(R4).
+ *
+ * 없으면 던진다 — 지시문이 조용히 비면 AI가 무엇을 하라는지 모르는 요청을 받는다.
+ * 그건 실패보다 나쁘다: 그럴듯한 답이 오고 아무도 눈치채지 못한다.
+ */
+export function userPromptOf(skill: string, variant = 'default'): string {
+  const table = (USER_PROMPTS as Record<string, Record<string, string>>)[skill]
+  const text = table?.[variant]
+  if (!text) {
+    throw new Error(
+      `하네스: 스킬 «${skill}»의 user 지시문 «${variant}»가 registry에 없다. `
+      + 'npm run build:harness로 다시 굽거나 SKILL.md의 지시문 섹션을 확인하라',
+    )
+  }
+  return text
 }
 
 export function agentOf(route: HarnessRoute): string {

@@ -6,7 +6,7 @@ import {
 } from '@/lib/pipeline/ai-contracts'
 import type { PageContent } from '@/lib/pipeline/page'
 import type { ValidationItem } from '@/lib/types'
-import { promptOf, skillSpec } from './loader'
+import { promptOf, skillSpec, userPromptOf } from './loader'
 import { partialDaysOf } from './impls'
 import type { HarnessContext } from './context'
 
@@ -83,7 +83,7 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
 
     const data = await call<DecomposeResult>(c, 'itinerary-decomposition', args,
       `여행기간 일수: ${c.days}일\n\n일정원문:\n${cd.행사정보.일정원문}\n\n`
-      + `참고 (다른 확정 값 — 여기 있는 표현은 내용에 써도 된다):\n`
+      + `${userPromptOf('itinerary-decomposition')}\n`
       + JSON.stringify({ 식사: cd.식사, 숙박: cd.숙박, 상점: cd.상점 }, null, 2),
       DECOMPOSE_SCHEMA)
     if (!data) return
@@ -106,7 +106,7 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
       : ''
 
     const data = await call<{ 핵심일정: string }>(c, 'intro-content-fill', args,
-      `아래 일차별 서술을 근거로 「핵심일정」을 2~3문장으로 요약하라.\n`
+      `${userPromptOf('intro-content-fill')}\n`
       + `여행지: ${cd.행사정보.여행지} / 여행기간: ${cd.행사정보.여행기간}\n`
       + `여행주제: ${cd.행사정보.여행주제}\n\n`
       + cd.행사정보.일정.map((d) => `${d.day}일차: ${d.내용}`).join('\n')
@@ -134,7 +134,7 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
       + (cd.행사정보.기획메모?.trim()
         ? `\n## 기획 메모 (어조 참고용 · 인용 금지 · 고객 미노출)\n${cd.행사정보.기획메모}\n`
         : '')
-      + `\n각 일차의 확장 서술과 신청 섹션의 제목·안내문구를 만들어라.`,
+      + `\n${userPromptOf('content-structuring')}`,
       EXPAND_SCHEMA)
     if (!data) return
 
@@ -156,17 +156,11 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
         + `## 검사 대상 (page_content — 페이지 9개 섹션)\n`
         + `${JSON.stringify(c.p.page_content as PageContent, null, 2)}\n\n`
         + `## 업로드된 이미지 슬롯\n${JSON.stringify(c.materials.imageSlots, null, 2)}\n\n`
-        + `각 섹션의 source가 가리키는 경로를 form_input에 적용해 값을 대조하라.\n`
-        + `추가로 확인할 것:\n`
-        + `- image_slot·image_slots 값이 위 목록의 슬롯과 같은가 (빈 문자열은 미업로드로 정상)\n`
-        + `- hero.headline이 행사명 그대로이고 40자 이내인가\n`
-        + `- apply 내부의 가격요약·행사정보요약이 price·hero와 일치하는가\n`
-        + `- 테마 적용으로 섹션 구성·문구·사실정보가 바뀌지 않았는가`
+        + userPromptOf('fact-check', 'page')
       : 기준
         + `## 검사 대상 (brochure_content — 소개서 8개 섹션)\n`
         + `${JSON.stringify(c.p.brochure_content, null, 2)}\n\n`
-        + `각 섹션의 source가 가리키는 경로를 form_input에 적용해 값을 대조하라.\n`
-        + `source가 "generated"인 필드는 값 대조 대신 "입력에 없는 요소가 섞였는가"만 본다.`
+        + userPromptOf('fact-check', 'brochure')
 
     const data = await call<ValidationResult>(c, 'fact-check', args, user, VALIDATION_SCHEMA)
     if (!data) return

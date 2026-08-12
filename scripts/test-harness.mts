@@ -221,24 +221,31 @@ if (existsSync(AI_SKILLS_SRC)) {
 }
 
 /*
- * ⏳ 남은 R4 격차 — **정직하게 보고한다.**
+ * R4 완결 — user 메시지의 **지시문**도 SKILL.md에서 온다.
  *
- * user 메시지 조립은 가변 입력을 엮는 코드이므로 문서로 동결할 수 없다.
- * 그런데 조립 끝에 붙는 지시문(「각 섹션의 source가 가리키는 경로를…」)은
- * 사실상 프롬프트다. 지금은 TS에 있다.
+ * 데이터 조립(입력 JSON을 엮는 코드)은 TS에 남는다. 요청마다 값이 달라져 문서로
+ * 동결할 수 없기 때문이다. 하지만 그 앞뒤에 붙는 **지시 문장**은 프롬프트이므로
+ * `USER_PROMPTS`(코드젠 산출물)에서 꺼내 쓴다.
  *
- * 옮기지 않은 이유: 옮기면 user 메시지 바이트가 흔들릴 수 있고, 그러면
- * 전환이 「동작을 바꾸지 않는다」는 전제를 잃는다. 데모 후 `probe:deepseek`
- * 재실측과 함께 옮긴다.
+ * 시스템 프롬프트와 달리 user 쪽은 **캐시 프리픽스가 아니다** — DeepSeek 컨텍스트
+ * 캐시는 최장 공통 접두를 잡는데 system이 앞에 오므로, user 변경은 system 프리픽스
+ * 적중을 깨지 않는다. 이것이 이 이전을 안전하게 만든 근거다.
  */
 if (existsSync(AI_SKILLS_SRC)) {
-  const 지시문 = [...readFileSync(AI_SKILLS_SRC, 'utf8')
-    .matchAll(/^\s*\+ `(?:\\n)*(?:-|각|추가로|섹션|원문근거)[^`]*`/gm)].length
-  if (지시문 > 0) {
-    pending(`user 메시지 지시문 ${지시문}건이 SKILL.md 밖에 있다`,
-      'system 프롬프트는 전부 SKILL.md로 옮겼다. user 쪽 지시문은 바이트 보존을 '
-      + '위해 남겼다 — 데모 후 probe 재실측과 함께 옮긴다')
-  }
+  const src = readFileSync(AI_SKILLS_SRC, 'utf8')
+  const 남은지시문 = [...src.matchAll(/^\s*\+? *`(?:\\n)*(?:-|각 |추가로|원문근거|아래 |참고 )[^`]*`/gm)]
+    .map((x) => x[0].trim())
+  check('user 메시지 지시문이 TS에 남아 있지 않다', 남은지시문.length === 0, 남은지시문)
+  check('user 지시문이 userPromptOf()로 들어온다', /userPromptOf\(/.test(src))
+}
+
+for (const [name, s] of Object.entries(m.skills)) {
+  const ups = (s as unknown as { user_prompt_sections?: Record<string, string> }).user_prompt_sections
+  if (!ups) continue
+  const md = readFileSync(p('.claude', 'skills', name, 'SKILL.md'), 'utf8')
+  const have = [...md.matchAll(/^##\s+(.+?)\s*$/gm)].map((x) => x[1].trim())
+  const missing = Object.values(ups).filter((w) => !have.includes(w))
+  check(`${name}: 선언한 user 지시문 섹션이 SKILL.md에 실재한다`, missing.length === 0, missing)
 }
 
 /* ── 7. R1 — 라우트는 에이전트만 부른다 ────────────────────── */
