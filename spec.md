@@ -1505,11 +1505,15 @@ POST /api/applications
 | 규정 | 내용 |
 |---|---|
 | 불변 범위 | `form_input`은 **같은 `attempt_no` 안에서만** 불변이다. `attempt_no`가 올라갈 때만 교체할 수 있고, **그 경로는 #17뿐이다** |
-| 허용 상태 | `input_error`만. 다른 상태에서 호출하면 409 `precondition` |
+| 허용 상태 | `input_error` · **`brochure_ready`**. 다른 상태에서 호출하면 409 `precondition` |
 | 검증 | §7.1·§7.2 규칙으로 재검증. 위반 시 400, 행은 그대로 둔다 |
 | 부수 효과 | `confirmed_data`·`brochure_content`·`page_content`를 비우고 4개 축 폐기, `current_step = pipeline_started`, `failure_reason` 초기화 |
 | 보존 | `execution_id` · `slug`(있으면) · 업로드 이미지 |
 | 이미지 | #17이 함께 받으며, 교체된 슬롯만 `product_images`를 갱신한다 |
+
+**`brochure_ready`를 허용 상태에 넣은 근거**: §15.1이 그 상태의 제공 버튼으로 **[입력 수정]** 을 규정하고, §8.3이 「재시도가 소진되면 `input_error`가 아니라 `brochure_ready`로 두고 검토 화면에서 [다시 생성]·[입력 수정]을 제공한다」고 규정한다. 즉 **소개서를 보고 입력이 틀린 것을 발견하는 것이 검토 화면의 목적**이고 그때 유일한 길이 이 라우트다. 허용 상태를 `input_error`로만 두면 §15.1의 버튼이 갈 곳이 없다.
+
+**불변 규칙을 깨지 않는다**: #17은 `attempt_no`를 올리고 축 4개를 폐기하므로 「같은 `attempt_no` 안에서 불변」(§5.1)이 그대로 성립한다. 소개서·페이지는 §14.4의 부수 효과로 비워지므로 낡은 산출물이 남지도 않는다.
 
 ### 14.5 라우트별 시작 조건 (재료 기준)
 
@@ -1535,7 +1539,7 @@ POST /api/applications
 | 14 | `/applications` | 대상 상품 `status = published` | 409 `product_not_published` |
 | 15 | `GET /api/applications` | (없음) | — |
 | 16 | `/applications/{id}/resend` | 신청 행 존재 · `product_snapshot` 존재 | 404 / 409 `precondition` |
-| 17 | `/form-input` | `status = input_error` | 409 `precondition` |
+| 17 | `/form-input` | `status ∈ {input_error, brochure_ready}` | 409 `precondition` |
 | 18 | `DELETE /api/products/{id}` | `status ≠ published` · 해당 상품의 `applications` 0건 | 409 `precondition` |
 | 19 | `DELETE /api/applications/{id}` | (없음) | — |
 
@@ -1657,6 +1661,7 @@ POST /api/applications
 | `published` | [게시 중단] | `unpublished` | 공개 URL 404, 신청 폼 미표시 |
 | `published` | 편집기 저장 | `published` | 게시 유지, 즉시 반영, 편집 이력 |
 | `input_error` | [입력 수정 후 재제출] (§14.4 #17) | `generating` | `form_input` 교체, `attempt_no` +1, 카운터 4종 0, 축 4개 폐기, §8.2부터 재실행 |
+| `brochure_ready` | **[입력 수정]** (§15.1 · 같은 라우트 #17) | `generating` | 위와 동일. 소개서를 보고 입력이 틀린 것을 발견하는 경로다 |
 | `brochure_ready` / `draft` / `generating` | **[다시 생성]** · **[처음부터 다시]** | `generating` | §15.3 |
 | `input_error` / `brochure_ready` / `draft` / `reviewing` / `unpublished` / `generating` | **삭제** (§12.4) | (행 삭제) | `published`에서는 불가. 신청 1건 이상이면 불가 |
 

@@ -83,10 +83,20 @@ export const PRECONDITIONS: Record<RouteKey, Precondition> = {
     ok: (p) => p.status === 'published',
     detail: 'status = published',
   },
-  // #17
+  /*
+   * #17 — `brochure_ready`도 허용한다(§14.4 #17 상세).
+   *
+   * §15.1이 그 상태의 제공 버튼으로 [입력 수정]을 규정하고 §8.3이 「재시도가
+   * 소진되면 `input_error`가 아니라 `brochure_ready`로 두고 검토 화면에서
+   * [다시 생성]·[입력 수정]을 제공한다」고 규정한다. `input_error`로만 좁히면
+   * **그 버튼이 갈 곳이 없어 빈 폼으로 떨어진다** — 실제로 그 결함이었다.
+   *
+   * 불변 규칙은 그대로다: #17은 `attempt_no`를 올리고 축 4개를 폐기하므로
+   * 「같은 `attempt_no` 안에서 불변」(§5.1)이 성립한다.
+   */
   'form-input': {
-    ok: (p) => p.status === 'input_error',
-    detail: 'status = input_error',
+    ok: (p) => p.status === 'input_error' || p.status === 'brochure_ready',
+    detail: 'status = input_error 또는 brochure_ready',
   },
 }
 

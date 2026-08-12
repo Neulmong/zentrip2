@@ -1,5 +1,6 @@
 import { db } from '@/lib/supabase'
 import { loadProduct } from '@/lib/orchestrator'
+import { checkPrecondition } from '@/lib/policy'
 import { ProductForm, type ExistingImage } from './form'
 
 /**
@@ -9,11 +10,17 @@ import { ProductForm, type ExistingImage } from './form'
  * DB를 읽어야 한다.** 그래서 바깥을 서버 컴포넌트로 감싸 값을 읽어 내려보낸다 —
  * 환경 변수가 서버 전용이라(§4) 브라우저에서 직접 조회할 수 없다.
  *
- * ## 왜 `input_error`가 아니면 빈 폼인가
+ * ## 값을 채우는 상태 = #17이 허용하는 상태
  *
- * `form_input` 교체는 `input_error`에서만 허용된다(§14.4 #17). 다른 상태의 값을
- * 채워 보여주면 「고쳐서 내면 되겠구나」로 읽히는데, 실제 제출은 409로 거부된다.
- * 그럴 바에는 처음부터 신규 등록 폼으로 두는 편이 정직하다.
+ * `form_input` 교체가 허용되는 상태에서만 값을 채운다(§14.4 #17 — `input_error` ·
+ * `brochure_ready`). 허용되지 않는 상태의 값을 채워 보여주면 「고쳐서 내면
+ * 되겠구나」로 읽히는데 실제 제출은 409로 거부되므로, 그때는 신규 등록 폼으로 둔다.
+ *
+ * ⚠️ **두 목록이 어긋나면 조용히 망가진다.** 이전에는 여기가 `input_error`만
+ * 허용했고, 그래서 §15.1이 규정한 `brochure_ready`의 [입력 수정]이 **빈 폼**으로
+ * 떨어졌다. 게다가 `productId`가 없으니 제출이 #17이 아니라 신규 등록(#1)으로
+ * 가서 **원래 상품은 그대로 두고 다른 상품이 하나 더 만들어졌다.**
+ * 그래서 판정을 여기서 다시 쓰지 않고 `checkPrecondition`(단일 출처)에 묻는다.
  */
 export default async function NewProductPage({
   searchParams,
@@ -24,7 +31,7 @@ export default async function NewProductPage({
   if (!id) return <ProductForm />
 
   const p = await loadProduct(id).catch(() => null)
-  if (!p || p.status !== 'input_error') return <ProductForm />
+  if (!p || checkPrecondition('form-input', p) !== null) return <ProductForm />
 
   // 이미 올라간 사진 — 교체하지 않은 슬롯은 그대로 유지된다(§14.4 #17)
   const { data } = await db()

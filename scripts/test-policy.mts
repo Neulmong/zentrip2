@@ -426,6 +426,29 @@ check('draft 이후의 도달 화면은 편집기다',
   screenPath(describeStatus(product({ status: 'draft', validation_snapshot: passSnap })).screen, 'X')
   === '/admin/products/X/edit')
 
+/*
+ * 입력 수정 버튼 ↔ #17 전제조건 (§15.1 ↔ §14.4 #17)
+ *
+ * **이 대조가 없어서 결함이 살아 있었다.** §15.1은 `brochure_ready`에 [입력 수정]을
+ * 규정하는데 #17의 전제조건은 `input_error`만 허용했다. 그래서 버튼을 누르면 값이
+ * 채워지지 않은 빈 폼이 나오고, 제출하면 #17이 아니라 신규 등록으로 가서
+ * **원래 상품을 두고 다른 상품이 하나 더 생겼다.**
+ *
+ * 버튼 표기와 서버 판정이 어긋나지 않는지 상태 전체를 돌며 양방향으로 본다.
+ */
+for (const status of [
+  'generating', 'input_error', 'brochure_ready', 'draft', 'reviewing', 'published', 'unpublished',
+] as const) {
+  const p = product({ status, validation_snapshot: passSnap })
+  const hasButton = keysOf(p).some((k) => k === 'edit-input' || k === 'resubmit')
+  const routeAllows = checkPrecondition('form-input', p) === null
+  check(`${status}: [입력 수정] 버튼과 #17 전제조건이 일치한다`, hasButton === routeAllows)
+}
+check('brochure_ready에서 입력을 교체할 수 있다 (§15.1의 [입력 수정]이 갈 곳)',
+  checkPrecondition('form-input', product({ status: 'brochure_ready' })) === null)
+check('draft에서는 입력을 교체할 수 없다 (편집기로 고친다)',
+  checkPrecondition('form-input', product({ status: 'draft' })) !== null)
+
 /* ── S10. 배지 2종 (§10.4) ──────────────────────────────────── */
 section('S10 — 배지 2종은 서로 독립이다 (§10.4)')
 

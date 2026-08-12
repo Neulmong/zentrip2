@@ -68,6 +68,47 @@ const PATH: Record<string, string> = {
   항공편_출발시간: '항공편.출발시간', 항공편_도착시간: '항공편.도착시간',
 }
 
+/**
+ * 오류 키(`form_input` 경로) → 입력창의 `id`.
+ *
+ * 배열 행은 `id`가 곧 경로이므로(`rows.tsx` — `id={path}`) 이 표를 거치지 않는다.
+ */
+const ID_OF: Record<string, string> = Object.fromEntries(
+  Object.entries(PATH).map(([id, path]) => [path, id]),
+)
+
+/**
+ * 오류가 있는 **첫 칸으로 이동하고 커서를 놓는다**(§7.1).
+ *
+ * 이전 구현은 항상 `scrollTo({ top: 0 })`이었다. 폼이 길어서(필수 6그룹 + 선택 9)
+ * 최상단으로 올라가면 **어느 칸이 문제인지 화면에 보이지 않는다** — 오류 문구는
+ * 그 칸 옆에 있으므로 사람이 스크롤해서 찾아야 했다.
+ *
+ * 「첫」의 기준을 오류 객체의 키 순서로 잡지 않는다. 그 순서는 검증기가 만든
+ * 순서이고 화면 순서와 무관하다. **화면에서 가장 위에 있는 칸**을 고른다.
+ *
+ * 폼 전체 오류(`_`)와 이미지 경고는 대응하는 입력창이 없다 — 그 문구는 폼 상단에
+ * 뜨므로 최상단으로 올리는 것이 맞다.
+ */
+function focusFirstError(msg: Errors) {
+  const targets = Object.keys(msg)
+    .filter((k) => k !== '_' && k !== 'images')
+    .map((k) => document.getElementById(ID_OF[k] ?? k))
+    .filter((el): el is HTMLElement => el !== null)
+
+  if (targets.length === 0) {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    return
+  }
+
+  const first = targets.reduce((a, b) =>
+    a.getBoundingClientRect().top <= b.getBoundingClientRect().top ? a : b)
+
+  first.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  // 스크롤은 위에서 이미 시작했으므로 포커스가 다시 튀지 않게 한다
+  first.focus({ preventScroll: true })
+}
+
 type Values = Record<string, string>
 
 const EMPTY_VALUES: Values = Object.fromEntries(SCALARS.map((k) => [k, '']))
@@ -234,7 +275,7 @@ export function ProductForm({
     setErrors(msg)
     setProgress(null)
     setBusy(false)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    focusFirstError(msg)
   }
 
   /* ── §7.5 자연어 초안 — 폼을 채운다. 확정하지 않는다 ──────────── */

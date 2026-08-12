@@ -106,13 +106,40 @@ const EFFORT: Record<AiRequest['effort'], 'low' | 'medium' | null> = {
   plan: null,
 }
 
-function classify(err: unknown): { type: AiErrorType; detail: string; retryAfterMs?: number } {
+function classify(
+  err: unknown,
+  elapsedMs: number,
+): { type: AiErrorType; detail: string; retryAfterMs?: number } {
   const e = err as { name?: string; status?: number; message?: string; headers?: Headers }
   const msg = e?.message ?? String(err)
 
+  /*
+   * ⚠️ 연결 실패를 `timeout`으로 분류하면 **로그가 원인을 숨긴다** — 실측으로 드러났다.
+   * DeepSeek에 TCP 연결이 되지 않는 상태에서 SDK가 «Request timed out.»을 던지는데,
+   * 그것이 아래 timeout 분기에 걸려 `40초 타임아웃`으로 기록됐다. 실제 경과는
+   * **10.6초**(Node fetch의 기본 connect timeout 10초)이고 모델은 호출조차 되지 않았다.
+   * 로그만 보면 「모델이 느리다」로 읽히는데 조치는 정반대다.
+   *
+   * 가르는 기준은 **경과 시간**이다 — 요청 예산의 80%도 쓰지 않고 끊겼으면 예산
+   * 초과가 아니다. §4.3의 `api_error`가 「5xx·네트워크·인증」을 담당하므로
+   * 실패 6종을 늘리지 않고 그쪽으로 보낸다(재시도 경로는 6종이 동일하다).
+   */
+  const connectFailure = /connect timeout|fetch failed|econnrefused|econnreset|etimedout|enotfound|eai_again|socket hang up/i.test(msg)
+    || (/timed? ?out/i.test(msg) && elapsedMs < AI_TIMEOUT_MS * 0.8)
+
+  if (connectFailure) {
+    return {
+      type: 'api_error',
+      detail: `연결 실패 ${(elapsedMs / 1000).toFixed(1)}초 (모델 호출 전): ${msg.slice(0, 200)}`,
+    }
+  }
+
   if (e?.name === 'APIUserAbortError' || e?.name === 'TimeoutError'
       || /abort|timed? ?out/i.test(msg)) {
-    return { type: 'timeout', detail: `${AI_TIMEOUT_MS / 1000}초 타임아웃: ${msg.slice(0, 200)}` }
+    return {
+      type: 'timeout',
+      detail: `${AI_TIMEOUT_MS / 1000}초 예산 초과 (${(elapsedMs / 1000).toFixed(1)}초): ${msg.slice(0, 200)}`,
+    }
   }
 
   const status = e?.status ?? 0
@@ -202,7 +229,7 @@ export function createDeepseekProvider(apiKey: string, model = DEFAULT_MODEL): A
          */
         { signal: AbortSignal.timeout(AI_TIMEOUT_MS) })
       } catch (e) {
-        const { type, detail, retryAfterMs } = classify(e)
+        const { type, detail, retryAfterMs } = classify(e, Date.now() - startedAt)
         return fail(type, detail, null, null, retryAfterMs)
       }
 
