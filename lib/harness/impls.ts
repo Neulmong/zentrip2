@@ -57,14 +57,18 @@ export const MECHANICAL: Record<string, SkillRunner> = {
     c.채운경로 = r.채운경로
   },
 
+  /**
+   * 정규화 3종 + 결합 1종. `asserts: ["변경이력_존재"]`는 **여기서 검사하지 않는다** —
+   * `runChain`이 매니페스트 선언을 읽어 `lib/harness/asserts.ts`의 평가기를 돌린다.
+   *
+   * 전에는 이 자리에 손으로 베낀 검사가 있었는데 `Array.isArray(r.changes)`였고
+   * `normalizeFields`는 항상 배열을 반환하므로 영원히 참이었다. 선언과 강제가
+   * 끊겨 있으면 그런 빈 검사가 생긴다.
+   */
   'data-normalization': (c) => {
     const r = normalizeFields(c.filled ?? c.fi)
     c.cd = r.data
     c.changes.push(...r.changes)
-    // assert 변경이력_존재 — 이력 없이 값이 바뀌면 §6.2의 추적 가능성이 깨진다
-    if (!Array.isArray(r.changes)) {
-      throw new Error('하네스: data-normalization이 변경 이력을 반환하지 않았다 (assert 변경이력_존재)')
-    }
   },
 
   'axis0-verification': (c) => {

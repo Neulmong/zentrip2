@@ -1084,6 +1084,19 @@ section('하네스 체인 — 새 검사가 정상 산출물을 반려하지 않
   price.data.성인 = '130000원'
   check('tonal-manner-apply: 가격을 바꾸면 잡는다', assertFactsUnchanged(cd, 조작).length > 0)
 
+  /*
+   * 필드 **누락**. 값 변경만 보던 시절 두 검사가 다 놓치던 구멍이다 —
+   * `assertFactsUnchanged`는 없는 값을 건너뛰었고, `checkBrochure`는
+   * `data`에 있는 키만 봤다. 조립부 회귀가 가장 흔히 나타나는 형태다.
+   */
+  const 누락 = structuredClone(br)
+  const 숙박 = 누락.sections.find((s) => s.id === 'b_accommodation')!
+  delete 숙박.data.숙소명
+  check('tonal-manner-apply: source에 있는데 값이 없으면 잡는다',
+    assertFactsUnchanged(cd, 누락).length > 0, assertFactsUnchanged(cd, 누락))
+  check('brochure-contract-check: source에 있는데 data에 없으면 잡는다',
+    checkBrochure(누락).length > 0, checkBrochure(누락))
+
   // 페이지 쪽도 같은 방식으로 확인한다
   const theme = resolveTheme(cd.행사정보.여행스타일)
   const expanded = new Map(cd.행사정보.일정.map((d) => [d.day, d.내용]))

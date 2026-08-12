@@ -123,6 +123,15 @@ export function checkBrochure(b: BrochureContent): string[] {
   }
 
   for (const s of b.sections) {
+    /*
+     * **양방향으로 본다.** 아래 루프는 `data`에 있는 키에 `source`가 있는지만
+     * 보므로, 반대 방향(`source`에 선언됐는데 `data`에 없는 필드)이 두 검사
+     * 모두를 빠져나갔다. `assertFactsUnchanged`도 없는 값은 건너뛰었다.
+     */
+    for (const k of Object.keys(s.source ?? {})) {
+      if (!(k in s.data)) errors.push(`${s.id}.${k}: source에 선언됐는데 data에 없습니다.`)
+    }
+
     for (const [k, v] of Object.entries(s.data)) {
       if (k === 'days') continue
       if (!(k in s.source)) errors.push(`${s.id}.${k}에 source가 없습니다.`)
@@ -179,7 +188,30 @@ export function assertFactsUnchanged(cd: ConfirmedData, b: BrochureContent): str
       if (Array.isArray(expected)) continue
 
       const got = sec.data[field]
-      if (typeof got !== 'string' && typeof got !== 'number') continue
+
+      /*
+       * **없는 값을 통과시키지 않는다.**
+       *
+       * 전에는 `typeof got !== 'string' && typeof got !== 'number'`면 조용히
+       * 넘어갔다. 그래서 `source`에 선언된 필드가 조립 과정에서 통째로 빠져도
+       * 이 검사가 「이상 없음」을 냈다 — 이 검사의 존재 이유가 「조립부에 값
+       * 변형이 끼어들었을 때 잡는 회귀 가드」인데, 회귀가 가장 흔히 나타나는
+       * 형태(필드 누락)에 정확히 구멍이 있었다.
+       */
+      if (got === undefined || got === null) {
+        reasons.push(
+          `${sec.id}.${field}: source에 «${path}»로 선언됐는데 소개서에 값이 없습니다. `
+          + '조립 과정에서 필드가 누락됐습니다.',
+        )
+        continue
+      }
+      if (typeof got !== 'string' && typeof got !== 'number') {
+        reasons.push(
+          `${sec.id}.${field}: 사실정보 필드인데 값이 «${typeof got}»입니다. `
+          + '문자열 또는 숫자여야 대조할 수 있습니다.',
+        )
+        continue
+      }
 
       if (String(got) !== String(expected)) {
         reasons.push(

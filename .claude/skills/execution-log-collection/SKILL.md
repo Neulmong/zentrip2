@@ -103,6 +103,32 @@ description: 실행 ID 기준으로 단계별 입력·출력·판정·상태를 
 | 빈 값 | 화면에서 `-`로 표기한다. `null`을 그대로 노출하지 않는다 |
 | 일치성 | 기록값과 실제 산출물 반영값이 일치해야 한다 |
 
+### `retry_index`는 **그 라우트의 카운터**로 센다
+
+라우트마다 쓰는 카운터가 다르다(§11.6의 4종). 성공했을 때도 그 라우트의 카운터로
+회차를 기록해야 **몇 번 만에 됐는지**가 남는다.
+
+전에는 실패가 아니면 `brochure`로 고정돼 있었다. 그래서 0차를 두 번 재시도한 뒤
+성공하면 성공 행의 회차가 `normalization`(2)이 아니라 `brochure`(0)로 남아
+**재시도했다는 사실 자체가 로그에서 사라졌다.** 배선은 `manifest.json`의
+`counter`가 갖고, `runStep`이 `cfg.counter`로 받는다.
+
+### 한 요청이 두 단계를 기록할 때의 `verdict`
+
+라우트 ②는 `itinerary_decomposed`와 `normalization_validated`를 함께 남긴다.
+**추가 단계의 판정을 무조건 `pass`로 적지 않는다.**
+
+| 종류 | 판정 |
+|---|---|
+| 주 단계 | 실제 결과 |
+| 추가 단계 | 에이전트가 명시하면 그 값, **없으면 주 판정을 따른다** |
+| 후행 단계 (`draft_registered` 등) | `pass` — 실제로 수행된 조작이다 |
+
+전에는 추가·후행이 전부 `pass`였다. AI 호출이 실패해 분해가 일어나지 않았는데도
+`itinerary_decomposed`가 **통과로 기록됐다.** 분해는 됐고 0차만 실패한 경우에만
+`intake-agent`가 `extraVerdicts: { itinerary_decomposed: 'pass' }`로 명시한다 —
+**통과는 주장할 때만 기록된다.**
+
 ### `attempt_no`와 `retry_index`의 차이
 
 2.1까지는 `retry_index`만 있어 재제출 회차를 구분할 수 없었다. 같은 `retry_index = 0` 행이 여러 벌 쌓여 어느 것이 몇 번째 제출인지 알 수 없었다(spec 부록 C #10).

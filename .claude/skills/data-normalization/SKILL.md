@@ -7,12 +7,31 @@ description: form_input의 표기를 통일한다. 날짜 형식, 금액의 천 
 - `form_input`의 표기를 일관되게 맞춰 후속 단계의 문자열 대조가 성립하게 한다.
 - 허용 범위를 3종으로 못박아 AI가 값을 다듬는 것을 막는다.
 
-## 실행 조건
-- 호출 주체: intake-agent (workflow Step 02의 **두 번째** 스킬)
-- 선행 조건: `input-guard` 판정이 `통과`
-- 실행 시점: 일차 분해 이전 1회
-- AI 호출: **0회.** 전부 기계 변환이다
-- 실행하지 않는 경우: `input-guard`가 `입력오류`를 반환한 경우
+## 배선
+
+`manifest.json`이 유일한 출처다. 요약: `intake-agent` · `decompose` 체인 **2번** ·
+**AI 0회** · `impl: pipeline/normalize#normalizeFields`.
+
+앞에 `optional-field-fill`(1번)이 있다 — 선택 항목이 `추후 추가 예정`으로 채워진 뒤에
+정규화해야 빈 값과 채운 값의 처리가 갈리지 않는다. 뒤에 `itinerary-decomposition`(3) ·
+`axis0-verification`(4)이 온다.
+
+관문 검사(`input-guard`)는 이 체인이 아니라 **라우트 ①**에서 이미 끝났다.
+
+- 실행 시점: 라우트 ② 1회당 1회
+
+### `asserts: ["변경이력_존재"]` — 이 계약은 **실제로 실행된다**
+
+`runChain`이 이 스킬 실행 직후 `lib/harness/asserts.ts`의 평가기를 돌린다.
+`form_input`과 `confirmed_data`가 달라진 스칼라 필드는 **전부** `changes`에 경로가
+있어야 하며, 하나라도 없으면 **던진다**(500).
+
+이력 없이 바뀐 값은 「어느 규칙으로 바뀌었는지 설명할 수 없는 값」이고,
+0차 검증이 그것을 허용 차이로 볼지 판단할 근거가 없다(§6.2).
+
+**「3종 외 변형 0건」은 여기 넣지 않는다.** 그것은 spec의 판정이라 `ValidationItem`이
+되어 409 `retry`로 가야 한다 — assert로 걸면 500이 되어 §11.6 재시도 경로를
+통째로 건너뛴다. 그 검사는 `axis0-verification`의 검사 1이다.
 
 ## 입력
 

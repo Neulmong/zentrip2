@@ -96,6 +96,18 @@ export async function updateProduct(
  * 예: 페이지 생성 소진은 draft가 아니라 brochure_ready로 되돌린다(§9.5).
  * ════════════════════════════════════════════════════════════════ */
 
+/**
+ * 추가 단계(`cfg.extraSteps`)의 판정. **한 요청이 두 단계를 끝낼 때만 쓴다.**
+ *
+ * 기본값은 주 단계의 판정을 따른다 — 주 단계가 실패했는데 추가 단계를 통과로
+ * 남기면 **하지도 않은 작업이 통과로 기록된다.** 실제로 그랬다: 일정 분해 AI가
+ * 실패해도 `itinerary_decomposed`가 `pass`로 남았다.
+ *
+ * 추가 단계가 **정말로** 성공한 경우(예: 분해는 됐고 0차만 실패)에만 에이전트가
+ * 여기에 명시한다. 명시하지 않으면 통과를 주장하지 않는다.
+ */
+export type ExtraVerdicts = Partial<Record<LogStep, 'pass' | 'fail'>>
+
 export type StepOutcome =
   /** 단계 성공 → patch 적용 후 200 */
   | {
@@ -103,6 +115,7 @@ export type StepOutcome =
       patch: Partial<ProductRow>
       body: StepResultBody
       logOutput?: unknown
+      extraVerdicts?: ExtraVerdicts
       /** 주 단계 **뒤에** 남길 단계명 — draft 전이처럼 순서가 규정인 경우(§9.5) */
       trailingLogs?: LogStep[]
       /**
@@ -133,6 +146,7 @@ export type StepOutcome =
         trailingLogs?: LogStep[]
       }
       logOutput?: unknown
+      extraVerdicts?: ExtraVerdicts
     }
   /** 입력 문제로 중단 → 422. 검증 실패와 달리 카운터를 쓰지 않는다. */
   | {
@@ -140,6 +154,7 @@ export type StepOutcome =
       failure_reason: string
       patch?: Partial<ProductRow>
       logOutput?: unknown
+      extraVerdicts?: ExtraVerdicts
     }
 
 export interface StepConfig {
@@ -148,6 +163,17 @@ export interface StepConfig {
   step: LogStep
   /** 추가로 남길 단계명 — Step 02처럼 한 요청이 두 단계를 끝내는 경우 */
   extraSteps?: LogStep[]
+  /**
+   * 이 라우트가 쓰는 재시도 카운터 (`manifest.json`의 `counter`).
+   *
+   * **성공·입력오류일 때 `retry_index`를 무엇으로 기록할지가 이 값에 달렸다.**
+   * 이전에는 실패가 아니면 `'brochure'`로 고정돼 있었고, 그래서 0차를 두 번
+   * 재시도한 뒤 성공하면 성공 로그의 회차가 `normalization`(2)이 아니라
+   * `brochure`(0)로 남았다 — **몇 번 만에 됐는지가 로그에서 사라졌다**(§5.4).
+   *
+   * 카운터를 쓰지 않는 라우트는 `null`이며 회차는 0이다.
+   */
+  counter?: RetryCounter | null
   productId: string
   /** 일차 부족 채움이 있었다면 그 번호들 (itinerary_partial 판정용) */
   partialDays?: string[]
@@ -211,8 +237,14 @@ export async function runStep(
 
   const outcome = await work(product)
   const elapsedMs = Date.now() - startedAt
-  const counter: RetryCounter = outcome.type === 'fail' ? outcome.counter : 'brochure'
-  const retryIndex = product.retry_counts[counter] ?? 0
+
+  /*
+   * 실패면 그 실패가 올릴 카운터, 아니면 **이 라우트가 쓰는 카운터**(§5.4).
+   * 전에는 실패가 아닐 때 `'brochure'`로 고정해서 성공 로그의 회차가 틀렸다.
+   */
+  const counter: RetryCounter | null =
+    outcome.type === 'fail' ? outcome.counter : (cfg.counter ?? null)
+  const retryIndex = counter ? (product.retry_counts[counter] ?? 0) : 0
 
   const flagBase = {
     execution_id: product.execution_id,
@@ -228,7 +260,7 @@ export async function runStep(
     if (!applied.ok) return conflict({ reason: 'stale' })
 
     await writeLogs(cfg, product, applied.row, 'pass', retryIndex, outcome.logOutput,
-      outcome.trailingLogs)
+      outcome.trailingLogs, outcome.extraVerdicts)
     await detectAbnormalities({
       ...flagBase, retry_counts: applied.row.retry_counts,
       partialDays: outcome.partialDays ?? cfg.partialDays,
@@ -246,7 +278,8 @@ export async function runStep(
     })
     if (!applied.ok) return conflict({ reason: 'stale' })
 
-    await writeLogs(cfg, product, applied.row, 'fail', retryIndex, outcome.logOutput)
+    await writeLogs(cfg, product, applied.row, 'fail', retryIndex, outcome.logOutput,
+      [], outcome.extraVerdicts)
     await detectAbnormalities({
       ...flagBase, retry_counts: applied.row.retry_counts,
       aborted: `입력 문제로 확정: ${outcome.failure_reason}`,
@@ -255,16 +288,19 @@ export async function runStep(
   }
 
   /* ── 생성·검증 실패 ───────────────────────────────────────── */
-  const { retryFrom, items, exhausted, retryAfterMs } = outcome
+  const { counter: failCounter, retryFrom, items, exhausted, retryAfterMs } = outcome
 
-  if (hasRetryBudget(product.retry_counts, counter)) {
-    const counts = { ...product.retry_counts, [counter]: product.retry_counts[counter] + 1 }
+  if (hasRetryBudget(product.retry_counts, failCounter)) {
+    const counts = {
+      ...product.retry_counts, [failCounter]: product.retry_counts[failCounter] + 1,
+    }
     const applied = await updateProduct(product, { retry_counts: counts })
     if (!applied.ok) return conflict({ reason: 'stale' })
 
-    await writeLogs(cfg, product, applied.row, 'fail', retryIndex, outcome.logOutput ?? { items })
+    await writeLogs(cfg, product, applied.row, 'fail', retryIndex, outcome.logOutput ?? { items },
+      [], outcome.extraVerdicts)
     await detectAbnormalities({
-      ...flagBase, retry_counts: counts, bumped: counter, failedItems: items,
+      ...flagBase, retry_counts: counts, bumped: failCounter, failedItems: items,
     })
     // 재호출 중에도 실패 사유를 화면에 표시할 수 있도록 items를 함께 담는다.
     // `updated_at`은 카운터를 올리며 바뀐 값이다 — 이걸 안 주면 클라이언트가
@@ -282,7 +318,7 @@ export async function runStep(
   if (!applied.ok) return conflict({ reason: 'stale' })
 
   await writeLogs(cfg, product, applied.row, 'fail', retryIndex, outcome.logOutput ?? { items },
-    exhausted.trailingLogs)
+    exhausted.trailingLogs, outcome.extraVerdicts)
   await detectAbnormalities({
     ...flagBase, retry_counts: applied.row.retry_counts,
     failedItems: items, aborted: exhausted.detail,
@@ -312,12 +348,32 @@ export async function runStep(
   return ok({ ...exhausted.body, updated_at: applied.row.updated_at })
 }
 
-/** 한 요청이 두 단계를 끝내는 경우(Step 02) 순서대로 모두 기록한다. */
+/**
+ * 한 요청이 두 단계를 끝내는 경우(라우트 ②) 순서대로 모두 기록한다.
+ *
+ * ## 판정을 세 갈래로 나눈다 (§5.4)
+ *
+ * | 종류 | 판정 | 근거 |
+ * |---|---|---|
+ * | 주 단계 | 실제 결과 | 이 요청이 한 일 그 자체다 |
+ * | 추가 단계 | `extraVerdicts`에 있으면 그 값, **없으면 주 판정** | 통과를 함부로 주장하지 않는다 |
+ * | 후행 단계 | `pass` | 실제로 수행된 조작이다(예: `draft_registered`) |
+ *
+ * 전에는 추가·후행이 모두 무조건 `pass`였다. 그래서 일정 분해 AI가 실패해도
+ * `itinerary_decomposed`가 **통과로 기록됐다** — 하지도 않은 작업이 로그에 남았다.
+ * 로그가 유일한 사후 추적 수단이므로 거짓이 들어가면 추적 자체가 무의미해진다.
+ */
 async function writeLogs(
   cfg: StepConfig, before: ProductRow, after: ProductRow,
   verdict: 'pass' | 'fail', retryIndex: number, output: unknown,
-  trailing: LogStep[] = [],
+  trailing: LogStep[] = [], extraVerdicts?: ExtraVerdicts,
 ) {
+  const verdictFor = (step: LogStep): 'pass' | 'fail' => {
+    if (step === cfg.step) return verdict
+    if (trailing.includes(step)) return 'pass'
+    return extraVerdicts?.[step] ?? verdict
+  }
+
   for (const step of [...(cfg.extraSteps ?? []), cfg.step, ...trailing]) {
     await appendLog({
       execution_id: before.execution_id,
@@ -326,7 +382,7 @@ async function writeLogs(
       step,
       attempt_no: before.attempt_no,
       retry_index: retryIndex,
-      verdict: step === cfg.step ? verdict : 'pass',
+      verdict: verdictFor(step),
       status: after.status,
       input: { current_step: before.current_step, retry_counts: before.retry_counts },
       output: step === cfg.step ? (output ?? null) : null,

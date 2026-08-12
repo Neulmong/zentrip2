@@ -59,6 +59,12 @@ export function decompose(c: HarnessContext): StepOutcome {
   if (c.items.length > 0) {
     return {
       type: 'fail', counter: 'normalization', retryFrom: 2, items: c.items,
+      /*
+       * **분해는 성공했다.** 실패한 것은 0차 검증이다(§5.4).
+       * 명시하지 않으면 주 판정(fail)을 따르므로, 여기서만 통과를 주장한다.
+       * AI 실패·분해 실패 갈래에는 이 값이 없다 — 그때는 분해 자체가 없었다.
+       */
+      extraVerdicts: { itinerary_decomposed: 'pass' },
       exhausted: {
         patch: {
           status: 'input_error',

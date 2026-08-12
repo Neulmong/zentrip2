@@ -5,13 +5,14 @@ import {
 import { RESET_ON, resetCounters } from '@/lib/policy'
 import { conflict } from '@/lib/http'
 import { tripDays } from '@/lib/form-validation'
-import type { LogStep, ProductRow, ProductStatus } from '@/lib/types'
+import type { LogStep, ProductRow, ProductStatus, RetryCounter } from '@/lib/types'
 import type { ConfirmedData } from '@/lib/pipeline/normalize'
-import { assertBudget, routeSpec, skillSpec, type HarnessRoute } from './loader'
+import { agentOf, assertBudget, routeSpec, skillSpec, type HarnessRoute } from './loader'
 import { loadMaterials } from './materials'
 import { newContext, type HarnessContext } from './context'
 import { MECHANICAL } from './impls'
 import { AI_SKILLS } from './ai-skills'
+import { ASSERTS } from './asserts'
 import { decompose } from './agents/intake-agent'
 import { brochure } from './agents/content-writer-agent'
 import { page } from './agents/web-builder-agent'
@@ -73,7 +74,34 @@ async function runChain(
       run(c, args)
     }
 
+    // 스킬이 중단시켰으면 산출물이 없다 — 그 스킬의 계약을 물을 수 없다
+    if (!c.stop) checkAsserts(s.name, sk.asserts, c)
+
     if (c.stop) break
+  }
+}
+
+/**
+ * 스킬 계약 평가 — 매니페스트의 `asserts`를 **실제로 실행한다**(규약 R5).
+ *
+ * 선언만 있고 평가기가 없으면 던진다. 조용히 건너뛰지 않는 이유는 스킬 러너와
+ * 같다: **계약이 빠진 채로 통과하는 것이 가장 위험한 실패다.** 선언해 두고
+ * 검사되지 않는 상태가 정확히 이전 결함이었다.
+ */
+function checkAsserts(
+  skill: string, declared: readonly string[] | undefined, c: HarnessContext,
+): void {
+  for (const name of declared ?? []) {
+    const evaluate = ASSERTS[name]
+    if (!evaluate) {
+      throw new Error(
+        `하네스: 스킬 «${skill}»이 선언한 assert «${name}»의 평가기가 lib/harness/asserts.ts에 없다`,
+      )
+    }
+    const 위반 = evaluate(c)
+    if (위반) {
+      throw new Error(`하네스 계약 위반 — «${skill}» assert «${name}»: ${위반}`)
+    }
   }
 }
 
@@ -83,6 +111,14 @@ async function runChain(
  * 조회 시점을 **전이 전에** 본다. 뒤로 미루면 낡은 요청이 상태를 먼저
  * 바꿔 놓고 거절당한다. 전이에 성공하면 `updated_at`이 바뀌므로 클라이언트가
  * 보낸 값을 그대로 `runStep`에 넘길 수 없다 — 낡게 만든 것이 우리 자신이다.
+ *
+ * ## 여기서 읽은 행을 `runStep`에 넘기지 않는다 (의도된 재조회)
+ *
+ * `runStep`이 곧바로 같은 상품을 다시 읽으므로 조회가 2회다. 줄이고 싶어지지만
+ * **줄이면 안 된다.** 전이와 `runStep` 사이에 다른 요청이 이 상품을 갱신할 수
+ * 있고, 그때 여기서 읽은 행은 이미 낡았다. 낡은 행으로 시작 조건을 판정하고
+ * 조건부 갱신을 걸면 §16.1.1이 막으려는 상황을 우리가 만드는 셈이다.
+ * 읽기 1회가 그 위험보다 싸다.
  */
 async function applyEntry(
   entry: NonNullable<RouteSpec['entry']>, productId: string, clientUpdatedAt: string | undefined,
@@ -124,6 +160,15 @@ export async function runAgent(
   route: HarnessRoute, opts: { req: Request; productId: string },
 ): Promise<Response> {
   const spec = routeSpec(route)
+
+  /*
+   * 라우트 → 에이전트 배선을 **양방향으로** 확인한다.
+   * `agentOf`는 이 호출이 생기기 전까지 죽은 코드였고, 그래서 매니페스트의
+   * `agent` 필드는 런타임에 한 번도 읽히지 않았다 — 선언만 있고 구속력이 없었다.
+   * 여기서 부르면 배선이 어긋난 채 배포되는 경로가 없어진다.
+   */
+  agentOf(route)
+
   const clientUpdatedAt = await readUpdatedAt(opts.req)
 
   let effectiveUpdatedAt = clientUpdatedAt
@@ -138,6 +183,8 @@ export async function runAgent(
       route,
       step: spec.step as LogStep,
       extraSteps: spec.extra_steps as LogStep[] | undefined,
+      // 성공·입력오류일 때 `retry_index`를 무엇으로 남길지가 이 값에 달렸다(§5.4)
+      counter: spec.counter as RetryCounter | null,
       productId: opts.productId,
       clientUpdatedAt: effectiveUpdatedAt,
     },
