@@ -12,8 +12,8 @@
 | `origin-spec.md` (2.2) | **이전 판본.** 방향성 대조용 히스토리. 구현 근거로 쓰지 않는다 |
 | **`.claude/skills/` · `.claude/agents/`** | **🔒 런타임 실행 근거.** 프롬프트·스킬 체인·판정 규칙의 유일한 출처 |
 | **`.claude/harness/manifest.json`** | **🔒 배선의 유일한 출처.** 라우트 → 에이전트 → 스킬 체인 · AI 예산 |
-| **`docs/harness-migration.md` §7** | **📌 인계 문서. 이어서 작업하려면 이 절부터 읽는다** — 지금 어떻게 돌아가는지 · 실측 결과 · 남은 일 · 되돌림 |
-| `docs/harness-migration.md` §0~§6 | 전환 계획·근거. 완료 후에도 설계 판단의 기록으로 남긴다 |
+| **`docs/harness-migration.md` §7** | **📌 인계 문서. 이어서 작업하려면 이 절부터 읽는다** — §7.1 지금 어떻게 돌아가나 · §7.2 실측 · **§7.3 ⑤ 남은 일** · §7.4 처음 여는 사람 |
+| `docs/harness-migration.md` §0~§6 | 전환 계획·근거. **8/12 낮 시점의 수치가 그대로 남아 있다** — 현재 상태는 §7이 갖는다 |
 
 **⚠️ 2026-08-12에 뒤집힌 규칙:** `.claude/`는 더 이상 "구현 중 참조 금지"가 아니다.
 **정반대로, 구현이 반드시 경유해야 하는 실행 근거다.** 아래 하네스 규약이 이를 강제한다.
@@ -202,15 +202,30 @@ npm run test:harness   # R1·R3·R4 + 매니페스트 정합성. 실패하면 �
 
 ## 명령
 
+### 키 없이 도는 것 — 처음 열면 여기부터
+
 ```bash
-npm run dev     # 개발 서버
-npm run build   # 프로덕션 빌드
-npm run lint
-npm run probe:deepseek   # 주 AI 경로 실측 — 키·모델을 건드렸으면 이것부터
-npm run test:policy      # 규칙·계약 회귀
+npm ci
 npm run build:harness    # .claude/ → lib/harness/generated/registry.ts 코드젠
-npm run test:harness     # 🔒 하네스 규약 위반 검사. 커밋 전 필수
+npm run test:harness     # 🔒 하네스 규약 위반 검사. 커밋 전 필수 (155 · 0 · 미구현 0)
+npm run test:policy      # 규칙·계약 회귀 (265 · 0)
+npx tsc --noEmit && npm run lint
+npm run build            # 프로덕션 빌드. prebuild가 코드젠을 다시 돌려 드리프트를 잡는다
 ```
+
+### AI·DB 키가 필요한 것
+
+```bash
+npm run dev              # 개발 서버 (predev가 코드젠을 돌린다)
+npm run probe:deepseek   # 주 AI 경로 실측 — 키·모델을 건드렸으면 이것부터
+npm run test:demo        # §20 대본 관통. dev 서버 필요 · **AI 5회 + 이메일 1통**
+npm run test:exhaustion  # 재시도 소진 경로. AI를 일부러 실패시킨 서버가 필요하다
+```
+
+`test:demo`·`test:exhaustion`은 `KEEP=1`을 붙이면 데이터를 남긴다(기본은 지운다).
+
+**첫 요청은 라우트 컴파일 때문에 느리다.** 관통 실측 2:22(첫 실행) → 1:28(예열 후).
+시연·측정 전에는 한 번 돌려 예열한다.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
