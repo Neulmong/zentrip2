@@ -19,15 +19,30 @@ model: inherit
 
 **한 요청에서 AI를 1회만 호출한다**(spec §4.2). 그 1회는 `itinerary-decomposition`에 배정되며, 나머지 스킬은 AI를 쓰지 않는 기계 처리다.
 
-## 연결 스킬 (실행 순서)
+## 배선
+
+**`.claude/harness/manifest.json`이 유일한 출처다.** 아래 표는 사람이 읽기 위한 사본이며,
+어긋나면 manifest가 이긴다. 순서를 바꾸려면 manifest를 고친다(규약 R5).
+
+### `products` (라우트 ①) — AI 0회
 
 | 순서 | 스킬 | AI | 역할 |
 |---:|---|---:|---|
-| 1 | `input-guard` | 0 | 필수·선택 판정, `추후 추가 예정` 채움, 사유 문장 작성 |
-| 2 | `data-normalization` | 0 | 정규화 3종 적용 |
-| 3 | `itinerary-decomposition` | **1** | 일정 원문 일차 분해 + 원문근거 |
+| 1 | `input-guard` | 0 | 필수 폼 그룹 6개 관문 재검사 |
 
-> `input-guard`는 2.2에서 `required-field-check`·`rejection-reason-writer`·`natural-language-extraction` 3개를 통합한 스킬이다. 웹 폼 도입으로 세 스킬 각각의 일이 한두 줄로 줄어들었기 때문이다.
+### `decompose` (라우트 ②) — AI 1회
+
+| 순서 | 스킬 | AI | 역할 |
+|---:|---|---:|---|
+| 1 | `optional-field-fill` | 0 | 선택 4항목을 `추후 추가 예정`으로 채움 |
+| 2 | `data-normalization` | 0 | 정규화 3종 + 여행기간 2필드 결합 |
+| 3 | `itinerary-decomposition` | **1** | 일정 원문 일차 분해 + 원문근거 |
+| 4 | `axis0-verification` | 0 | 0차 기계 검증 4종 |
+
+> **스킬 분할 이력.** 2.2의 `input-guard`는 관문 검사·선택 항목 채움·사유 문장을 한 스킬에서 했다.
+> 하네스 규약 R2(스킬은 단일 기능)에 따라 관문 검사(`input-guard`, 라우트 ①)와 채움(`optional-field-fill`,
+> 라우트 ②)으로 쪼갰다. 관문 검사의 자리는 폼 제출 라우트이지 분해 라우트가 아니다.
+> 0차 검증도 `axis0-verification`으로 분리했다 — 이전에는 라우트 코드에 흩어져 있었다.
 
 ## 입력
 
@@ -36,13 +51,13 @@ model: inherit
 | `product_id` | uuid | 대상 상품 |
 | `form_input` | object(JSON) | 사용자 원본 폼 입력. **모든 검증의 기준값** |
 | `attempt_no` | number | 현재 시도 회차 |
-| `retry_counts` | object | `{brochure, page, consistency}` |
+| `retry_counts` | object | **4종** `{normalization, brochure, page, consistency}` — 예산 비공유(§11.6). 0차 실패는 `normalization`을 올린다 |
 
 ## 출력
 
 | 항목 | 형식 | 설명 |
 |---|---|---|
-| 판정 | `"통과"` \| `"입력오류"` \| `"검증실패"` | |
+| 판정 | `"ok"` \| `"input_error"` \| `"fail"` | `lib/orchestrator.ts`의 `StepOutcome.type`과 동일한 값이다. **한글 판정값을 반환하지 않는다** — 저장은 영어, 화면에서만 한글(§5.4) |
 | `confirmed_data` | object(JSON) | 데이터 키 6개 구조 |
 | 0차 검증 결과 | object | `{verdict, items}` |
 | 변경 이력 | array | 정규화 변경 내역 |
@@ -115,7 +130,7 @@ model: inherit
 | 상황 | 코드 | 상태 |
 |---|---:|---|
 | 성공 | 200 | `current_step = normalization_validated` |
-| 0차 실패 + 재시도 여력 | 409 | `retry_counts.brochure` +1 |
+| 0차 실패 + 재시도 여력 | 409 `retry` · `retry_from: 2` | **`retry_counts.normalization` +1** (§11.6 — `brochure`와 예산을 공유하지 않는다) |
 | 0차 재시도 소진 | 422 | `input_error` |
 | 일차 초과·구분 불가 | 422 | `input_error` |
 

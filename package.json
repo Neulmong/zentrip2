@@ -9,7 +9,9 @@
     "lint": "eslint",
     "verify:schema": "node --env-file=.env.local scripts/verify-schema.mjs",
     "test:policy": "tsx scripts/test-policy.mts",
-    "probe:ai": "tsx --env-file=.env.local scripts/probe-ai.mts",
+    "test:harness": "tsx scripts/test-harness.mts",
+    "probe:deepseek": "tsx --env-file=.env.local scripts/probe-deepseek.mts",
+    "probe:gemini": "tsx --env-file=.env.local scripts/probe-gemini.mts",
     "probe:models": "tsx --env-file=.env.local scripts/probe-models.mts",
     "test:api": "tsx --env-file=.env.local scripts/test-api.mts",
     "test:pipeline": "tsx --env-file=.env.local scripts/test-pipeline.mts",
@@ -26,8 +28,7 @@
     "test:stale": "tsx --env-file=.env.local scripts/test-stale.mts",
     "verify:a11y": "tsx scripts/verify-a11y.mts",
     "verify:artifacts": "tsx --env-file=.env.local scripts/verify-artifacts.mts",
-    "verify:responsive": "tsx --env-file=.env.local scripts/verify-responsive.mts",
-    "probe:deepseek": "tsx --env-file=.env.local scripts/probe-deepseek.mts"
+    "verify:responsive": "tsx --env-file=.env.local scripts/verify-responsive.mts"
   },
   "dependencies": {
     "@google/genai": "^2.16.0",

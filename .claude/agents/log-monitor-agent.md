@@ -12,22 +12,30 @@ model: inherit
 
 > **1.0에서 바뀐 점**: `outputs/run-{execution_id}/log.html` 단일 파일에 HTML 표로 기록하던 방식은 폐기됐다. 서버리스 환경에서는 파일시스템 쓰기가 불가능하다(spec §14.3). 이제 **Supabase 테이블에 행을 append**한다.
 
-## 담당 단계
+## 배선 — 이 에이전트는 하네스 **바깥**이다 (규약 R7)
 
-| Step | 호출 시점 | AI 호출 |
-|---|---|---:|
-| Step 01~11 전부 | 각 단계 종료 직후 | **0회** |
+`manifest.json`에서 이 에이전트의 `routes`는 **빈 배열**이다. 스킬 체인으로 실행되지 않는다.
 
-이 에이전트는 AI를 쓰지 않는다. 따라서 어느 서버 라우트에서 함께 실행해도 1요청 1AI호출 원칙을 위반하지 않는다(spec §4.2).
+| Step | 호출 시점 | AI 호출 | 실행 주체 |
+|---|---|---:|---|
+| Step 01~11 전부 | 각 단계 종료 직후 | **0회** | `lib/orchestrator.ts#runStep` → `lib/logging.ts` |
 
-## 연결 스킬 (실행 순서 · 역전 금지)
+**체인에 넣으면 안 되는 이유:** `runStep`이 이미 모든 라우트에서 로그와 플래그를 기록한다.
+같은 일을 스킬 체인에서 또 하면 **로그가 두 번 쌓인다.** 그래서 이 에이전트가 소유한 두 스킬은
+`kind: spec`이며, 하네스는 이들을 실행하지 않고 **`implemented_by`가 가리키는 코드가 계속 존재하는지만
+검사한다**(`npm run test:harness`).
 
-| 순서 | 스킬 | 역할 |
-|---:|---|---|
-| 1 | `execution-log-collection` | `execution_logs`에 1행 append |
-| 2 | `abnormality-detection` | 기록된 이력을 근거로 이상 감지 |
+## 소유 스킬 (`kind: spec` · 실행되지 않음 · 순서 역전 금지)
+
+| 순서 | 스킬 | 역할 | `implemented_by` |
+|---:|---|---|---|
+| 1 | `execution-log-collection` | `execution_logs`에 1행 append | `lib/logging.ts` |
+| 2 | `abnormality-detection` | 기록된 이력을 근거로 이상 5종 감지 | `lib/logging.ts` |
 
 **순서를 바꾸지 않는다.** 플래그는 기록된 이력을 대상으로 판단하므로 로그가 먼저 쌓여야 한다.
+`runStep`의 고정 처리 순서가 이를 보장한다: 시작 조건 → 작업 → **로그 → 이상 플래그** → 조건부 갱신 → 응답.
+
+이 에이전트는 AI를 쓰지 않는다. 따라서 어느 라우트에서 함께 실행해도 `ai_budget`을 잠식하지 않는다(spec §4.2).
 
 ## 입력
 

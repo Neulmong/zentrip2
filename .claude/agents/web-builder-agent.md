@@ -18,17 +18,34 @@ model: inherit
 |---|---|---:|
 | Step 05 | `POST /api/products/{id}/page` | **1회** |
 
-**한 요청에서 AI를 1회만 호출한다**(spec §4.2). `content-structuring`과 `web-content-structure-gen`은 같은 프롬프트의 연속 단계로 실행한다.
+**한 요청에서 AI를 1회만 호출한다**(spec §4.2). `manifest.json`의 `ai_budget: 1`이 이를 선언하고
+`runAgent`가 스킬 실행 전마다 누적 합계를 대조해 초과 시 던진다(규약 R3).
 
-## 연결 스킬 (실행 순서)
+## 배선
+
+**`.claude/harness/manifest.json`이 유일한 출처다.** 아래 표는 사람이 읽기 위한 사본이며,
+어긋나면 manifest가 이긴다. 순서를 바꾸려면 manifest를 고친다(규약 R5).
+
+### `page` (라우트 ⑤) — AI 1회
 
 | 순서 | 스킬 | AI | 역할 |
 |---:|---|---:|---|
-| 1 | `content-structuring` | **1** | 8→9 섹션 매핑, 확장 서술, `source` 승계 |
-| 2 | `theme-design-token-match` | 0 | 테마 키 + 디자인 토큰 3종 |
-| 3 | `web-content-structure-gen` | (동일 호출) | `page_content` 완성 + 길이 계약 + slug 발급 |
+| 1 | `theme-design-token-match` | 0 | 테마 키 + 디자인 토큰 3종 |
+| 2 | `content-structuring` | **1** | 일차별 확장 서술 + `apply` 안내 문구 |
+| 3 | `web-content-structure-gen` | 0 | 9섹션 조립 + `source` 승계 |
+| 4 | `page-contract-check` | 0 | 섹션·순서·이미지 슬롯·길이 계약 4종 |
+| 5 | `slug-issue` | 0 | slug 발급 |
 
-`draft-registration`은 **이 에이전트가 호출하지 않는다.** Step 07에서 3차 검증 후 서버 라우트가 직접 실행한다.
+> **2.2에서 바뀐 점.** 이전에는 `content-structuring`과 `web-content-structure-gen`이
+> "같은 프롬프트의 연속 단계"였다 — 1AI호출 제약을 프롬프트 하나에 두 일을 넣어 우회한 것이다.
+> 하네스에서는 **AI가 서술만 쓰고 조립은 기계가 한다.** §9.3에서 `source: "generated"`인 필드는
+> `itinerary.days[].text`와 `apply` 2종뿐이므로, 값 필드를 AI에게 다시 쓰게 할 이유가 없다.
+> 이 분리가 §16.1의 값 변형 금지를 구조적으로 보장한다.
+>
+> slug 발급도 `slug-issue`로 분리했다(규약 R2 — 스킬은 단일 기능).
+
+`draft-registration`은 **이 에이전트가 호출하지 않는다.** `kind: spec` 스킬이며 3차 검증 후
+`runStep`이 상태를 전이시킨다(규약 R7).
 
 ## 선행 조건
 
@@ -96,31 +113,31 @@ status = brochure_ready  AND  validation_snapshot.axes.axis_1.verdict = pass
 
 테마는 **`page_content.theme`에만 저장한다.** `products` 테이블에 별도 `theme` 컬럼을 쓰지 않는다(2.1의 이중 저장을 정리했다).
 
-## 콘텐츠 길이 계약 (6종)
+## 콘텐츠 길이 계약 — **생성 4종 / 편집 6종** (§17.1)
 
-| 항목 | 상한 |
-|---|---:|
-| `hero.headline` | 40자 |
-| `hero.subcopy` | 80자 |
-| 일차별 서술 | 200자 |
-| 섹션 제목 | 30자 |
-| `free_text` 블록 | 500자 |
-| `notice` 블록 | 300자 |
+⚠️ **2.2 잔재 정정.** 이전 판본은 6종을 전부 생성 시점에 적용하도록 써놨다. 실행 불가능한 규정이다.
+
+| 항목 | 상한 | 생성 시점 | 편집 저장 시점 |
+|---|---:|:---:|:---:|
+| `hero.headline` | 40자 | ✅ | ✅ |
+| `hero.subcopy` | 80자 | ✅ | ✅ |
+| 일차별 서술 | 200자 | ✅ | ✅ |
+| 섹션 제목 | 30자 | ✅ | ✅ |
+| `free_text` 블록 | 500자 | — | ✅ |
+| `notice` 블록 | 300자 | — | ✅ |
+
+`free_text`·`notice`는 **편집기에서 사람이 끼워 넣는 삽입 블록**이라 생성 시점에 존재하지 않는다.
+없는 것을 검사하도록 요구하면 규정이 실행 불가능해진다. 생성 시점 검사는 `page-contract-check`가,
+편집 저장 시점 검사는 `lib/edit-contract.ts`가 담당한다.
 
 `hero.headline`은 `행사정보.행사명` 값 그대로다. 40자를 넘으면 **자르지 않고 실패로 반환한다** — 값 부분 삭제는 spec §16.1 위반이다.
 
 ## slug 발급
 
-```text
-IF 행사명이 영문·숫자·공백만으로 구성
-  THEN 공백 → 하이픈, 소문자화 → slug 후보
-ELSE
-  p-{6자 base36} 발급     ← 한글이 한 글자라도 있으면 로마자 변환을 시도하지 않는다
+**`slug-issue` 스킬이 담당한다.** 발급 규칙의 유일한 출처는 `.claude/skills/slug-issue/SKILL.md`다 —
+여기에 사본을 두지 않는다(규약 R5 — 규칙이 두 곳에 있으면 한 곳이 낡는다).
 
-IF 중복  THEN -2, -3 … 접미사
-```
-
-허용 문자는 영문 소문자·숫자·하이픈뿐이다. 한글 slug는 percent-encoding으로 읽을 수 없는 URL이 되므로 허용하지 않는다.
+이 에이전트가 아는 것은 체인의 마지막 스킬이 `slug`와 `방식`을 돌려준다는 것뿐이다.
 
 ## 반응형에 대해
 

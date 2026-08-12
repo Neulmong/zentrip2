@@ -263,19 +263,23 @@ check('200 반환', publicRes.status === 200, publicRes.status)
 check('행사명이 보인다', publicHtml.includes('데모 관통'))
 check('편집한 값이 반영돼 있다', publicHtml.includes('제주 (편집됨)'))
 /*
- * 숨긴 섹션이 **그려지지 않는지**를 단순 문자열 부재로 증명할 수 없다. App
- * Router가 RSC 페이로드를 같은 HTML에 함께 실어 보내고 그 안에 `visible: false`
- * 섹션의 데이터도 `page_content`째로 들어 있기 때문이다.
+ * 숨긴 섹션은 HTML에 **한 글자도 남지 않는다.** `PageRenderer`가 서버에서
+ * `visible !== false`로 거른 뒤 그리고, 공개 페이지에는 `page_content`를 들고 가는
+ * 클라이언트 컴포넌트가 없어 RSC 페이로드로 새어 나갈 경로도 없다(§16.3).
  *
- * 그래서 **차등**으로 본다. `상점정보`·`숙소명`은 둘 다 컴포넌트가 그리는 라벨이면서
- * `data` 키이기도 하다. 숙박은 그려지므로 DOM + 페이로드에 나오고, 숨긴 제휴상점은
- * 페이로드에만 남는다 — 따라서 전자가 더 많이 나와야 한다.
+ * `상점정보`·`숙소명`은 둘 다 컴포넌트가 그리는 라벨이다. 숨긴 제휴상점은 0,
+ * 그려지는 숙박은 1 이상 — 라벨이 실제로 존재하는 문자열임을 숙박 쪽이 증명하므로
+ * 「오타라서 0」과 「숨겨져서 0」이 구분된다.
+ *
+ * ⚠ 2026-08-12 정정: 원래 이 자리는 `shopHits > 0 && shopHits < staysHits`였다.
+ *   「페이로드에는 남는다」를 전제한 조건인데, 그러면 **숨긴 데이터가 새어 나와야만
+ *   통과**한다. 이 스크립트가 처음 실제로 돌아간 날(AI 쿼터 확보) 드러났다.
  */
 const count = (s: string) => publicHtml.split(s).length - 1
 const shopHits = count('상점정보')
 const staysHits = count('숙소명')
-check(`숨긴 섹션은 그려지지 않는다 (상점정보 ${shopHits} < 숙소명 ${staysHits})`,
-  shopHits > 0 && shopHits < staysHits, { shopHits, staysHits })
+check(`숨긴 섹션은 HTML에 남지 않는다 (상점정보 ${shopHits} = 0, 숙소명 ${staysHits} > 0)`,
+  shopHits === 0 && staysHits > 0, { shopHits, staysHits })
 check('신청 폼 5필드', ['이름', '이메일', '연락처', '인원수', '동의']
   .every((f) => publicHtml.includes(f)))
 check('관리 화면 흔적이 없다',

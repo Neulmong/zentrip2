@@ -14,23 +14,33 @@ model: inherit
 > 1. **기준값이 `confirmed_data` → `form_input`으로 교체**됐다. `confirmed_data`는 AI가 만든 파생물이므로 그것을 기준으로 삼으면 정규화·분해 단계의 값 변형을 어느 축도 잡아내지 못했다.
 > 2. **검증이 2축 → 4축**이 됐다. 정규화 자체를 판정하는 0차가 신설됐고(intake-agent 담당), 3차의 성격이 교차·회귀 검증으로 재정의됐다.
 
-## 담당 단계
+## 배선
 
-| 차수 | Step | API | 스킬 | AI |
+**`.claude/harness/manifest.json`이 유일한 출처다.** 아래 표는 사람이 읽기 위한 사본이며,
+어긋나면 manifest가 이긴다(규약 R5).
+
+**이 에이전트만 라우트 3개를 담당한다.** 세 검증은 같은 일(기준값 대비 대조)의 세 대상이므로
+문서를 쪼개지 않고 `manifest.json`의 `routes` 맵으로 구분한다.
+
+| 차수 | 라우트 | 스킬 (체인 전체) | `args` | AI |
 |---|---|---|---|---:|
-| 1차 | Step 04 | `POST /api/products/{id}/validate-brochure` | `fact-check` | 1 |
-| 2차 | Step 06 | `POST /api/products/{id}/validate-page` | `fact-check` | 1 |
-| 3차 | Step 07 | `POST /api/products/{id}/validate-consistency` | `consistency-check` | 1 |
+| 1차 | `validate-brochure` | `fact-check` | `{target: brochure, axis: axis_1}` | 1 |
+| 2차 | `validate-page` | `fact-check` | `{target: page, axis: axis_2}` | 1 |
+| 3차 | `validate-consistency` | `consistency-check` | — | 1 |
 
-**각 요청에서 AI를 1회만 호출한다**(spec §4.2). 세 검증은 별도 API이므로 한 요청에 두 축을 넣지 않는다.
+체인이 스킬 1개뿐인 이유: 검증은 단일 기능이고, 조립·치환이 없다. 기계 검사가 필요한 구조 계약은
+생성 라우트의 `brochure-contract-check`·`page-contract-check`가 이미 끝냈다(규약 R2).
 
-**0차 검증(정규화 범위)은 이 에이전트가 담당하지 않는다.** 기계 검사 중심이며 intake-agent가 Step 02에서 처리한다.
+**각 요청에서 AI를 1회만 호출한다**(spec §4.2). 세 검증은 별도 라우트이므로 한 요청에 두 축을 넣지 않는다.
+
+**0차 검증은 이 에이전트가 담당하지 않는다.** `axis0-verification` 스킬이 전부 기계로 처리하며
+intake-agent의 `decompose` 체인 4번이다.
 
 ## 검증 4축 전체 구조
 
 | 축 | 기준 | 대상 | 담당 | 스킬 |
 |---|---|---|---|---|
-| 0차 | `form_input` | `confirmed_data` | intake-agent | `data-normalization` + 기계 검사 |
+| 0차 | `form_input` | `confirmed_data` | intake-agent | **`axis0-verification`** (AI 0회 · 전부 기계) |
 | **1차** | **`form_input`** | `brochure_content` | **validator-agent** | `fact-check` |
 | **2차** | **`form_input`** | `page_content` | **validator-agent** | `fact-check` |
 | **3차** | `brochure_content` | `page_content` | **validator-agent** | `consistency-check` |

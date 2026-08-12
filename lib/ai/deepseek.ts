@@ -4,43 +4,74 @@ import { toJsonSchema, validateAgainstSchema } from './schema'
 import type { AiErrorType, AiProvider, AiRequest, AiResult, AiUsage } from './contract'
 
 /**
- * DeepSeek 구현 — **Gemini의 예비 경로**.
+ * DeepSeek 구현 — **주 공급자** (§4.3).
  *
- * Gemini 무료 티어가 일일 한도(429)나 과부하(503)로 막혔을 때 갈아탄다.
- * 쿼터가 완전히 분리되므로 데모 당일 단일 실패점이 사라진다.
+ * Gemini 무료 티어는 모델당 하루 20회라 §20 대본(AI 6회)을 3번 돌리면
+ * 소진되고 대기로 회복되지 않는다. 잔량이 예측 가능한 쪽을 기본으로 두는 편이
+ * 데모 당일 안전하므로 DeepSeek을 주 경로로, Gemini를 예비로 둔다.
  *
- *   AI_PROVIDER=deepseek   # .env.local에 넣으면 즉시 전환
- *   AI_MODEL=...           # 같은 공급자 안에서 모델만 교체
+ *   (기본값)               # 아무것도 안 넣으면 이 경로
+ *   AI_PROVIDER=gemini     # 예비 경로로 되돌린다
+ *   AI_MODEL=...           # 같은 공급자 안에서 모델만 교체 (flash 계열만)
  *
  * API는 OpenAI 호환이라 공식 `openai` SDK를 base URL만 바꿔 쓴다 —
  * 이것이 DeepSeek이 문서화한 방식이며 원시 HTTP를 쓰지 않는다(§4.3).
  *
- * ## ⚠ §4.3 절대 원칙 3의 예외 — 이 파일만 해당한다
+ * ## 출력 강제는 **우리 쪽에서** 한다 (§4.3)
  *
- * 「출력은 `responseSchema`로 강제한다. 프롬프트로 "JSON만 출력" 지시 금지」가
- * 원칙이다. 그런데 **DeepSeek에는 `json_schema` strict 모드가 없다** —
- * `json_object`(문법만 JSON 보장)까지만 지원하고, 그 모드는 문서가
- * 「프롬프트에 'json'을 포함하라」고 요구한다. 제공자 쪽 강제가 불가능하다.
+ * 원칙은 「출력을 스키마로 강제한다. 프롬프트로 "JSON만 출력"이라 지시하지
+ * 않는다」이고, 그 목적은 **어긋난 구조가 파이프라인에 못 들어오게 하는 것**이다.
+ * DeepSeek에는 `json_schema` strict 모드가 없다 — `json_object`(문법만 JSON 보장)
+ * 까지만 지원하고, 그 모드는 문서가 「프롬프트에 'json'을 포함하라」고 요구한다.
+ * 제공자 쪽 강제라는 **수단**이 없으므로 강제 지점을 우리 쪽으로 옮긴다:
  *
- * 그래서 **강제 지점을 우리 쪽으로 옮긴다**:
- *
- *   1. 스키마를 시스템 프롬프트에 붙여 알려준다 (원칙 3의 문구를 어기는 부분)
+ *   1. 스키마를 시스템 프롬프트에 붙여 알려준다
  *   2. `response_format: json_object`로 JSON 문법을 보장받는다
- *   3. 받은 값을 **`validateAgainstSchema`로 대조**한다 (§4.3의 목적을 지키는 부분)
+ *   3. 받은 값을 **`validateAgainstSchema`로 대조**한다  ← 진짜 관문
  *   4. 어긋나면 `schema_invalid` — 기존 재시도 기계가 처리한다(§11.6)
  *
- * 라우트가 받는 것은 여전히 「스키마를 만족하는 데이터」 아니면 「타입이 붙은
- * 실패」뿐이다. **계약의 결과는 Gemini 경로와 같다.** 다른 것은 검사 주체다.
+ * 주 경로가 여기로 옮겨졌으므로 **`lib/ai/schema.ts`가 이제 상시 관문이다.**
+ * 예비 경로(Gemini)에서만 `responseSchema`가 제공자 쪽에서 같은 일을 한다.
+ * 라우트가 받는 것은 양쪽 모두 「스키마를 만족하는 데이터」 아니면 「타입이 붙은
+ * 실패」뿐이다 — 계약의 결과는 같고, 다른 것은 검사 주체다.
  */
 
 /** OpenAI 호환 엔드포인트. DeepSeek 문서의 `base_url` 값이다. */
 const BASE_URL = 'https://api.deepseek.com'
 
 /**
- * 기본 모델. `flash`가 `pro`보다 빠르고 싸며, 이 작업은 25초 예산 안에
- * 끝나야 한다(§4.3). 품질이 부족하면 `AI_MODEL=deepseek-v4-pro`로 올린다.
+ * 기본 모델. **이 프로젝트가 쓰는 유일한 모델이다.**
+ *
+ * `pro` 계열은 쓰지 않는다 — 품질이 부족해서가 아니라 **쓰지 않기로 확정된
+ * 제약**이다(§4.3). 25초 예산·비용·산출물 품질 전부 flash로 성립하는 것을
+ * 실측으로 확인했으므로, 느려 보인다는 이유로 pro로 올리는 선택지를 아예
+ * 코드에서 없앤다. 아래 `assertAllowed`가 그 확정을 기계로 지킨다.
  */
 const DEFAULT_MODEL = 'deepseek-v4-flash'
+
+/**
+ * 모델 관문 — `AI_MODEL`로도 뚫리지 않는다.
+ *
+ * `AI_MODEL`은 과부하(503) 때 같은 계열 안에서 갈아끼우라고 둔 탈출구인데,
+ * 급할 때 손이 가는 곳이 정확히 여기다. 「일단 pro로 올려보자」가 **환경 변수
+ * 한 줄로 가능하면 확정은 확정이 아니다.** 그래서 값이 들어오는 지점에서
+ * 막고, 조용히 무시하는 대신 던진다 — 잘못된 값으로 돌기 시작하면
+ * 데모 도중에야 알게 된다.
+ */
+function assertAllowed(model: string): void {
+  if (/pro/i.test(model)) {
+    throw new Error(
+      `AI_MODEL=${model} — pro 계열은 이 프로젝트에서 사용하지 않습니다(§4.3). `
+      + `기본값 ${DEFAULT_MODEL}을 쓰거나 AI_MODEL을 비우세요.`,
+    )
+  }
+  if (!/flash/i.test(model)) {
+    throw new Error(
+      `AI_MODEL=${model} — flash 계열만 사용합니다(§4.3). `
+      + `기본값 ${DEFAULT_MODEL}을 쓰거나 AI_MODEL을 비우세요.`,
+    )
+  }
+}
 
 /**
  * spec §4.3의 effort 대응 — 생성 `medium` / 검증 `low`.
@@ -95,6 +126,8 @@ ${JSON.stringify(toJsonSchema(schema), null, 2)}`
 }
 
 export function createDeepseekProvider(apiKey: string, model = DEFAULT_MODEL): AiProvider {
+  assertAllowed(model)
+
   const client = new OpenAI({
     apiKey, baseURL: BASE_URL,
     // 재시도는 클라이언트가 같은 API를 재호출한다(§4.2).
@@ -155,10 +188,21 @@ export function createDeepseekProvider(apiKey: string, model = DEFAULT_MODEL): A
         return fail('refusal', '안전 필터로 차단됐습니다.', finishReason, usage)
       }
 
-      // 문서가 「json_object 모드에서 드물게 빈 본문이 온다」고 명시한다.
+      // ── 빈 본문 (§4.3) — 문서가 「json_object 모드에서 드물게 온다」고 명시하고,
+      //    실측에서도 가장 긴 생성(페이지 확장)에서 4회 중 1회 관측됐다.
+      //    종료 사유가 stop인데 content만 비는 형태라 절단·거부와 구분되지 않는다.
+      //    사유를 여기서 채워 두지 않으면 재시도 로그에 「비었음」만 남아
+      //    **한 번 실패가 반복 실패인지 우연인지 사후에 판별할 수 없다**(§5.4).
       const text = choice?.message?.content
       if (!text || !text.trim()) {
-        return fail('schema_invalid', '본문이 비어 있습니다.', finishReason, usage)
+        const reasoning = (choice?.message as { reasoning_content?: string } | undefined)
+          ?.reasoning_content
+        return fail('schema_invalid',
+          `본문이 비어 있습니다. finish_reason=${finishReason ?? '-'}`
+          + ` · 사고 토큰 ${usage.thoughtTokens ?? '-'}`
+          + ` · 사고 본문 ${reasoning ? `${reasoning.length}자` : '없음'}`
+          + ' (json_object 모드의 간헐적 빈 응답 — 재호출로 해소된다)',
+          finishReason, usage)
       }
 
       let data: unknown

@@ -1,14 +1,15 @@
 /**
- * §4.2 요청 분할 설계의 전제를 실측한다.
+ * **예비 경로(Gemini) 실측** (§4.3). 주 경로는 `npm run probe:deepseek`이다.
  *
  *   "page_content 9섹션 JSON 스키마를 강제한 호출 1건이 25초 안에 들어오는가"
  *
- * 이게 성립하지 않으면 라우트 분할 자체를 다시 설계해야 하므로, 코드를 더
- * 쌓기 전에 확인한다. **프로덕션이 쓰는 lib/ai/gemini.ts를 그대로 호출**하므로
+ * 주 경로가 막힌 날 `AI_PROVIDER=gemini`로 갈아타기 **전에** 이것을 돌린다 —
+ * 무료 티어는 모델당 하루 20회라 「쓸 수 있는 줄 알았는데 쿼터가 없던」 상태가
+ * 실제로 있었다. **프로덕션이 쓰는 lib/ai/gemini.ts를 그대로 호출**하므로
  * 여기서 통과하면 파이프라인에서도 같은 경로로 동작한다.
  *
- *   npm run probe:ai              — 기본 모델
- *   AI_MODEL=gemini-2.5-flash npm run probe:ai
+ *   npm run probe:gemini              — 기본 모델
+ *   AI_MODEL=gemini-2.5-flash npm run probe:gemini
  */
 import { GoogleGenAI, Type } from '@google/genai'
 import { createGeminiProvider } from '../lib/ai/gemini'

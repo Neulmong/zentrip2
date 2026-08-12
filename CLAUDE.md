@@ -1,23 +1,30 @@
 # zentrip — 구현 지침
 
-여행 상품 페이지 자동 생성·배포 플랫폼. Next.js(App Router) + Supabase + Gemini API + Resend, Vercel 단일 프로젝트.
+여행 상품 페이지 자동 생성·배포 플랫폼. Next.js(App Router) + Supabase + DeepSeek API + Resend, Vercel 단일 프로젝트.
 
 ## ⚠️ 문서 권위 — 이것부터 읽는다
 
 | 문서 | 지위 |
 |---|---|
-| **`spec.md` (2.5)** | **구현의 유일한 권위.** 스키마·상한·규정·응답코드 전부 |
+| **`spec.md` (2.6)** | **구현의 유일한 권위.** 스키마·상한·규정·응답코드 전부 |
 | `workflow.md` (2.5) | 단계 순서·분기·복귀. spec과 어긋나면 spec |
-| `checklist.md` (2.4) | ⚠ AI 공급자 항목은 spec 2.5 기준으로 읽는다. 판정 항목 약 355개. 게이트 G0~G6 |
+| `checklist.md` (2.4) | ⚠ AI 공급자 항목은 spec 2.6 기준으로 읽는다. 판정 항목 약 355개. 게이트 G0~G6 |
 | `origin-spec.md` (2.2) | **이전 판본.** 방향성 대조용 히스토리. 구현 근거로 쓰지 않는다 |
-| **`.claude/agents/` · `.claude/skills/`** | **🚫 구현 중 참조 금지.** 2.2 기준이라 spec 2.5와 23건+ 어긋난다 |
+| **`.claude/skills/` · `.claude/agents/`** | **🔒 런타임 실행 근거.** 프롬프트·스킬 체인·판정 규칙의 유일한 출처 |
+| **`.claude/harness/manifest.json`** | **🔒 배선의 유일한 출처.** 라우트 → 에이전트 → 스킬 체인 · AI 예산 |
+| `docs/harness-migration.md` | 전환 계획·근거. 완료 후에도 설계 판단의 기록으로 남긴다 |
 
-`.claude/skills/`의 15개 스킬 문서는 **틀린 게 아니라 2.2 시점에 정확했다.** spec만 2.5로 갔다.
-스킬 문서가 필요한 순간이 오면 **그 1개를 spec 2.5 기준으로 고친 뒤** 쓴다. 그대로 복사하지 않는다.
+**⚠️ 2026-08-12에 뒤집힌 규칙:** `.claude/`는 더 이상 "구현 중 참조 금지"가 아니다.
+**정반대로, 구현이 반드시 경유해야 하는 실행 근거다.** 아래 하네스 규약이 이를 강제한다.
+spec.md는 여전히 유일한 권위이고, `.claude/`는 **spec을 실행 가능한 형태로 적어둔 곳**이다 —
+둘이 어긋나면 spec이 이기고, `.claude/`를 고친다.
 
-### 2.2 → 2.4/2.5에서 뒤집힌 값 (스킬 문서가 아직 2.2인 지점)
+### 2.2 → 2.6에서 뒤집힌 값 (스킬 문서 재기준화 대조표)
 
-| 항목 | 2.2 (스킬 문서) | **2.4 (구현할 값)** | spec |
+`.claude/`가 실행 근거가 되었으므로 **이 표의 왼쪽 값이 문서에 남아 있으면 그 값이 그대로 실행된다.**
+스킬·에이전트 문서를 고칠 때마다 이 표로 대조한다.
+
+| 항목 | 2.2 (구 스킬 문서) | **2.6 (실행할 값)** | spec |
 |---|---|---|---|
 | 재시도 카운터 | 3종, 0차가 `brochure` 공유 | **4종** `normalization`·`brochure`·`page`·`consistency`, 예산 비공유 | §11.6 |
 | 라우트 시작 조건 | `current_step` 값으로 판정 | **재료 기준** (산출물 존재 + 선행 축 판정값) | §14.5 |
@@ -29,20 +36,92 @@
 | 로그 `verdict` | `통과`/`반려` | **저장은 영어** `pass`/`fail`/`-`, 화면에서만 한글 | §5.4 |
 | 신청 로그 | 원본 기록 | `category=application`은 **저장 시점 마스킹** | §5.4 |
 | 이상 플래그 중복 | `(step, type)` | **`(execution_id, attempt_no, step, type)`** | §5.5 |
-| **AI 공급자** | `claude-opus-5` (2.4까지) | **`gemini-3.5-flash` 무료 티어**, `lib/ai` provider 중립 인터페이스 | §4.3 |
+| **AI 공급자** | `claude-opus-5` (2.4까지) | **`deepseek-v4-flash` 주 · Gemini 예비** (2.6), `lib/ai` provider 중립 인터페이스 | §4.3 |
 | 동시성 | 없음 | 전 쓰기 라우트 `updated_at` 조건부 갱신 → **409 `stale`** | §16.1.1 |
+
+## 🔒 하네스 규약 — 절대 불가침
+
+**이 규약은 런타임 실행과 코드 작성 양쪽에 동시에 적용된다. 예외는 없다.**
+데모 일정·버그 급함·"이번 한 번만"은 예외 사유가 아니다. 규약을 어겨야 풀리는 문제라면
+**규약이 아니라 스킬·에이전트 문서를 고쳐서** 푼다.
+
+### 구조
+
+```
+라우트  →  runStep(상태·로그·재시도)  →  runAgent(에이전트 1개)
+                                            └→ 스킬 체인 (선언된 순서)
+                                                 ├ mechanical 스킬 (AI 0회)  ← 기본
+                                                 ├ mechanical 스킬 (AI 0회)
+                                                 └ ai 스킬 (AI 1회)         ← 라우트당 최대 1개
+```
+
+**에이전트가 스킬을 호출한다. 스킬은 단일 기능을 수행한다.** 이 두 문장이 구조의 전부다.
+
+### R1 — 라우트는 에이전트만 부른다
+
+서버 라우트에 파이프라인 로직을 쓰지 않는다. `runStep` + `runAgent` 외의 것이 라우트에 있으면 위반이다.
+**라우트가 `ai()`를 직접 호출하는 것은 금지다.** AI 호출은 `ai` 스킬만 한다.
+
+### R2 — 스킬은 단일 기능이다
+
+스킬 하나는 일 하나만 한다. 두 가지 일을 하면 **두 스킬로 쪼갠다.**
+"정규화하고 분해한다"는 두 스킬이다. `## 목적`이 두 문장으로 갈라지면 분할 신호다.
+
+### R3 — mechanical이 기본, ai는 예외 (API 최소화)
+
+새 스킬의 기본값은 `kind: mechanical`(AI 0회)이다. `kind: ai`는 **입력에 없는 서술을 새로 써야 할 때만** 쓴다.
+값 치환·형식 통일·구조 조립·기계 대조는 전부 mechanical이다.
+`ai` 스킬을 만들려면 "이 일을 mechanical로 할 수 없는 이유"를 SKILL.md에 적는다.
+
+**라우트당 AI 호출은 최대 1회다.** `manifest.json`의 `ai_budget`이 이를 선언하고 `runAgent`가 스킬 실행 전마다
+누적 합계를 대조해 초과 시 **던진다.** 절대 원칙 1이 규율에서 기계 강제로 승격된 지점이다.
+
+### R4 — 프롬프트는 SKILL.md에만 있다
+
+TS 파일에 시스템 프롬프트 문자열을 두지 않는다. `*_SYSTEM` 상수를 만들지 않는다.
+프롬프트를 바꾸려면 SKILL.md를 고친다. `npm run test:harness`가 라우트·`lib/` 전체에서 프롬프트 문자열 0건을 검사한다.
+
+JSON 스키마와 TS 타입은 `lib/pipeline/ai-contracts.ts`에 남는다(타입과 짝이어야 한다).
+SKILL.md는 스키마의 **이름만** 지정한다.
+
+### R5 — 문서를 고치지 않는 동작 변경 커밋은 금지
+
+파이프라인 동작이 바뀌는데 `.claude/` 아래가 그대로인 커밋은 위반이다.
+**순서를 바꾸려면 `manifest.json`을, 판정·금지사항·프롬프트를 바꾸려면 SKILL.md를,
+역할·응답코드를 바꾸려면 에이전트 문서를 먼저 고친다.** 코드는 그 다음이다.
+
+### R6 — 새 기능은 자리를 먼저 정한다
+
+무엇을 만들기 전에 **"어느 에이전트의 몇 번째 스킬인가"** 를 답한다.
+답이 없으면 스킬을 신설하고 `manifest.json`에 등록한 뒤 구현한다. 순서를 뒤집지 않는다.
+
+### R7 — 상태 기계는 하네스가 삼키지 않는다
+
+`lib/orchestrator.ts`(`runStep`)·`lib/logging.ts`·`lib/policy.ts`·`lib/ai/*`·`lib/client/run-pipeline.ts`는
+하네스의 **바깥**이다. 재시도 카운터 4종·409 `reason` 5종·이상 플래그 5종·조건부 갱신·클라이언트 재개 표는
+이미 spec 2.6대로 검증됐다. 하네스는 `runStep`의 `work` 콜백 **안쪽만** 대체한다.
+`kind: spec` 스킬(`product-orchestrator`·`execution-log-collection`·`abnormality-detection`)은
+이 영역을 문서화하며, 체인에서 실행되지 않는다 — 실행하면 로그가 두 번 쌓인다.
+
+### 위반 검사
+
+```bash
+npm run test:harness   # R1·R3·R4 + 매니페스트 정합성. 실패하면 커밋하지 않는다
+```
 
 ## 절대 원칙
 
-1. **1요청 1AI호출.** 서버 라우트 1건은 AI를 최대 1회. 타임아웃 25초, SDK 자동 재시도 없음, `maxDuration` 60초 (§4.2·§4.3)
+1. **1요청 1AI호출.** 서버 라우트 1건은 AI를 최대 1회. 타임아웃 25초, SDK 자동 재시도 없음, `maxDuration` 60초 (§4.2·§4.3).
+   **하네스 규약 R3이 `ai_budget`으로 기계 강제한다**
 2. **재시도는 클라이언트가 같은 API를 재호출.** 서버 내부 루프·폴링·큐·Cron 없음. `202` 사용 안 함
-3. **AI 출력은 `responseSchema`로 JSON 스키마 강제.** 프롬프트로 "JSON만 출력" 지시 금지 (§4.3)
+3. **AI 출력은 JSON 스키마로 강제.** 주 경로(DeepSeek)는 strict 모드가 없어 `json_object` + **`lib/ai/schema.ts` 서버 검증**이 관문이고, 예비 경로(Gemini)만 `responseSchema`로 제공자가 강제한다. 어긋난 구조가 파이프라인에 들어가는 경로는 없다 (§4.3)
 4. **검증 기준값은 `form_input`.** `confirmed_data`는 0차의 검증 대상이지 기준이 아니다 (§11.1)
 5. **AI는 `page_content`/`brochure_content` JSON만 만든다. HTML 생성 금지.** 렌더링은 고정 React 컴포넌트 (§9.1)
 6. **`source` 맵 필수.** `source` 없는 사실정보 필드는 그 자체로 실패 (§8.8·§9.3)
 7. **입력에 없는 값을 만들지 않는다.** 일차 서술은 `원문근거` 범위 안에서만 (§6.3·§16.1)
-8. **모델은 `gemini-3.5-flash`** (Gemini 무료 티어, `@google/genai`). `thinkingLevel` 생성 `MEDIUM`/검증 `LOW`,
-   출력은 `responseSchema`로 강제, 타임아웃 25초, SDK 자동 재시도 없음 (§4.3).
+8. **모델은 `deepseek-v4-flash`** (DeepSeek 종량제, OpenAI 호환 SDK). `reasoning_effort` 생성 `medium`/검증 `low`,
+   타임아웃 25초, `maxRetries: 0` (§4.3). **`deepseek-v4-pro`는 쓰지 않는다** — `AI_MODEL`에 pro·비flash 값이
+   들어오면 `lib/ai/deepseek.ts`가 호출 전에 던진다. 막히면 `AI_PROVIDER=gemini`로 예비 경로 전환.
    **라우트는 `lib/ai`의 provider 중립 인터페이스만 호출한다** — 모델을 바꿔도 라우트는 수정하지 않는다
 
 ## 목표
@@ -52,13 +131,16 @@
 
 §20 경로에 없는 기능은 후순위. 측정 기준은 §1 — 입력부터 배포까지 10분, 코드·디자인 작업 0건.
 
-### AI 무료 티어 제약 (확정 · 2026-08-11 실측)
+### AI 공급자 제약 (확정 · 2026-08-12 실측)
 
-- **모델은 flash 계열만.** pro는 유료라 429. `gemini-3.5-flash` 9.8초 / `3.6-flash` 20.3초 →
-  3.6은 §5.5 `processing_delayed` 임계값(20초)을 매번 넘겨 **쓰지 않는다**
-- **컨텍스트 캐싱 불가**(유료 전용). 비용 0이라 실질 손해 없음
-- **과부하 503이 실제로 발생한다.** 데모 전 리허설 필수, 막히면 `AI_MODEL`로 교체
-- 무료 티어는 입력이 모델 개선에 사용된다 — 실제 고객 데이터를 넣지 않는다
+- **주 경로는 DeepSeek `deepseek-v4-flash` 하나다.** `pro`는 금지 — provider가 호출 전에 던진다
+- **실측**(`npm run probe:deepseek` 4회): 일차 분해 5.7~8.7초 / **페이지 확장 14.7~18.8초** / 검증 1.4~3.1초.
+  페이지 확장이 §5.5 `processing_delayed` 임계값(20초)에 근접하므로 이상 플래그가 간헐적으로 뜨는 것은 정상
+- **빈 본문이 4회 중 1회 관측된다** (`json_object` 모드, 종료 사유 `stop`인데 본문만 빔).
+  `schema_invalid` → §11.6 재시도 경로로 처리된다. 재호출로 해소됨을 실측
+- **컨텍스트 캐싱이 자동으로 걸린다** (실측 913 중 896 적중). 시스템 프롬프트를 바이트 단위로 고정할 이유가 실효를 갖는다
+- **예비 경로는 Gemini** — `AI_PROVIDER=gemini`. 무료 티어는 모델당 하루 20회라 대본 3회분이고,
+  일일 한도는 대기로 회복되지 않는다. 상시 경로로 쓰지 않는다
 
 ### 데모 대본 제약 (확정)
 
@@ -70,7 +152,7 @@
 ## 환경 변수
 
 전부 **서버 전용**. `NEXT_PUBLIC_` 접두사 변수를 만들지 않는다 (공개 페이지도 서버 렌더링).
-`GEMINI_API_KEY` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` · `RESEND_API_KEY` · `ADMIN_PASSWORD` · `SESSION_SECRET` · `SITE_URL` · `CONTACT_INFO` · (선택) `AI_MODEL`
+`DEEPSEEK_API_KEY` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` · `RESEND_API_KEY` · `ADMIN_PASSWORD` · `SESSION_SECRET` · `SITE_URL` · `CONTACT_INFO` · (선택) `AI_PROVIDER` · `AI_MODEL` · `GEMINI_API_KEY`(예비 경로용)
 
 ## 명령
 
@@ -78,6 +160,10 @@
 npm run dev     # 개발 서버
 npm run build   # 프로덕션 빌드
 npm run lint
+npm run probe:deepseek   # 주 AI 경로 실측 — 키·모델을 건드렸으면 이것부터
+npm run test:policy      # 규칙·계약 회귀
+npm run build:harness    # .claude/ → lib/harness/generated/registry.ts 코드젠
+npm run test:harness     # 🔒 하네스 규약 위반 검사. 커밋 전 필수
 ```
 
 <!-- BEGIN:nextjs-agent-rules -->

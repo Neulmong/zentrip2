@@ -3,7 +3,12 @@ import { AI_MAX_TOKENS, AI_TIMEOUT_MS } from '../types'
 import type { AiErrorType, AiProvider, AiRequest, AiResult, AiUsage } from './contract'
 
 /**
- * Gemini 구현 (spec §4.3의 Gemini 이식판).
+ * Gemini 구현 — **DeepSeek(주 공급자)의 예비 경로** (§4.3).
+ *
+ * 주 경로가 과부하·인증·잔액으로 막혔을 때 `AI_PROVIDER=gemini` 한 줄로
+ * 갈아탄다. 쿼터가 완전히 분리되므로 데모 당일 단일 실패점이 사라진다.
+ * 다만 무료 티어는 **모델당 하루 20회**라 대본 3회분밖에 못 버틴다 —
+ * 상시 경로로 쓸 수 없어 예비로 내린 것이 이 파일의 현재 위치다.
  *
  * 무료 티어는 **flash 계열만** 대상이다. pro 계열은 유료다.
  * 컨텍스트 캐싱은 유료 전용이라 쓰지 않는다 — 비용이 0이라 실질 손해는 없고

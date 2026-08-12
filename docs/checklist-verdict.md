@@ -2,6 +2,11 @@
 
 판정일 2026-08-11 · 대상 `checklist.md` 355개 항목 · **AI 호출 0회**
 
+> **2026-08-12 재판정 (spec 2.6)** — 주 AI 공급자가 Gemini → **DeepSeek**으로 바뀌면서
+> A 섹션의 공급자 의존 항목 7개를 다시 봤다. 아래 표에 «2.6:» 로 표시한 줄이 그것이다.
+> **A-19가 🚫(구조적 충족 불가) → ✅로 뒤집혔다** — DeepSeek은 컨텍스트 캐싱이 무료로
+> 자동 동작한다(실측 913 입력 토큰 중 896 적중). 나머지 6개는 근거 문구만 바뀌고 판정은 같다.
+
 ## 판정 기호
 
 | 기호 | 뜻 |
@@ -28,15 +33,15 @@
 | A-08 | ✅ | `AI_TIMEOUT_MS = 25_000`, `maxDuration = 60` 라우트 16개 |
 | A-09 | ✅ | 큐·Cron·워커 0건 |
 | A-10 | ✅ | `applications/route.ts:139` `after()` |
-| **A-11** | ⚠️→✅ | 문구는 `claude-opus-5`(2.4). **spec 2.5는 `gemini-3.5-flash`** — 코드 일치, 날짜 접미사 없음 |
+| **A-11** | ⚠️→✅ | 문구는 `claude-opus-5`(2.4). **2.6은 `deepseek-v4-flash`** — 코드 일치, 날짜 접미사 없음. «2.6: `pro` 계열은 `assertAllowed`가 호출 전에 차단 — `test:policy` U20» |
 | A-12 | ✅ | `temperature`·`top_p`·`top_k`·`budget_tokens`·`output_format` **0건** |
-| **A-13** | ⚠️→✅ | Claude `output_config.effort` → Gemini `thinkingLevel`. 생성 `MEDIUM`/검증 `LOW` 일치 |
+| **A-13** | ⚠️→✅ | Claude `output_config.effort` → «2.6: DeepSeek `reasoning_effort` 생성 `medium`/검증 `low`». 예비 경로는 `thinkingLevel` `MEDIUM`/`LOW`. 생성·검증 구분이 양쪽 모두 일치 |
 | **A-14** | ✅ | **1차 판정에서 ❌로 적었던 것을 정정한다.** `@google/genai`는 `retryOptions`를 **넘기지 않으면 재시도하지 않는다**(`apiCall`: `if (!retryOptions) return runFetch()`). 타입 문서의 「default to 5」는 `retryOptions`를 넘겼을 때 `attempts`의 기본값이라 그것을 옵션 자체의 기본값으로 오독했다. **실측: 429 응답에 나가는 HTTP 요청 1회** (`test:policy` U18). DeepSeek은 `maxRetries: 0` ✅ |
-| **A-15** | ⚠️→✅ | Claude `output_config.format` → Gemini `responseSchema`. 프롬프트 "JSON만 출력" 0건. **DeepSeek 경로는 문서화된 예외**(`lib/ai/deepseek.ts` 주석 + 로컬 검증으로 보증) |
-| **A-16** | ⚠️ | `additionalProperties`는 Claude strict 모드 요구사항. Gemini `responseSchema`는 요구하지 않음 → **해당 없음**. 스키마에 재귀·수치·문자열 길이 제약 0건 ✅ |
-| A-17 | ✅ | `gemini.ts` — `blockReason` → `finishReason` → 본문 순서 |
-| **A-18** | ⚠️ | `cache_control`은 Claude 전용. Gemini 무료 티어는 **컨텍스트 캐싱 불가**(CLAUDE.md 확정). 시스템 프롬프트 상수화·가변값 0건은 ✅ |
-| **A-19** | ⚠️→🚫 | 같은 이유로 `cache_read_input_tokens`가 0이 아닐 수 없다. `cachedTokens`는 로그에 기록되나 **항상 null** — 무료 티어에서 **구조적으로 충족 불가** |
+| **A-15** | ⚠️→✅ | Claude `output_config.format` → «2.6: 주 경로는 `json_object` + **`lib/ai/schema.ts` 서버 검증**이 강제 지점». 프롬프트 "JSON만 출력" 지시는 스키마 명세 형태로만 존재하고, 구조 보증은 서버가 진다(§4.3 표). 예비 경로는 `responseSchema` |
+| **A-16** | ⚠️ | `additionalProperties`는 Claude strict 모드 요구사항. 주 경로의 서버 검증기·예비 경로의 `responseSchema` 모두 요구하지 않음 → **해당 없음**. 스키마에 재귀·수치·문자열 길이 제약 0건 ✅ |
+| A-17 | ✅ | «2.6: `deepseek.ts` — `finish_reason`(`length`·`content_filter`) → 빈 본문 → 파싱 → 스키마 순서». 예비 경로 `gemini.ts`는 `blockReason` → `finishReason` → 본문 |
+| **A-18** | ⚠️→✅ | `cache_control`은 Claude 전용. «2.6: DeepSeek은 **요청 필드 없이 자동 캐싱**되므로 「캐시 지시자」에 대응하는 코드가 없는 것이 정상이다». 시스템 프롬프트 상수화·가변값 0건이 그 조건을 만족시킨다 ✅ |
+| **A-19** | ⚠️→🚫→**✅** | «2.6: 뒤집혔다. `cachedTokens`가 실제로 0이 아니다 — 실측 입력 913 토큰 중 **896 적중**(`prompt_cache_hit_tokens`). 2.5에서 「무료 티어라 구조적으로 충족 불가」로 적었던 항목이 공급자 교체로 해소됐다» |
 | A-20 | ✅ | `#3`·`#5` 실패 → `409 retry`. AI 실패 6종 전부 같은 경로(`AiErrorType` 6종) |
 | A-21 | ✅ | `lib/policy.ts` `PRECONDITIONS`가 §14.5 표와 1:1. `current_step` 조건 0건. `test:policy` |
 | A-22 | 📦 | 재시도 6경로·재생성 3경로의 **실제 재실행** 확인 필요 |
@@ -225,7 +230,7 @@
 | P-03 | ✅ | HMAC + httpOnly + SameSite=Lax (`Secure`는 프로덕션만 — 로컬 http 제약) |
 | P-04 | ✅ | 상수 시간 비교 + 분당 5회. **이번 세션 A-3 수정으로 실패만 집계.** `test:auth` 9건 |
 | P-05·P-06·P-07 | ✅ | `/admin` 필터 8종, 신청 내역, 연락처 마스킹 |
-| **P-08** | ⚠️→✅ | 문구가 `ANTHROPIC_API_KEY`(2.4). **2.5는 `GEMINI_API_KEY`**. `NEXT_PUBLIC_` 0건, 전부 서버 전용 ✅ |
+| **P-08** | ⚠️→✅ | 문구가 `ANTHROPIC_API_KEY`(2.4). «2.6은 **`DEEPSEEK_API_KEY`**, `GEMINI_API_KEY`는 예비 경로용». `NEXT_PUBLIC_` 0건, 전부 서버 전용 ✅ |
 | P-09 | ✅ | 19개 엔드포인트 존재·메서드 일치. `test:stale`이 13개 쓰기 라우트 실측 |
 | Q-01~Q-05·Q-08 | ✅ | `test:logs` 34건 |
 | Q-06·Q-07 | 📦 | 11단계·lifecycle 6종 전수 기록 확인 |
@@ -416,7 +421,7 @@ G6의 T-06은 아키텍처 변경에 따른 **문서 정리** 대상이다.
 
 | # | 작업 | 유형 | 해소되는 항목 | 비용 |
 |---|---|---|---|---|
-| 2 | **AI 쿼터 확보** — Gemini 결제 또는 DeepSeek 충전 | 환경 | §20 대본 완주 | 결제 |
+| 2 | ~~**AI 쿼터 확보**~~ — **2026-08-12 해소.** DeepSeek 충전 완료 → spec 2.6에서 **주 공급자로 승격**(Gemini는 예비). 실측 `npm run probe:deepseek` 통과 | 환경 | §20 대본 완주 | 완료 |
 | 3 | **커밋 푸시** (원격이 step06에 멈춰 있음) | 운영 | 유실 위험 제거 | 5분 |
 | 4 | **Vercel 배포** | 운영 | **K-05 · X-05 · V-07 → G4 해제** | 30분~ |
 | 5 | `SUPABASE_ANON_KEY` 한 줄 | 환경 | **U-01~U-05 → G5 진전** | 2분 |

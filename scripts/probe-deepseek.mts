@@ -1,9 +1,9 @@
 /**
- * DeepSeek 예비 경로 실측 (§4.3). **키를 넣은 직후 이것부터 돌린다.**
+ * **주 AI 경로 실측** (§4.3). 키·모델을 건드린 직후 이것부터 돌린다.
  *
  *   npm run probe:deepseek
  *
- * 재는 것 — 예비 경로가 「진짜 쓸 수 있는가」의 조건 전부다:
+ * 재는 것 — 주 경로가 「진짜 쓸 수 있는가」의 조건 전부다:
  *   1. 인증이 되는가 (401이면 키 종류가 다르다)
  *   2. 25초 예산 안에 끝나는가 (§4.3 타임아웃)
  *   3. `reasoning_effort`를 받아 주는가 (400이면 그 파라미터를 빼야 한다)
@@ -12,6 +12,10 @@
  * 4번이 핵심이다. DeepSeek은 `json_schema` strict 모드가 없어서 구조 보증을
  * `lib/ai/schema.ts`의 로컬 검증이 대신한다 — 실제 스키마로 확인하지 않으면
  * 「키는 되는데 파이프라인은 안 되는」 상태가 된다.
+ *
+ * ⚠ ②(페이지 확장)는 `json_object` 모드의 간헐적 빈 응답으로 실패할 수 있다 —
+ *   2026-08-12 실측에서 4회 중 1회. **한 번 실패하면 다시 돌려 본다.**
+ *   연속으로 실패할 때만 구조 문제이며, 그때는 예비 경로(`AI_PROVIDER=gemini`)를 쓴다.
  *
  * 파이프라인이 쓰는 스키마 3종을 그대로 쓴다. `VALIDATION_SCHEMA`에는 `enum`이
  * 있어 로컬 검증기의 enum 처리까지 함께 확인된다.
@@ -122,10 +126,11 @@ report(await call<{ 판정: string; items: unknown[] }>({
 
 console.log('\n' + '─'.repeat(52))
 if (fail === 0) {
-  console.log('예비 경로 사용 가능.')
-  console.log('  전환:      .env.local에 AI_PROVIDER=deepseek')
+  console.log('주 경로 사용 가능.')
+  console.log('  기본값:    AI_PROVIDER를 비워 두면 이 경로다')
   console.log('  그 다음:   npm run test:demo   ← 관통 검증까지 해야 "쓸 수 있다"고 말할 수 있다')
 } else {
-  console.log(`${fail}건 실패 — 위 사유를 해결해야 예비 경로로 쓸 수 있습니다.`)
+  console.log(`${fail}건 실패 — 한 번 더 돌려 보고(빈 응답은 간헐적이다),`)
+  console.log('  반복되면 AI_PROVIDER=gemini로 예비 경로를 씁니다.')
 }
 process.exit(fail > 0 ? 1 : 0)

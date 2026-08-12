@@ -71,11 +71,12 @@ export type AbnormalityType = (typeof ABNORMALITY_TYPES)[number]
 
 // ── AI 호출 계약 (§4.3) ─────────────────────────────────────────
 /**
- * 모델 이름은 **여기에 두지 않는다.** spec 2.5에서 공급자가
- * `gemini-3.5-flash` 무료 티어로 바뀌었고, 라우트는 `lib/ai`의 provider 중립
- * 인터페이스만 호출한다 — 기본 모델은 각 공급자 모듈이, 교체는 `AI_MODEL`
+ * 모델 이름은 **여기에 두지 않는다.** spec 2.6에서 주 공급자가
+ * `deepseek-v4-flash`로 바뀌었고(Gemini는 예비), 라우트는 `lib/ai`의 provider
+ * 중립 인터페이스만 호출한다 — 기본 모델은 각 공급자 모듈이, 교체는 `AI_MODEL`
  * 환경 변수가 담당한다. 2.4까지 있던 `AI_MODEL = 'claude-opus-5'` 상수는
  * 아무도 읽지 않으면서 「모델이 여기 적혀 있다」는 오해만 남겨 폐기했다.
+ * 공급자가 두 번 바뀌는 동안 이 파일이 한 번도 안 바뀐 것이 그 판단의 근거다.
  */
 export const AI_MAX_TOKENS = 8000
 export const AI_TIMEOUT_MS = 25_000

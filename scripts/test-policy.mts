@@ -28,6 +28,7 @@ import {
 } from '../lib/pipeline/ai-contracts'
 import { MAX_BACKOFF_MS, backoff } from '../lib/client/run-pipeline'
 import { quotaSummary } from '../lib/ai/gemini'
+import { createDeepseekProvider } from '../lib/ai/deepseek'
 import { GoogleGenAI } from '@google/genai'
 import { readFileSync } from 'node:fs'
 
@@ -997,6 +998,51 @@ section('U19 — 여행주제 · 기획메모 (§6.1·§7.4)')
   check('타겟층 100자 초과도 거부된다 (긴 페르소나는 기획메모로 보낸다)',
     !!validateFormInput(buildFormInput({ ...raw, 타겟층: '가'.repeat(101) }))['행사정보.타겟층'])
 }
+
+/* ════════════════════════════════════════════════════════════════
+ * U20 — 주 공급자·모델 관문 (§4.3 · lib/ai/deepseek.ts · lib/ai/index.ts)
+ *
+ * spec 2.6에서 주 공급자가 DeepSeek으로, 모델이 `deepseek-v4-flash` **하나로**
+ * 확정됐다. 확정을 문서에만 적어두면 급할 때 환경 변수 한 줄로 뒤집힌다 —
+ * 「일단 pro로 올려보자」가 가능한 순간 그것은 확정이 아니다.
+ * 그래서 provider가 호출 **전에** 던지는지를 여기서 센다.
+ * ════════════════════════════════════════════════════════════════ */
+section('U20 — 주 공급자·모델 관문 (§4.3)')
+
+const AI_INDEX_SOURCE = readFileSync(new URL('../lib/ai/index.ts', import.meta.url), 'utf8')
+const DEEPSEEK_SOURCE = readFileSync(new URL('../lib/ai/deepseek.ts', import.meta.url), 'utf8')
+
+const threw = (fn: () => unknown): string | null => {
+  try { fn(); return null } catch (e) { return (e as Error).message }
+}
+
+check('기본 모델은 deepseek-v4-flash다',
+  createDeepseekProvider('sk-test').model === 'deepseek-v4-flash',
+  createDeepseekProvider('sk-test').model)
+check('공급자 이름이 deepseek다', createDeepseekProvider('sk-test').name === 'deepseek')
+
+check('deepseek-v4-pro는 생성 시점에 거부된다',
+  threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-pro')) !== null)
+check('거부 사유가 pro를 지목한다 (로그만 보고 원인을 안다)',
+  /pro/i.test(threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-pro')) ?? ''),
+  threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-pro')))
+check('대소문자를 섞어도 못 뚫는다',
+  threw(() => createDeepseekProvider('sk-test', 'DeepSeek-V4-PRO')) !== null)
+check('flash가 아닌 값도 거부된다',
+  threw(() => createDeepseekProvider('sk-test', 'deepseek-chat')) !== null)
+check('flash 계열은 통과한다 (503 대비 탈출구는 남아 있다)',
+  threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-flash-lite')) === null,
+  threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-flash-lite')))
+
+check('AI_PROVIDER가 비면 deepseek으로 간다 (기본값이 주 경로다)',
+  /AI_PROVIDER\s*\?\?\s*'deepseek'/.test(AI_INDEX_SOURCE),
+  'lib/ai/index.ts의 기본값이 deepseek이 아니다')
+check('예비 경로는 gemini를 명시할 때만 선택된다',
+  /===\s*'gemini'\s*\?\s*'gemini'\s*:\s*'deepseek'/.test(AI_INDEX_SOURCE))
+check('주 경로도 SDK 자동 재시도를 끈다 (§4.2 — 25초 예산)',
+  /maxRetries:\s*0/.test(DEEPSEEK_SOURCE))
+check('주 경로 타임아웃이 공용 상수를 쓴다 (25초가 한 곳에서 온다)',
+  /timeout:\s*AI_TIMEOUT_MS/.test(DEEPSEEK_SOURCE))
 
 /* ── 결과 ────────────────────────────────────────────────────── */
 console.log(`\n${'─'.repeat(52)}`)

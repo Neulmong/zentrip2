@@ -1,0 +1,284 @@
+{
+  "version": "2.6.0",
+  "authority": "spec.md 2.6. 이 파일과 spec이 어긋나면 spec이 이기고 이 파일을 고친다.",
+  "covenant": "CLAUDE.md의 🔒 하네스 규약 R1~R7",
+
+  "routes": {
+    "products": {
+      "agent": "intake-agent",
+      "spec": "§7.4 · 라우트 ①",
+      "step": "pipeline_started",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 0,
+      "skills": [
+        { "name": "input-guard" }
+      ]
+    },
+
+    "decompose": {
+      "agent": "intake-agent",
+      "spec": "§8.2 · 라우트 ②",
+      "step": "normalization_validated",
+      "extra_steps": ["itinerary_decomposed"],
+      "counter": "normalization",
+      "retry_from": 2,
+      "ai_budget": 1,
+      "skills": [
+        { "name": "optional-field-fill" },
+        { "name": "data-normalization" },
+        { "name": "itinerary-decomposition" },
+        { "name": "axis0-verification" }
+      ]
+    },
+
+    "brochure": {
+      "agent": "content-writer-agent",
+      "spec": "§8.7·§8.8 · 라우트 ③",
+      "step": "brochure_generated",
+      "counter": "brochure",
+      "retry_from": 3,
+      "ai_budget": 1,
+      "skills": [
+        { "name": "intro-content-fill" },
+        { "name": "intro-template-writer" },
+        { "name": "tonal-manner-apply" },
+        { "name": "brochure-contract-check" }
+      ]
+    },
+
+    "validate-brochure": {
+      "agent": "validator-agent",
+      "spec": "§11.2 · 라우트 ④ · 1차",
+      "step": "validation_1_completed",
+      "counter": "brochure",
+      "retry_from": 3,
+      "ai_budget": 1,
+      "skills": [
+        { "name": "fact-check", "args": { "target": "brochure", "axis": "axis_1" } }
+      ]
+    },
+
+    "page": {
+      "agent": "web-builder-agent",
+      "spec": "§9.2·§9.3 · 라우트 ⑤",
+      "step": "page_generated",
+      "counter": "page",
+      "retry_from": 5,
+      "ai_budget": 1,
+      "skills": [
+        { "name": "theme-design-token-match" },
+        { "name": "content-structuring" },
+        { "name": "web-content-structure-gen" },
+        { "name": "page-contract-check" },
+        { "name": "slug-issue" }
+      ]
+    },
+
+    "validate-page": {
+      "agent": "validator-agent",
+      "spec": "§11.3 · 라우트 ⑥ · 2차",
+      "step": "validation_2_completed",
+      "counter": "page",
+      "retry_from": 5,
+      "ai_budget": 1,
+      "skills": [
+        { "name": "fact-check", "args": { "target": "page", "axis": "axis_2" } }
+      ]
+    },
+
+    "validate-consistency": {
+      "agent": "validator-agent",
+      "spec": "§11.4 · 라우트 ⑦ · 3차",
+      "step": "validation_3_completed",
+      "counter": "consistency",
+      "retry_from": 5,
+      "ai_budget": 1,
+      "skills": [
+        { "name": "consistency-check" }
+      ]
+    }
+  },
+
+  "agents": {
+    "intake-agent": { "routes": ["products", "decompose"] },
+    "content-writer-agent": { "routes": ["brochure"] },
+    "validator-agent": { "routes": ["validate-brochure", "validate-page", "validate-consistency"] },
+    "web-builder-agent": { "routes": ["page"] },
+    "log-monitor-agent": { "routes": [], "owns_spec_skills": ["execution-log-collection", "abnormality-detection"] }
+  },
+
+  "skills": {
+    "input-guard": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "form-validation#validateFormInput",
+      "does": "필수 폼 그룹 6개 관문 재검사. 우회 호출 대비",
+      "status": "existing"
+    },
+    "optional-field-fill": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/normalize#fillOptional",
+      "does": "선택 4항목 미입력을 '추후 추가 예정'으로 채운다",
+      "status": "split_from:pipeline/normalize#buildConfirmedData"
+    },
+    "data-normalization": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/normalize#normalizeFields",
+      "does": "정규화 3종(날짜·금액 콤마·공백) + 여행기간 2필드 결합 1종",
+      "asserts": ["변경이력_존재", "3종_외_변형_0건"],
+      "status": "split_from:pipeline/normalize#buildConfirmedData"
+    },
+    "itinerary-decomposition": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "DECOMPOSE_SCHEMA",
+      "prompt_sections": ["목적", "분해 규칙", "판정 규칙", "금지 사항", "출력"],
+      "does": "일정 원문을 일차 단위로 분해하고 원문근거를 남긴다",
+      "why_ai": "원문에서 일차 경계를 찾아 서술로 옮기는 일은 규칙 치환으로 환원되지 않는다",
+      "status": "existing"
+    },
+    "axis0-verification": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/axis0#verifyAxis0",
+      "does": "0차 기계 검증 4종 — 정규화·일수·원문근거 포함·명사구 근거",
+      "status": "new:aggregates checkNormalization+checkDayCount+checkEvidence+checkNouns"
+    },
+
+    "intro-content-fill": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "OVERVIEW_SCHEMA",
+      "prompt_sections": ["목적", "판정 규칙", "금지 사항", "출력"],
+      "does": "소개서 overview.핵심일정 2~3문장을 쓴다",
+      "why_ai": "§8.7에서 source가 'generated'인 유일한 필드다. 나머지는 전부 기계 치환이다",
+      "absorbs_label": "intro-overview",
+      "status": "existing"
+    },
+    "intro-template-writer": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/brochure#buildBrochure",
+      "does": "소개서 8섹션 뼈대를 조립하고 각 필드에 source 경로를 배치한다",
+      "status": "existing"
+    },
+    "tonal-manner-apply": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/brochure#assertFactsUnchanged",
+      "does": "보호값 검증 — 소개서의 사실정보가 confirmed_data와 바이트 동일한지 확인 (변경 0건)",
+      "status": "new"
+    },
+    "brochure-contract-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/brochure#checkBrochure",
+      "does": "섹션 8개·순서·source 누락 0건·미치환 토큰 0건·길이 계약",
+      "status": "existing"
+    },
+
+    "fact-check": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "validate",
+      "schema": "VALIDATION_SCHEMA",
+      "prompt_sections": ["목적", "대조 규칙", "허용 차이", "판정 규칙", "금지 사항", "출력"],
+      "does": "form_input을 기준값으로 소개서(1차) 또는 페이지(2차)의 사실정보를 대조한다",
+      "why_ai": "표기 차이가 허용 범위인지 판정하려면 의미 대조가 필요하다",
+      "args_schema": { "target": ["brochure", "page"], "axis": ["axis_1", "axis_2"] },
+      "status": "existing"
+    },
+
+    "theme-design-token-match": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/theme#resolveTheme",
+      "does": "여행스타일 → 테마 키 + 디자인 토큰 3종",
+      "status": "existing"
+    },
+    "content-structuring": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "EXPAND_SCHEMA",
+      "prompt_sections": ["목적", "확장 규칙", "판정 규칙", "금지 사항", "출력"],
+      "does": "소개서의 압축 서술을 페이지의 확장 서술로 늘리고 apply 안내 문구를 쓴다",
+      "why_ai": "§9.3에서 source가 'generated'인 필드는 itinerary days text와 apply 2종뿐이다",
+      "status": "existing"
+    },
+    "web-content-structure-gen": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/page#buildPage",
+      "does": "페이지 9섹션을 조립하고 source 맵을 승계한다",
+      "status": "existing"
+    },
+    "page-contract-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/page#checkPage",
+      "does": "9섹션·순서·이미지 슬롯·길이 계약 4종(생성 시점)",
+      "status": "existing"
+    },
+    "slug-issue": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/slug#proposeSlug",
+      "does": "행사명에서 slug를 발급한다. 충돌 시 접미사",
+      "status": "existing"
+    },
+
+    "consistency-check": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "validate",
+      "schema": "VALIDATION_SCHEMA",
+      "prompt_sections": ["목적", "섹션 대응표", "허용 차이", "판정 규칙", "금지 사항", "출력"],
+      "does": "소개서와 페이지를 섹션 대응표로 대조한다. apply 섹션 제외",
+      "why_ai": "서술 분량·어순 차이를 실패로 잡지 않으려면 의미 대조가 필요하다",
+      "mechanical_candidate": "페이지가 소개서 값을 코드로 승계하므로 기계 대조로 내릴 여지가 있다. 데모 후 검토 — 3차 축의 의미와 §20 검증 배지가 바뀌므로 지금 건드리지 않는다",
+      "status": "existing"
+    },
+
+    "product-orchestrator": {
+      "kind": "spec",
+      "ai": 0,
+      "implemented_by": "lib/orchestrator.ts#runStep",
+      "does": "재시도 카운터·상태 전이·응답 코드 결정. 하네스 바깥(R7)",
+      "status": "existing"
+    },
+    "execution-log-collection": {
+      "kind": "spec",
+      "ai": 0,
+      "implemented_by": "lib/logging.ts",
+      "does": "execution_logs append. 하네스 바깥(R7)",
+      "status": "existing"
+    },
+    "abnormality-detection": {
+      "kind": "spec",
+      "ai": 0,
+      "implemented_by": "lib/logging.ts",
+      "does": "이상 5종 감지 → abnormality_flags. 하네스 바깥(R7)",
+      "status": "existing"
+    },
+    "draft-registration": {
+      "kind": "spec",
+      "ai": 0,
+      "implemented_by": "lib/orchestrator.ts#runStep",
+      "does": "3차 통과 시 draft 전이. 하네스 바깥(R7)",
+      "status": "existing"
+    }
+  },
+
+  "invariants": {
+    "ai_per_route_max": 1,
+    "ai_per_script_total": 6,
+    "spec_skills_never_in_chain": true,
+    "prompts_only_in_skill_md": true
+  }
+}
