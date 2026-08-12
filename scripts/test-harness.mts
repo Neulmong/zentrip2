@@ -43,7 +43,7 @@ interface Route {
 }
 interface Manifest {
   routes: Record<string, Route>
-  agents: Record<string, { routes: string[] }>
+  agents: Record<string, { routes: string[]; owns_spec_skills?: string[] }>
   skills: Record<string, Skill>
   invariants: { ai_per_route_max: number; ai_per_script_total: number }
 }
@@ -327,6 +327,139 @@ if (!existsSync(REG)) {
 
   check('registry.ts의 라우트 수가 매니페스트와 같다',
     (reg.match(/"agent":/g) ?? []).length === Object.keys(m.routes).length)
+}
+
+/* ── 9-1. 선언이 실제로 강제되는가 ───────────────────────────── */
+
+/**
+ * 매니페스트에 적혀 있지만 **아무도 읽지 않는 선언**을 잡는다.
+ *
+ * `asserts`가 정확히 그랬다 — 선언되고 `registry.ts`에 구워지기까지 했는데
+ * 런타임에 평가하는 코드가 없었고, `impls.ts`에 손으로 베낀 검사는
+ * `Array.isArray()`라 영원히 참이었다. **선언과 강제가 끊기면 빈 검사가 생긴다.**
+ */
+section('9-1. 매니페스트 선언이 코드로 강제된다')
+
+const ASSERTS_FILE = p('lib', 'harness', 'asserts.ts')
+const assertsSrc = existsSync(ASSERTS_FILE) ? readFileSync(ASSERTS_FILE, 'utf8') : ''
+const runSrc = existsSync(p('lib', 'harness', 'run.ts'))
+  ? readFileSync(p('lib', 'harness', 'run.ts'), 'utf8') : ''
+
+check('runChain이 선언된 asserts를 실행한다',
+  /ASSERTS\[/.test(runSrc) && /checkAsserts\(/.test(runSrc))
+
+for (const [name, s] of Object.entries(m.skills)) {
+  for (const a of (s as unknown as { asserts?: string[] }).asserts ?? []) {
+    check(`${name}: assert «${a}»에 평가기가 있다`,
+      new RegExp(`(^|\\s|,)${a}\\s*:`, 'm').test(assertsSrc), a)
+  }
+}
+
+/**
+ * `impl`이 **실제로 호출되는가.** §5는 「그 함수가 export되는가」만 봤다.
+ * 매니페스트가 `normalizeFields`라 적고 코드가 다른 함수를 불러도 통과했다.
+ */
+for (const [name, s] of Object.entries(m.skills)) {
+  if (s.kind !== 'mechanical' || !s.impl) continue
+  const sym = s.impl.split('#')[1]
+  if (!sym) continue
+  check(`${name}: impls.ts가 «${sym}»을 실제로 호출한다`,
+    new RegExp(`\\b${sym}\\s*\\(`).test(implsSrc), s.impl)
+}
+
+/** 죽은 배선 조회 함수 — 부르지 않으면 매니페스트의 `agent` 필드가 무의미하다 */
+check('runAgent가 agentOf로 라우트↔에이전트 배선을 확인한다',
+  /agentOf\(route\)/.test(runSrc))
+
+/* ── 10. R5 — 에이전트 문서의 체인 표가 매니페스트와 같은가 ──── */
+
+/**
+ * 에이전트 문서는 CLAUDE.md가 「🔒 런타임 실행 근거」로 규정한 파일이다.
+ * 그런데 체인의 실제 출처는 `manifest.json`이므로, 문서의 표는 **사본**이고
+ * 사본은 조용히 낡는다 — 매니페스트에 스킬을 추가하고 표를 안 고쳐도
+ * 런타임은 멀쩡히 돌아가기 때문에 아무도 눈치채지 못한다.
+ *
+ * 실제로 `memo-leak-check`가 두 에이전트 표에서 빠진 채 남아 있었고,
+ * 검사기 103건이 전부 통과했다. 그 구멍을 막는 검사다.
+ */
+section('10. R5 — 에이전트 문서의 체인 표 ↔ 매니페스트')
+
+/** `| 순서 | 스킬 | AI | 역할 |` 표에서 순서대로 스킬 이름을 뽑는다 */
+function chainTables(md: string): { order: number; skill: string }[][] {
+  const lines = md.replace(/\r\n/g, '\n').split('\n')
+  const tables: { order: number; skill: string }[][] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\|\s*순서\s*\|\s*스킬\s*\|/.test(lines[i])) continue
+    const rows: { order: number; skill: string }[] = []
+    // 헤더 다음 줄은 `|---|` 구분선이므로 건너뛴다
+    for (let j = i + 2; j < lines.length && lines[j].startsWith('|'); j++) {
+      const cells = lines[j].split('|').slice(1, -1).map((c) => c.trim())
+      const skill = /`([a-z0-9-]+)`/.exec(cells[1] ?? '')?.[1]
+      const order = Number(cells[0])
+      if (skill && Number.isInteger(order)) rows.push({ order, skill })
+    }
+    if (rows.length > 0) tables.push(rows)
+    i += rows.length + 1
+  }
+  return tables
+}
+
+for (const [agent, decl] of Object.entries(m.agents)) {
+  const file = p('.claude', 'agents', `${agent}.md`)
+  if (!existsSync(file)) continue
+  const md = readFileSync(file, 'utf8')
+  const tables = chainTables(md)
+
+  /*
+   * 표가 없는 에이전트(validator-agent)는 다른 형식으로 적는다.
+   * 그 경우에도 **체인 스킬 이름이 문서 어딘가에는 나와야** 한다.
+   */
+  if (tables.length === 0) {
+    const missing = decl.routes
+      .flatMap((r) => m.routes[r]?.skills.map((s) => s.name) ?? [])
+      .filter((s) => !md.includes(`\`${s}\``))
+    check(`${agent}: 체인 스킬이 문서에 언급된다 (표 없음)`,
+      missing.length === 0, missing)
+    continue
+  }
+
+  /*
+   * 라우트가 없는 에이전트(log-monitor-agent)의 표는 체인이 아니라
+   * `owns_spec_skills` — 하네스 바깥을 문서화하는 kind:spec 스킬이다(R7).
+   * 체인으로 대조하면 안 되고, 그렇다고 건너뛰면 이쪽 표가 낡는 것을 못 잡는다.
+   */
+  if (decl.routes.length === 0) {
+    const want = decl.owns_spec_skills ?? []
+    const got = tables[0].map((r) => r.skill)
+    check(`${agent}: 표의 스킬 목록이 owns_spec_skills와 같다`,
+      tables.length === 1 && got.length === want.length && got.every((s, i) => s === want[i]),
+      { 문서: got, 매니페스트: want })
+    check(`${agent}: 표의 스킬이 전부 kind:spec이다 (체인 실행 금지 — R7)`,
+      got.every((s) => m.skills[s]?.kind === 'spec'),
+      got.map((s) => `${s}:${m.skills[s]?.kind}`))
+    continue
+  }
+
+  check(`${agent}: 체인 표 개수 = 담당 라우트 수`,
+    tables.length === decl.routes.length,
+    { 표: tables.length, 라우트: decl.routes.length })
+
+  decl.routes.forEach((route, idx) => {
+    const table = tables[idx]
+    const want = m.routes[route]?.skills.map((s) => s.name) ?? []
+    if (!table) return
+
+    const got = table.map((r) => r.skill)
+    check(`${agent} · ${route}: 표의 스킬 목록이 매니페스트와 같다`,
+      got.length === want.length && got.every((s, i) => s === want[i]),
+      { 문서: got, 매니페스트: want })
+
+    // 번호가 1..n으로 이어지는가 — 스킬을 끼워 넣고 번호를 안 고친 경우를 잡는다
+    check(`${agent} · ${route}: 표의 번호가 1..${want.length}로 이어진다`,
+      table.every((r, i) => r.order === i + 1),
+      table.map((r) => r.order))
+  })
 }
 
 /* ── 결과 ────────────────────────────────────────────────────── */
