@@ -38,8 +38,8 @@ interface Skill {
   effort?: string; schema?: string; prompt_sections?: string[]
 }
 interface Route {
-  agent: string; ai_budget: number; skills: { name: string; args?: unknown }[]
-  counter: string | null; retry_from: number | null
+  agent: string | null; ai_budget: number; skills: { name: string; args?: unknown }[]
+  counter: string | null; retry_from: number | null; driven_by?: string
 }
 interface Manifest {
   routes: Record<string, Route>
@@ -81,12 +81,23 @@ check('선언된 모든 에이전트에 문서가 있다',
 check('모든 에이전트 문서가 매니페스트에 선언돼 있다',
   agentFiles.every((a) => !!m.agents[a]),
   agentFiles.filter((a) => !m.agents[a]))
-check('라우트의 agent가 모두 실재한다',
-  Object.values(m.routes).every((r) => !!m.agents[r.agent]))
+/*
+ * `agent: null`은 **담당 에이전트가 없는 라우트**다(편집 저장·주소 변경).
+ * 에이전트 5종은 전부 생성·검증 주체이므로 억지로 배정하면 그 문서가 자기가
+ * 하지 않는 일을 설명하게 된다. 대신 `driven_by: "route"`와 짝이어야 한다 —
+ * 하네스가 구동하는 라우트는 응답 코드를 결정할 에이전트가 반드시 필요하다.
+ */
+check('라우트의 agent가 모두 실재한다 (null은 제외)',
+  Object.values(m.routes).every((r) => r.agent === null || !!m.agents[r.agent]))
+check('agent가 null인 라우트는 driven_by가 route다',
+  Object.entries(m.routes).every(([, r]) => r.agent !== null || r.driven_by === 'route'),
+  Object.entries(m.routes).filter(([, r]) => r.agent === null && r.driven_by !== 'route')
+    .map(([rk]) => rk))
 check('에이전트의 routes 목록이 실제 라우트와 양방향 일치한다',
   Object.entries(m.agents).every(([a, cfg]) =>
     cfg.routes.every((rk) => m.routes[rk]?.agent === a))
-  && Object.entries(m.routes).every(([rk, r]) => m.agents[r.agent].routes.includes(rk)))
+  && Object.entries(m.routes).every(([rk, r]) =>
+    r.agent === null || m.agents[r.agent].routes.includes(rk)))
 
 /* ── 2. R3 — AI 예산 (API 호출 최소화) ──────────────────────── */
 
@@ -237,8 +248,19 @@ section('7. R1 — 라우트가 ai()를 직접 호출하지 않는다')
 const directAi = routeFiles.filter((f) => /\bai\(\)\.call\b/.test(f.src)).map((f) => f.name)
 check('ai()를 직접 호출하는 라우트가 없다', directAi.length === 0, directAi)
 
+/**
+ * `driven_by: "route"`인 라우트는 하네스가 구동하지 않는다.
+ *
+ * 상품 행을 만들거나(`products`), `attempt_no`를 올리거나(`form-input`),
+ * 사람이 조작하는 경로(`content`·`slug`)라 `runStep`의 전제가 성립하지 않는다.
+ * **매니페스트에 등록하는 이유는 배선을 문서에 남기기 위해서다**(R6) —
+ * 등록해 두지 않으면 그 라우트가 어떤 규칙을 실행하는지 코드에만 있게 된다.
+ */
+const routeDriven = new Set(
+  Object.entries(m.routes).filter(([, r]) => r.driven_by === 'route').map(([rk]) => rk))
+
 const usesRunAgent = routeFiles.filter((f) => /runAgent\(/.test(f.src)).map((f) => f.name)
-const pipelineRoutes = Object.keys(m.routes).filter((r) => r !== 'products')
+const pipelineRoutes = Object.keys(m.routes).filter((r) => !routeDriven.has(r))
 const notConverted = pipelineRoutes.filter((r) => !usesRunAgent.includes(r))
 if (notConverted.length) {
   pending(`runAgent()로 전환된 라우트 ${usesRunAgent.length}/${pipelineRoutes.length}`,
@@ -263,13 +285,25 @@ check('전환된 라우트가 lib/pipeline·lib/ai를 직접 import하지 않는
  *
  * 등록이 빠지면 런타임에 던진다 — 조용히 건너뛰지 않는다. 그래도 **던지는
  * 시점이 요청 중**이므로, 배선과 등록표의 불일치는 여기서 미리 잡는다.
+ *
+ * **`driven_by: "route"` 라우트에만 속한 스킬은 러너를 요구하지 않는다.**
+ * `runChain`이 그 라우트를 돌리지 않으므로 러너를 만들면 실행되지 않는 코드가
+ * 된다 — 검사기를 만족시키려고 죽은 코드를 쓰게 하는 것이 더 나쁘다.
+ * 대신 §9-1이 `impl`이 실재하고 라우트가 실제로 부르는지를 본다.
  */
 section('7-1. 체인 스킬 ↔ 러너 등록표')
 
 const IMPLS = p('lib', 'harness', 'impls.ts')
 const implsSrc = existsSync(IMPLS) ? readFileSync(IMPLS, 'utf8') : ''
 const aiSrc = existsSync(AI_SKILLS_SRC) ? readFileSync(AI_SKILLS_SRC, 'utf8') : ''
+
+/** 하네스가 구동하는 라우트의 체인에 들어간 스킬만 러너가 필요하다 */
+const harnessChained = new Set(
+  Object.entries(m.routes).filter(([rk]) => !routeDriven.has(rk))
+    .flatMap(([, r]) => r.skills.map((s) => s.name)))
+
 for (const name of [...chained]) {
+  if (!harnessChained.has(name)) continue
   const kind = m.skills[name]?.kind
   const src = kind === 'ai' ? aiSrc : implsSrc
   const where = kind === 'ai' ? 'ai-skills.ts' : 'impls.ts'
@@ -359,12 +393,36 @@ for (const [name, s] of Object.entries(m.skills)) {
  * `impl`이 **실제로 호출되는가.** §5는 「그 함수가 export되는가」만 봤다.
  * 매니페스트가 `normalizeFields`라 적고 코드가 다른 함수를 불러도 통과했다.
  */
+/**
+ * 호출 주체는 두 가지다.
+ *   · 하네스 체인 스킬 → `impls.ts`가 부른다
+ *   · `driven_by: "route"` 스킬 → **그 라우트 파일**이 직접 부른다
+ *
+ * 후자를 `impls.ts`에서 찾으면 실행되지 않는 러너를 쓰게 만든다. 어느 쪽이든
+ * 「선언한 함수를 실제로 부르는가」를 보는 것이 이 검사의 목적이다.
+ */
+const routeSrcOf = (rk: string): string => {
+  const f = routeFiles.find((x) => x.name === rk)
+  if (f) return f.src
+  const root = p('app', 'api', 'products', 'route.ts')
+  return rk === 'products' && existsSync(root) ? readFileSync(root, 'utf8') : ''
+}
+
 for (const [name, s] of Object.entries(m.skills)) {
   if (s.kind !== 'mechanical' || !s.impl) continue
   const sym = s.impl.split('#')[1]
   if (!sym) continue
-  check(`${name}: impls.ts가 «${sym}»을 실제로 호출한다`,
-    new RegExp(`\\b${sym}\\s*\\(`).test(implsSrc), s.impl)
+  const calls = new RegExp(`\\b${sym}\\s*\\(`)
+
+  if (harnessChained.has(name)) {
+    check(`${name}: impls.ts가 «${sym}»을 실제로 호출한다`, calls.test(implsSrc), s.impl)
+    continue
+  }
+
+  const owners = Object.entries(m.routes)
+    .filter(([, r]) => r.skills.some((x) => x.name === name)).map(([rk]) => rk)
+  check(`${name}: 라우트(${owners.join('·')})가 «${sym}»을 실제로 호출한다`,
+    owners.some((rk) => calls.test(routeSrcOf(rk))), s.impl)
 }
 
 /** 죽은 배선 조회 함수 — 부르지 않으면 매니페스트의 `agent` 필드가 무의미하다 */

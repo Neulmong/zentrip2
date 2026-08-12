@@ -27,7 +27,7 @@ export interface SkillSpec {
 }
 
 export interface RouteSpec {
-  readonly agent: string
+  readonly agent: string | null
   readonly step: string
   readonly extra_steps?: readonly string[]
   readonly counter: string | null
@@ -164,6 +164,24 @@ export const SKILLS = {
     "impl": "pipeline/slug#proposeSlug",
     "does": "행사명에서 slug를 발급한다. 충돌 시 접미사"
   },
+  "edit-contract-check": {
+    "kind": "mechanical",
+    "ai": 0,
+    "impl": "edit-contract#validateEdit",
+    "does": "편집 저장 계약 — 기본 9섹션 불변부·삽입 블록 3종·이미지 참조·길이 계약 6종"
+  },
+  "edit-history-diff": {
+    "kind": "mechanical",
+    "ai": 0,
+    "impl": "edit-contract#diffSections",
+    "does": "저장 전후를 비교해 변경된 섹션만 edit_history 기록으로 만든다 (action 4종)"
+  },
+  "slug-format-check": {
+    "kind": "mechanical",
+    "ai": 0,
+    "impl": "pipeline/slug#isValidSlug",
+    "does": "사람이 입력한 slug의 허용 문자·길이 판정. 중복은 DB UNIQUE가 본다"
+  },
   "consistency-check": {
     "kind": "ai",
     "ai": 1,
@@ -215,6 +233,48 @@ export const ROUTES = {
     "skills": [
       {
         "name": "input-guard"
+      }
+    ]
+  },
+  "form-input": {
+    "agent": "intake-agent",
+    "step": "form_input_resubmitted",
+    "counter": null,
+    "retry_from": null,
+    "ai_budget": 0,
+    "driven_by": "route",
+    "skills": [
+      {
+        "name": "input-guard"
+      }
+    ]
+  },
+  "content": {
+    "agent": null,
+    "step": "content_edited",
+    "counter": null,
+    "retry_from": null,
+    "ai_budget": 0,
+    "driven_by": "route",
+    "skills": [
+      {
+        "name": "edit-contract-check"
+      },
+      {
+        "name": "edit-history-diff"
+      }
+    ]
+  },
+  "slug": {
+    "agent": null,
+    "step": "slug_changed",
+    "counter": null,
+    "retry_from": null,
+    "ai_budget": 0,
+    "driven_by": "route",
+    "skills": [
+      {
+        "name": "slug-format-check"
       }
     ]
   },
@@ -366,6 +426,7 @@ export const AGENTS = {
   "intake-agent": {
     "routes": [
       "products",
+      "form-input",
       "decompose"
     ]
   },

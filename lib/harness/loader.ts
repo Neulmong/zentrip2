@@ -19,13 +19,21 @@ export { HARNESS_VERSION }
 export type ManifestRoute = keyof typeof ROUTES
 
 /**
- * 하네스가 구동하는 라우트 — `products`는 제외한다.
+ * 하네스가 구동하는 라우트 — `driven_by: "route"`인 것들은 제외한다.
  *
- * 상품 행을 **만드는** 라우트이므로 `runStep`의 전제(기존 행·시작 조건·
- * 조건부 갱신·카운터)가 성립하지 않는다. 매니페스트가 `driven_by: "route"`로
- * 이를 선언한다.
+ * | 라우트 | 왜 하네스가 구동하지 않나 |
+ * |---|---|
+ * | `products` | 상품 행을 **만든다.** `runStep`의 전제(기존 행·조건부 갱신·카운터)가 없다 |
+ * | `form-input` | `attempt_no`를 올리고 산출물을 비운다. 같은 시도 안의 재시도가 아니다 |
+ * | `content` | 편집은 사람이 한다. AI·카운터가 없고 담당 에이전트도 없다 |
+ * | `slug` | 사람이 입력한 값의 형식 판정. AI·카운터 없음 |
+ *
+ * 매니페스트가 `driven_by: "route"`로 선언하고, `routeSpec`이 런타임에 막는다.
+ * 이 합집합을 손으로 적는 이유는 **오타를 컴파일에서 잡기 위해서다** —
+ * 매니페스트에서 파생시키면 `RouteKey`가 넓어져 그 이점이 사라진다.
  */
-export type HarnessRoute = Exclude<ManifestRoute, 'products'>
+export type HarnessRoute =
+  Exclude<ManifestRoute, 'products' | 'form-input' | 'content' | 'slug'>
 
 /*
  * 코드젠이 `as const satisfies`로 굽기 때문에 각 항목의 타입은 **리터럴**이다.
@@ -67,6 +75,14 @@ export function promptOf(skill: string): string {
 
 export function agentOf(route: HarnessRoute): string {
   const agent = routeSpec(route).agent
+  /*
+   * 하네스가 구동하는 라우트는 **반드시** 에이전트가 있다 — 응답 코드를 결정하는
+   * 주체가 에이전트이기 때문이다. `agent: null`은 `driven_by: "route"` 전용이고
+   * 코드젠이 그 짝을 검산한다. 여기 `null`이 오면 배선이 깨진 것이다.
+   */
+  if (!agent) {
+    throw new Error(`하네스: 라우트 «${route}»에 에이전트가 없다 (agent: null) — runAgent로 구동할 수 없다`)
+  }
   if (!AGENT_TABLE[agent]) throw new Error(`하네스: 없는 에이전트 «${agent}»`)
   const declared = AGENT_TABLE[agent].routes
   if (!declared.includes(route)) {

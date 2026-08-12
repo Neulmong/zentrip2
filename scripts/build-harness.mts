@@ -46,7 +46,7 @@ interface Entry {
   reset: string
 }
 interface Route {
-  agent: string
+  agent: string | null
   step: string
   extra_steps?: string[]
   counter: string | null
@@ -165,7 +165,22 @@ for (const [rk, route] of Object.entries(manifest.routes)) {
     return a + sk.ai
   }, 0)
   if (sum !== route.ai_budget) fatal(`라우트 ${rk}: 체인 AI 합계 ${sum} ≠ 선언 예산 ${route.ai_budget}`)
-  if (!manifest.agents[route.agent]) fatal(`라우트 ${rk}: 없는 에이전트 «${route.agent}»`)
+
+  /*
+   * `agent: null`은 **담당 에이전트가 없는 라우트**다 — 편집 저장·주소 변경처럼
+   * 사람이 조작하고 서버는 계약만 검사하는 경로다. 에이전트 5종은 전부 생성·검증
+   * 주체이므로 억지로 배정하면 그 에이전트 문서가 자기가 하지 않는 일을 설명한다.
+   *
+   * 단 **하네스가 구동하는 라우트는 반드시 에이전트가 있어야 한다** — `runAgent`가
+   * `agentOf`로 배선을 확인하고, 응답 코드를 결정하는 주체가 에이전트이기 때문이다.
+   */
+  if (route.agent === null) {
+    if (route.driven_by !== 'route') {
+      fatal(`라우트 ${rk}: agent가 null인데 driven_by가 "route"가 아니다 — 하네스가 구동할 수 없다`)
+    }
+  } else if (!manifest.agents[route.agent]) {
+    fatal(`라우트 ${rk}: 없는 에이전트 «${route.agent}»`)
+  }
 }
 
 if (errors.length) {
@@ -213,7 +228,7 @@ export interface SkillSpec {
 }
 
 export interface RouteSpec {
-  readonly agent: string
+  readonly agent: string | null
   readonly step: string
   readonly extra_steps?: readonly string[]
   readonly counter: string | null
