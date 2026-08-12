@@ -222,6 +222,40 @@ export function checkDeclaredTerms(cd: ConfirmedData): ValidationItem[] {
   return out
 }
 
+/**
+ * `day`는 **숫자만 담은 문자열**이고 순서대로 1부터다 (§6.1).
+ *
+ * ## 왜 검사가 필요한가 — 실측으로 드러난 결함
+ *
+ * SKILL.md 산문은 「`day`는 문자열로 저장한다(`"1"`)」로 규정했지만 **실행되는
+ * 프롬프트 펜스에는 그 규칙이 없었다.** 그래서 AI가 `"1일"`을 반환했고 아무도
+ * 잡지 못했다.
+ *
+ * 조용히 넘어가지 않는다. `buildPage`가 일차별 이미지 슬롯을
+ * `itinerary_day_${day}`로 만드는데, 업로드된 슬롯 이름은 `itinerary_day_1`이다.
+ * `day`가 `"1일"`이면 `itinerary_day_1일`을 찾게 되어 **일차별 사진이 페이지에
+ * 붙지 않는다.** 값이 비는 것이 아니라 화면에서 사진이 사라진다.
+ *
+ * ## 왜 고쳐 쓰지 않고 실패로 두는가
+ *
+ * `day`는 위치로 완전히 결정되므로 기계가 덮어쓸 수도 있다. 그러나 덮어쓰면
+ * **AI가 규칙을 어긴 사실이 사라진다** — 같은 어긋남이 `내용`·`원문근거`에서
+ * 일어나고 있어도 알 수 없게 된다. §11.6 재시도 경로가 이런 상황을 위해 있다.
+ */
+export function checkDayNumbers(cd: ConfirmedData): ValidationItem[] {
+  const out: ValidationItem[] = []
+  for (const [i, d] of cd.행사정보.일정.entries()) {
+    const want = String(i + 1)
+    if (d.day === want) continue
+    out.push(item('일차 번호', '행사정보.일정', want, d.day,
+      `${i + 1}번째 일차의 day가 «${d.day}»입니다. `
+      + '숫자만 담은 문자열이어야 하며 단위를 붙일 수 없습니다(§6.1). '
+      + '이미지 슬롯 이름이 어긋나 일차별 사진이 표시되지 않습니다.',
+      `confirmed_data.행사정보.일정[${i}].day`))
+  }
+  return out
+}
+
 /** 일차 수는 여행기간 일수와 **정확히 일치**해야 한다(§6.3·§11.2). */
 export function checkDayCount(cd: ConfirmedData, tripDays: number): ValidationItem[] {
   const got = cd.행사정보.일정.length
@@ -262,6 +296,8 @@ export function verifyAxis0(
   const items: ValidationItem[] = [
     ...checkNormalization(fi, cd),
     ...checkDayCount(cd, tripDays),
+    // `day`가 «1일» 같은 값이면 이미지 슬롯 이름이 어긋난다 (§6.1)
+    ...checkDayNumbers(cd),
     ...checkEvidence(cd),
     // 3단계 — AI가 신고한 핵심표현을 **기계가** 대조한다 (§6.3)
     ...checkDeclaredTerms(cd),

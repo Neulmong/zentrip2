@@ -26,7 +26,7 @@ import { buildPage, checkPage } from '../lib/pipeline/page'
 import { assertSectionCoverage, checkConsistency } from '../lib/pipeline/consistency'
 import { resolveTheme } from '../lib/pipeline/theme'
 import { findMemoLeaks } from '../lib/pipeline/memo-leak'
-import { checkDeclaredTerms, verifyAxis0 } from '../lib/pipeline/axis0'
+import { checkDayNumbers, checkDeclaredTerms, verifyAxis0 } from '../lib/pipeline/axis0'
 import { toJsonSchema, validateAgainstSchema } from '../lib/ai/schema'
 import {
   DECOMPOSE_SCHEMA, EXPAND_SCHEMA, VALIDATION_SCHEMA,
@@ -1200,6 +1200,48 @@ section('0차 — 명사구는 표시만, 확정 위반만 실패')
 
     const 없음 = structuredClone(cd)
     check('3단계: 신고가 없는 옛 산출물은 검사를 건너뛴다', checkDeclaredTerms(없음).length === 0)
+  }
+
+  /*
+   * `day` 형식 — 실측으로 드러난 결함이다. AI가 «1일»을 반환했고,
+   * `buildPage`가 `itinerary_day_1일`을 찾아 **일차별 사진이 붙지 않았다.**
+   */
+  {
+    const 정상 = structuredClone(cd)
+    check('day 형식: 숫자 문자열이면 통과한다', checkDayNumbers(정상).length === 0, checkDayNumbers(정상))
+
+    const 단위붙음 = structuredClone(cd)
+    단위붙음.행사정보.일정 = 단위붙음.행사정보.일정.map((d) => ({ ...d, day: `${d.day}일` }))
+    check('day 형식: «1일»은 확정 위반이다', checkDayNumbers(단위붙음).length === 4)
+    check('day 형식: 사유가 이미지 슬롯 영향을 알려준다',
+      checkDayNumbers(단위붙음)[0].사유.includes('사진'))
+
+    const 순서뒤바뀜 = structuredClone(cd)
+    순서뒤바뀜.행사정보.일정[0].day = '2'
+    check('day 형식: 순서가 1부터가 아니면 잡는다', checkDayNumbers(순서뒤바뀜).length > 0)
+
+    /* 슬롯이 실제로 붙는가 — 이 검사가 없어서 결함이 드러나지 않았다 */
+    const slots = new Set(['itinerary_day_1', 'itinerary_day_2'])
+    const 정상페이지 = buildPage({
+      cd: 정상, theme: resolveTheme(정상.행사정보.여행스타일), slots,
+      expanded: new Map(정상.행사정보.일정.map((d) => [d.day, d.내용])),
+      apply: { 제목: '신청 안내', 안내문구: '아래 양식으로 신청해 주세요.' },
+    })
+    const days1 = (정상페이지.sections.find((s) => s.id === 'sec_itinerary')!.data.days as
+      { image_slot: string }[])
+    check('day 형식: 정상 day면 일차별 이미지 슬롯이 붙는다',
+      days1[0].image_slot === 'itinerary_day_1' && days1[1].image_slot === 'itinerary_day_2',
+      days1.map((d) => d.image_slot))
+
+    const 깨진페이지 = buildPage({
+      cd: 단위붙음, theme: resolveTheme(단위붙음.행사정보.여행스타일), slots,
+      expanded: new Map(단위붙음.행사정보.일정.map((d) => [d.day, d.내용])),
+      apply: { 제목: '신청 안내', 안내문구: '아래 양식으로 신청해 주세요.' },
+    })
+    const days2 = (깨진페이지.sections.find((s) => s.id === 'sec_itinerary')!.data.days as
+      { image_slot: string }[])
+    check('day 형식: «1일»이면 슬롯이 비어 사진이 사라진다 (결함 재현)',
+      days2.every((d) => d.image_slot === ''), days2.map((d) => d.image_slot))
   }
 
   check('원문근거 위조는 확정 위반이다', verifyAxis0(fi, 위조, 4).items.length > 0)
