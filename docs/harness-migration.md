@@ -305,12 +305,16 @@ POST /api/products/{id}/decompose        ← 라우트는 3줄이다
 
 ```
 npm run test:demo      43 통과 · 0 실패   ← §20 대본 관통. AI 6회 · 1:16
-npm run test:harness  103 통과 · 0 실패 · 1 격차
+npm run test:harness  117 통과 · 0 실패 · 1 격차   (8/12 재검증: 103 → 117)
 npm run test:policy   247 통과 · 0 실패
 npx tsc --noEmit       0
 npm run lint           0
 npm run build          통과
 ```
+
+**8/12 재검증** — `test:demo`를 2회 돌렸고 둘 다 43 통과 · 0 실패다.
+1회차 2:22(dev 첫 요청 컴파일 포함, `validate-page` 409 → 재시도 통과),
+2회차 1:28(예열 후, 재시도 없음). 이상 플래그 2건은 §7.3 ④의 이유로 정상이다.
 
 `test:demo`는 **개발 서버가 떠 있어야 한다.** 4축 전부 pass → draft → 게시 →
 비로그인 `/p/{slug}` → 신청 → 이메일 → 로그 14행 순서까지 확인된다.
@@ -327,34 +331,118 @@ exceptions`) 모든 React 페이지가 500을 낸다. **API 라우트는 정상 
 
 ## 7.3 남은 일 — 우선순위 순
 
-### ① 문서 재기준화 마무리 (2건 남음 · 30분)
+### ① 문서 재기준화 — **완료 (2026-08-12)**
 
-`.claude/`가 실행 근거이므로 **문서에 남은 2.2 값은 그대로 실행된다.**
-verdict 2건은 고쳤고(커밋 `2442ea8`), 아래가 남았다:
+`.claude/`가 실행 근거이므로 **문서에 남은 2.2 값은 그대로 실행된다.** 전수 점검해서 닫았다.
+코드 동작은 처음부터 2.6대로 맞았고, 고친 이유는 **다음 사람이 문서를 믿고 옛 값으로 구현하는 것**을
+막기 위해서다. 근거는 CLAUDE.md의 「2.2 → 2.6에서 뒤집힌 값」 대조표.
 
-| 파일 | 고칠 것 | spec |
+| 파일 | 고친 것 |
+|---|---|
+| `agents/content-writer-agent.md` · `web-builder-agent.md` | **체인 표에서 `memo-leak-check`가 빠져 있었다.** `slug-issue`도 5번으로 잘못 적혀 있었다(실제 6번) |
+| `skills/product-orchestrator/SKILL.md` | 카운터 3종 → **4종**, 「0차는 `brochure` 공유」 → **`normalization`** · 409 `reason` 5종 표 신설 · 선행 조건표를 `current_step` → **재료 기준**(§14.5) |
+| `skills/abnormality-detection/SKILL.md` | `retry_counts` 4종 · 중복 범위 `(step,type)` → **`(execution_id, attempt_no, step, type)`** |
+| `skills/web-content-structure-gen/SKILL.md` | 길이 계약 **생성 시 6종 → 4종**(§17.1) · slug 발급 절 삭제(→ `slug-issue`) · 출력에서 slug·길이판정 제거 |
+| `skills/tonal-manner-apply/SKILL.md` | 「어투를 다듬는다」 → **보호값 검증 전용**(AI 0회). 이름만 유지 |
+| `skills/intro-content-fill/SKILL.md` | 「전 필드 치환」 → **`overview.핵심일정` 하나만**. 체인 2번 → **1번** |
+| `skills/intro-template-writer/SKILL.md` | 체인 1번 → **2번** · 시작 조건 `current_step` → 재료 기준 · 값 치환이 여기 |
+| `skills/content-structuring/SKILL.md` · `theme-design-token-match/SKILL.md` | 순서가 서로 뒤집혀 있었다(1↔2) |
+| `skills/input-guard/SKILL.md` | 선택 항목 채움 주장 삭제(→ `optional-field-fill`) · `decompose` 체인 → **라우트 ①** |
+| `skills/data-normalization/SKILL.md` · `itinerary-decomposition/SKILL.md` | `## 실행 조건` → `## 배선`(매니페스트를 가리키게) |
+| `CLAUDE.md` | AI 소요 시간표를 **probe 수치 → 실제 파이프라인 수치**로 (아래 ④) |
+
+**스킬 5개의 `## 프롬프트` 펜스는 한 글자도 건드리지 않았다** — 해시 5개가 전부 그대로이고
+DeepSeek 캐시 적중이 유지된다. 고친 것은 전부 사람이 읽는 산문·표다.
+
+「스킬 두 개가 AI 호출 1회를 나눠 쓴다」는 2.2식 서술이 4개 문서에 있었다. 하네스에서는
+성립하지 않는다 — `ai_budget`은 **스킬 단위**로 대조된다(R3). 전부 「AI는 이 스킬 하나가
+쓰고 나머지는 AI 0회」로 고쳤다.
+
+### ①-b 검사기 보강 — **완료**
+
+위 `memo-leak-check` 누락은 **`test:harness` 103건이 전부 통과하는 상태에서 살아 있었다.**
+검사기가 매니페스트↔코드만 대조하고 **에이전트 문서는 안 봤기 때문**이다.
+
+`scripts/test-harness.mts`에 **§10 「에이전트 문서의 체인 표 ↔ 매니페스트」** 를 추가했다.
+표의 스킬 목록·순서·번호가 매니페스트와 다르면 실패한다. 라우트가 없는
+`log-monitor-agent`는 `owns_spec_skills`와 대조하고 전부 `kind: spec`인지도 본다.
+
+역검증했다 — 표에서 `memo-leak-check` 한 줄을 지우면 그 항목만 정확히 실패한다.
+
+검사 총계: **103 → 117건.**
+
+### ①-c 완성도 감사 — **완료 (2026-08-12 밤)**
+
+데모를 빼고 완성도만 보고 전수 감사했다. 결함 3건과 구조 문제 3건을 고쳤다.
+
+| # | 무엇이 잘못됐나 | 고친 곳 |
 |---|---|---|
-| `.claude/skills/product-orchestrator/SKILL.md` | 111행 「카운터 **3종**」 → 4종(`normalization`·`brochure`·`page`·`consistency`) · 113행 「0차 실패는 `brochure` 카운터를 공유한다」 → **0차는 `normalization`을 쓴다** · 84행 `retry_counts` 3종 → 4종 | §11.6 |
-| `.claude/skills/abnormality-detection/SKILL.md` | 25행 `{brochure, page, consistency}` → 4종 | §11.6·§5.5 |
+| 1 | **성공 시 `retry_index`가 틀렸다.** 실패가 아니면 카운터가 `'brochure'`로 고정돼, 0차를 2번 재시도한 뒤 성공하면 회차가 0으로 남았다 — 재시도했다는 사실이 로그에서 사라졌다(§5.4) | `orchestrator.ts` `StepConfig.counter` 신설 · `run.ts`가 매니페스트 `counter`를 전달 |
+| 2 | **하지도 않은 작업이 통과로 기록됐다.** 추가 단계가 무조건 `verdict: pass`라, AI가 실패해 분해가 없었는데도 `itinerary_decomposed`가 통과로 남았다 | `StepOutcome.extraVerdicts` 신설 · 기본값을 주 판정으로 · 분해 성공 시에만 `intake-agent`가 명시 |
+| 3 | **필드 누락을 두 검사가 다 놓쳤다.** `assertFactsUnchanged`는 없는 값을 건너뛰었고 `checkBrochure`는 `data` 방향만 봤다 — 조립부 회귀가 가장 흔히 나타나는 형태에 정확히 구멍 | `brochure.ts` 양쪽 보강 · `test:policy`에 회귀 2건 추가 |
+| 4 | **`asserts`가 선언만 되고 실행되지 않았다.** `impls.ts`의 수동 검사는 `Array.isArray()`라 영원히 참이었다 | `lib/harness/asserts.ts` 신설 · `runChain`이 평가 · 빈 검사 삭제 |
+| 5 | **`agentOf()`가 죽은 코드였다.** 매니페스트의 `agent` 필드가 런타임에 한 번도 읽히지 않았다 | `runAgent`가 호출 |
+| 6 | **`impl`이 구속력이 없었다.** 검사기는 「export되는가」만 봤고 실제 호출은 안 봤다 | `test:harness` §9-1 신설 |
 
-두 파일은 `kind: spec`이라 **체인에서 실행되지 않는다**(R7). 즉 코드 동작은 이미 4종으로
-맞다 — 고치는 이유는 다음 사람이 문서를 믿고 3종으로 구현하는 것을 막기 위해서다.
-근거는 CLAUDE.md의 「2.2 → 2.6에서 뒤집힌 값」 대조표.
+**실증.** ②는 `npm run test:exhaustion`(AI를 일부러 실패시킨 서버)으로 확인했다 —
+`itinerary_decomposed`가 이전의 `pass` 자리에 **`fail`** 로 기록된다.
+①은 타입·코드 수준에서 고쳤고, 재시도 후 성공하는 시나리오는 AI가 간헐적으로
+실패해야 재현되므로 실측하지 못했다.
+
+**`page` 라우트의 중복 조회는 고치지 않았다.** `applyEntry`와 `runStep`이 같은 상품을
+두 번 읽지만, 두 번째 읽기는 낭비가 아니라 **안전장치**다 — 그 사이 다른 요청이
+갱신하면 첫 번째 행은 이미 낡았고, 낡은 행으로 시작 조건을 판정하면 §16.1.1이
+막으려는 상황을 우리가 만든다. 근거를 코드 주석에 남겼다.
+
+검사 총계: **117 → 132건.** `test:policy` 247 → 249건.
 
 ### ② 미결정 3건 (판단 필요)
 
 | 항목 | 상태 | 판단 |
 |---|---|---|
-| `form-input` 라우트를 매니페스트에 넣을까 | `validateFormInput`이 `PATCH /form-input`에서도 불린다 | **넣는 쪽.** `ai_budget: 0`인 두 번째 라우트가 된다. 지금은 라우트가 impl을 직접 부르므로 배선이 문서에 없다 |
-| `tonal-manner-apply` 유지 | 체인에 있고 정상 산출물에 0건임이 실측됨 | 유지. 회귀 감지용이고 AI 0회다 |
+| **매니페스트 밖 라우트 3개** | 아래 표 참조 | **데모 후.** 배선이 문서에 없다(R6 위반). 지금 넣으면 매니페스트·러너·검사기를 함께 건드려야 해서 데모 이틀 전에 칠 위험이 아니다 |
+| `tonal-manner-apply` 유지 | 체인에 있고 정상 산출물에 0건임이 실측됨 | 유지. 회귀 감지용이고 AI 0회다. **문서는 보호값 검증 전용으로 재기준화 완료** |
 | `consistency-check`를 mechanical로 내릴까 | 3차 축의 의미와 §20 1:15 검증 배지가 바뀐다 | **데모 후.** AI 6 → 5로 줄지만 지금 건드릴 이유가 없다 |
+
+#### 매니페스트 밖에서 스킬과 같은 일을 하는 라우트 (전수 조사 · 2026-08-12)
+
+이전 판본은 `form-input` 하나만 적었는데, 실제로는 **3개다.**
+
+| 라우트 | 하는 일 | 대응 스킬 | 상태 |
+|---|---|---|---|
+| `PATCH /form-input` | `validateFormInput` | `input-guard`와 동일 | 매니페스트에 없음 |
+| `PATCH /content` | `lib/edit-contract.ts` — 편집 저장 시 길이 계약 **6종** + §10.4 | **대응 SKILL.md 자체가 없다** | 문서 부재 |
+| `PATCH /slug` | `isValidSlug` | `slug-issue`의 형식 규칙 일부 | 매니페스트에 없음 |
+
+`lib/edit-contract.ts`가 가장 큰 구멍이다 — 규칙이 코드에만 있고 `.claude/` 어디에도 없다.
+생성 시 4종 / 편집 저장 시 6종이 갈리는 지점이 여기이므로, 스킬을 신설할 때
+`page-contract-check`와 상한 값의 출처를 하나로 묶어야 한다.
 
 ### ③ 데모 후 (건드리면 재실측 필요)
 
 | 항목 | 왜 미뤘나 |
 |---|---|
-| user 메시지 지시문을 SKILL.md로 (`test:harness`의 ⏳ 1건) | 옮기면 user 메시지 바이트가 흔들린다. `npm run probe:deepseek` 재실측이 필요하다 |
+| user 메시지 지시문을 SKILL.md로 (`test:harness`의 ⏳ 1건) | 옮기면 user 메시지 바이트가 흔들린다. **`probe:deepseek`뿐 아니라 §7.2의 파이프라인 소요 시간표를 다시 재야 한다** — 일차 분해가 25초 예산에 2.5초 남기고 붙어 있다 |
 | spec §6.3 판정 3단계 (AI가 명사구 후보를 판정) | `DECOMPOSE_SCHEMA`에 자기검증 필드가 붙고 프롬프트가 바뀐다 → 캐시 적중·바이트 동일이 깨진다. 지금은 2단계까지만 하고 후보를 로그에 남긴다. 창작은 1·2차 `fact-check`가 잡으므로 유일한 방어선이 아니다 |
+| 매니페스트 밖 라우트 3개 등록 | 위 ② 참조 |
+
+### ④ AI 소요 시간 — probe 수치를 파이프라인 기준으로 쓰지 않는다 (2026-08-12 실측)
+
+`probe:deepseek`은 작은 샘플(795~1105 토큰)을 보내고, 실제 라우트는 `form_input` ·
+`confirmed_data` · `page_content`를 통째로 직렬화해 보낸다. **같은 날 같은 모델로 2~8배 차이가 난다.**
+
+| 호출 | probe | **실제 파이프라인** | 25초까지 여유 |
+|---|---:|---:|---:|
+| 일차 분해 | 5.2초 | **22.5초** | **2.5초** |
+| 페이지 확장 | 14.0초 | **21.2초** | 3.8초 |
+| 1·2차 검증 | 1.6초 | **12.0 / 12.8초** | 13초 |
+| 3차 검증 | 1.6초 | 6.7초 | 18.3초 |
+
+- 분해·페이지 확장이 §5.5 `processing_delayed`(20초)를 **상시** 넘는다. 플래그 2건은 정상이다
+- `test:demo` 1회차에서 `validate-page`가 409 후 재시도로 통과했다(2회차 재현 안 됨).
+  재시도 경로가 그 상황을 위해 있으므로 고장이 아니고, 대본 3:00 안에 들어온다
+- **`npm run dev` 첫 요청은 라우트 컴파일로 38초까지 나온다.** 리허설 전에 라우트를 한 번씩
+  예열하면 관통 2:22 → **1:28**로 줄어든다(실측). 프로덕션 빌드에는 없는 비용이다
 
 ## 7.4 이어서 작업하는 사람이 먼저 읽을 것
 
