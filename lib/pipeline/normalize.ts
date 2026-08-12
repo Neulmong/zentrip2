@@ -48,6 +48,16 @@ export interface DayEntry {
   day: string
   원문근거: string
   내용: string
+  /**
+   * AI가 `내용`에 쓴 **장소·시설·활동·고유명사** (spec §6.3 판정 3단계).
+   *
+   * AI가 스스로 신고하고 **기계가 근거를 대조한다.** 신고한 표현이 `원문근거`
+   * 에도 다른 확정 값에도 없으면 창작이므로 0차 실패다. 판정 주체가 AI가 아니라
+   * 기계이므로 「AI가 자기 생성물을 자기가 검사하는」 구조가 아니다.
+   *
+   * 옛 산출물에는 없을 수 있어 optional이다 — 없으면 검사를 건너뛴다.
+   */
+  핵심표현?: string[]
 }
 
 export interface ConfirmedData {

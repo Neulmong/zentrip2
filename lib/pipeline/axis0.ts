@@ -131,14 +131,22 @@ export function extractNouns(text: string): string[] {
   return [...new Set(raw.map((t) => t.replace(PARTICLES, '')).filter((t) => t.length >= 2))]
 }
 
-export function checkNouns(cd: ConfirmedData): NounCandidate[] {
-  // 후보가 원문근거에 없더라도 confirmed_data의 다른 값(숙소명·상점명·식사정보 등)에
-  // 있으면 정상으로 본다(§6.3).
-  const others = [
+/**
+ * 근거로 인정하는 「다른 확정 값」 (§6.3).
+ *
+ * 후보가 `원문근거`에 없더라도 여기 있으면 정상이다 — 숙소명·상점명·식사정보는
+ * 일정 원문에 안 적혀 있어도 일정 서술에 등장하는 것이 자연스럽다.
+ */
+export function otherValues(cd: ConfirmedData): string {
+  return [
     cd.행사정보.행사명, cd.행사정보.여행지, cd.행사정보.일정원문,
     cd.숙박.숙소명, cd.숙박.객실타입, cd.숙박.위치,
     cd.상점.상점명, cd.상점.상점정보, cd.식사.식사정보, cd.가격.기타,
   ].join(' ')
+}
+
+export function checkNouns(cd: ConfirmedData): NounCandidate[] {
+  const others = otherValues(cd)
 
   const out: NounCandidate[] = []
   for (const d of cd.행사정보.일정) {
@@ -167,6 +175,51 @@ export const NOUN_PREFIX_LEN = 2
 function hasEvidence(후보: string, haystack: string): boolean {
   if (haystack.includes(후보)) return true
   return 후보.length > NOUN_PREFIX_LEN && haystack.includes(후보.slice(0, NOUN_PREFIX_LEN))
+}
+
+/**
+ * 3단계 (§6.3) — **AI가 신고한 핵심표현에 근거가 있는가.**
+ *
+ * spec §6.3은 3단계를 「2에서 표시된 후보가 실제 위반인지 AI가
+ * (`itinerary-decomposition`의 호출 1회 안에서) 판정」으로 규정한다. 그런데 2단계는
+ * AI 출력(`내용`)에 대해 도는 검사라 **호출 전에는 후보가 존재하지 않는다.**
+ * 한 호출 안에서 성립시키는 방법은 하나뿐이다: AI가 **미리 신고**하게 한다.
+ *
+ * 그래서 역할을 이렇게 나눴다.
+ *
+ * | 주체 | 하는 일 |
+ * |---|---|
+ * | AI | `내용`에 쓴 장소·시설·활동·고유명사를 `핵심표현`으로 신고 |
+ * | **기계** | 신고된 표현이 `원문근거` 또는 다른 확정 값에 있는지 대조 → **판정** |
+ *
+ * **판정 주체가 기계다.** AI는 근거를 제시할 뿐이고 통과 여부를 정하지 않으므로
+ * 「AI가 자기 생성물을 자기가 검사하는」 구조가 아니다(§6.3 마지막 문단).
+ *
+ * 2단계의 `위반후보`는 계속 **표시만** 한다 — `extractNouns`가 동사 활용형을
+ * 명사구로 오인하므로 하드 실패로 쓰면 정상 산출물이 반려된다. 신고 목록은
+ * AI가 고른 것이라 그 오인이 없다. **그것이 3단계를 실패로 쓸 수 있는 이유다.**
+ */
+export function checkDeclaredTerms(cd: ConfirmedData): ValidationItem[] {
+  const out: ValidationItem[] = []
+  const others = otherValues(cd)
+
+  for (const [i, d] of cd.행사정보.일정.entries()) {
+    if (d.내용 === PLACEHOLDER) continue
+    // 옛 산출물 호환 — 신고가 없으면 검사할 것이 없다
+    if (!Array.isArray(d.핵심표현)) continue
+
+    const haystack = `${d.원문근거} ${others}`
+    for (const 표현 of d.핵심표현) {
+      const t = normalizeSpace(표현)
+      if (!t) continue
+      if (hasEvidence(t, haystack)) continue
+      out.push(item('일정 근거', '행사정보.일정', '(원문근거 또는 확정 값)', t,
+        `${d.day}일차의 «${t}»이(가) 원문에도 확정 데이터에도 없습니다. `
+        + '입력에 없는 장소·시설·활동을 만들 수 없습니다.',
+        `confirmed_data.행사정보.일정[${i}].내용`))
+    }
+  }
+  return out
 }
 
 /** 일차 수는 여행기간 일수와 **정확히 일치**해야 한다(§6.3·§11.2). */
@@ -210,6 +263,8 @@ export function verifyAxis0(
     ...checkNormalization(fi, cd),
     ...checkDayCount(cd, tripDays),
     ...checkEvidence(cd),
+    // 3단계 — AI가 신고한 핵심표현을 **기계가** 대조한다 (§6.3)
+    ...checkDeclaredTerms(cd),
   ]
 
   /*

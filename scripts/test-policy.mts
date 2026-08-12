@@ -26,7 +26,7 @@ import { buildPage, checkPage } from '../lib/pipeline/page'
 import { assertSectionCoverage, checkConsistency } from '../lib/pipeline/consistency'
 import { resolveTheme } from '../lib/pipeline/theme'
 import { findMemoLeaks } from '../lib/pipeline/memo-leak'
-import { verifyAxis0 } from '../lib/pipeline/axis0'
+import { checkDeclaredTerms, verifyAxis0 } from '../lib/pipeline/axis0'
 import { toJsonSchema, validateAgainstSchema } from '../lib/ai/schema'
 import {
   DECOMPOSE_SCHEMA, EXPAND_SCHEMA, VALIDATION_SCHEMA,
@@ -772,9 +772,12 @@ check('Gemini 대문자 타입이 JSON Schema 소문자로 바뀐다',
   && (toJsonSchema(DECOMPOSE_SCHEMA) as { properties: { 일정: { type: string } } })
        .properties.일정.type === 'array')
 
+// `핵심표현`은 §6.3 판정 3단계의 신고 필드다 — 필수이므로 픽스처에도 있어야 한다
+const 분해출력 = { 판정: 'pass', 일정: [{ day: '1', 원문근거: 'a', 내용: 'b', 핵심표현: ['a'] }] }
 check('올바른 일차 분해 출력은 통과한다',
-  V({ 판정: 'pass', 일정: [{ day: '1', 원문근거: 'a', 내용: 'b' }] }, DECOMPOSE_SCHEMA).length === 0,
-  V({ 판정: 'pass', 일정: [{ day: '1', 원문근거: 'a', 내용: 'b' }] }, DECOMPOSE_SCHEMA))
+  V(분해출력, DECOMPOSE_SCHEMA).length === 0, V(분해출력, DECOMPOSE_SCHEMA))
+check('핵심표현이 빠지면 스키마가 거부한다 (3단계 신고 누락 — §6.3)',
+  V({ 판정: 'pass', 일정: [{ day: '1', 원문근거: 'a', 내용: 'b' }] }, DECOMPOSE_SCHEMA).length > 0)
 check('올바른 검증 출력은 통과한다',
   V({ 판정: 'pass', items: [] }, VALIDATION_SCHEMA).length === 0)
 check('올바른 확장 서술 출력은 통과한다',
@@ -1178,6 +1181,27 @@ section('0차 — 명사구는 표시만, 확정 위반만 실패')
 
   const 위조 = structuredClone(cd)
   위조.행사정보.일정[0].원문근거 = '일정원문에 없는 문장입니다'
+  /* 3단계 (§6.3) — AI가 신고한 핵심표현을 **기계가** 대조한다 */
+  {
+    const 신고 = structuredClone(cd)
+    신고.행사정보.일정 = 신고.행사정보.일정.map((d) => ({
+      ...d, 핵심표현: d.내용 === '추후 추가 예정' ? [] : ['김해공항', '올레 7코스'],
+    }))
+    // 1일차 근거에 둘 다 있으므로 통과여야 한다
+    신고.행사정보.일정[1].핵심표현 = ['성산일출봉']
+    check('3단계: 근거 있는 핵심표현은 통과한다',
+      checkDeclaredTerms(신고).length === 0, checkDeclaredTerms(신고))
+
+    const 창작 = structuredClone(신고)
+    창작.행사정보.일정[0].핵심표현 = ['김해공항', '우도 잠수함']
+    check('3단계: 근거 없는 핵심표현은 확정 위반이다', checkDeclaredTerms(창작).length === 1)
+    check('3단계: 사유가 그 표현을 지목한다',
+      checkDeclaredTerms(창작)[0].사유.includes('우도'))
+
+    const 없음 = structuredClone(cd)
+    check('3단계: 신고가 없는 옛 산출물은 검사를 건너뛴다', checkDeclaredTerms(없음).length === 0)
+  }
+
   check('원문근거 위조는 확정 위반이다', verifyAxis0(fi, 위조, 4).items.length > 0)
 }
 

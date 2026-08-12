@@ -33,8 +33,9 @@ export const DECOMPOSE_SCHEMA = {
           day: { type: Type.STRING },
           원문근거: { type: Type.STRING },
           내용: { type: Type.STRING },
+          핵심표현: { type: Type.ARRAY, items: { type: Type.STRING } },
         },
-        required: ['day', '원문근거', '내용'],
+        required: ['day', '원문근거', '내용', '핵심표현'],
       },
     },
   },
@@ -43,7 +44,7 @@ export const DECOMPOSE_SCHEMA = {
 
 export interface DecomposeResult {
   판정: 'pass' | 'day_overflow' | 'no_day_marker'
-  일정: { day: string; 원문근거: string; 내용: string }[]
+  일정: { day: string; 원문근거: string; 내용: string; 핵심표현: string[] }[]
 }
 
 /* ════════════════════════════════════════════════════════════════
