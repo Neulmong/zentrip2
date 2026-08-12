@@ -131,6 +131,21 @@ for (const [name, s] of Object.entries(m.skills)) {
     check(`${name}: ${s.kind} 스킬은 ai=0이다`, s.ai === 0, s.ai)
   }
 }
+/**
+ * 선언한 프롬프트 섹션이 SKILL.md에 실제로 있는가.
+ *
+ * 이 검사가 없어서 실제 결함을 놓쳤다 — `prompt_sections`를 실제 섹션 제목을 읽지 않고
+ * 선언해 5개 스킬 전부 어긋났고, 코드젠이 프롬프트에서 9개 섹션을 조용히 빼먹을 상태였다.
+ * 코드젠도 같은 것을 검사하지만(빌드 실패), 여기서 먼저 잡아야 빌드를 돌리기 전에 안다.
+ */
+for (const [name, s] of Object.entries(m.skills)) {
+  if (s.kind !== 'ai' || !s.prompt_sections) continue
+  const md = readFileSync(p('.claude', 'skills', name, 'SKILL.md'), 'utf8').replace(/\r\n/g, '\n')
+  const have = [...md.matchAll(/^##\s+(.+)$/gm)].map((x) => x[1].trim())
+  const missing = s.prompt_sections.filter((w) => !have.includes(w))
+  check(`${name}: 선언한 프롬프트 섹션이 SKILL.md에 실재한다`, missing.length === 0, missing)
+}
+
 check('mechanical 스킬은 impl을 갖는다',
   Object.entries(m.skills).filter(([, s]) => s.kind === 'mechanical').every(([, s]) => !!s.impl),
   Object.entries(m.skills).filter(([, s]) => s.kind === 'mechanical' && !s.impl).map(([n]) => n))
