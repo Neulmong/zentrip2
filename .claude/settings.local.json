@@ -11,7 +11,9 @@
       "PowerShell(Get-CimInstance *)",
       "PowerShell(Get-NetTCPConnection *)",
       "Bash(grep -n \"^#\\\\{2,3\\\\} \" spec.md)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(awk '/^## §?7/,0' docs/harness-migration.md)",
+      "Bash(npm run *)"
     ]
   }
 }

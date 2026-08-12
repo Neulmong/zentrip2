@@ -71,6 +71,49 @@ export function days(data: Record<string, unknown>): DayEntry[] {
   }))
 }
 
+/** 지정한 필드만 문자열로 좁혀 뽑는다 */
+function pick(src: Record<string, unknown>, fields: readonly string[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const f of fields) {
+    const v = src[f]
+    out[f] = typeof v === 'string' ? v.trim() : v == null ? '' : String(v)
+  }
+  return out
+}
+
+/**
+ * 값 배열(`숙소들`·`상점들`)을 읽는다 (§9.3).
+ *
+ * 원소마다 필드를 문자열로 좁혀 반환한다. **행을 걸러내지 않는다** — 값이 전부
+ * 비어 보이는 행이라도 지우면 화면과 `page_content`의 행 수가 갈리고, 기획자가
+ * 입력 누락을 알아차릴 수 없다(`PLACEHOLDER_VALUES`와 같은 이유).
+ */
+export function rows(
+  data: Record<string, unknown>, key: string, fields: readonly string[],
+): Record<string, string>[] {
+  const v = data[key]
+  /*
+   * 2.6 호환 — 그때 만든 `page_content`는 `숙소명`·`상점명`이 **섹션 data의 최상위
+   * 키**다(배열 키가 없다). 그대로 두면 이미 게시된 옛 상품의 숙박·상점 섹션이
+   * 「등록된 항목이 없습니다」로 비어 보인다. **고객에게 보이는 화면**이므로
+   * 읽는 시점에 1행으로 읽어 준다.
+   *
+   * 저장 형태를 바꾸지는 않는다 — 그것은 [다시 생성](§15.3)이 새 구조로 만든다.
+   */
+  if (!Array.isArray(v)) {
+    return typeof data[fields[0]] === 'string' ? [pick(data, fields)] : []
+  }
+  return v.map((row) => {
+    const o = (row ?? {}) as Record<string, unknown>
+    const out: Record<string, string> = {}
+    for (const f of fields) {
+      const val = o[f]
+      out[f] = typeof val === 'string' ? val.trim() : val == null ? '' : String(val)
+    }
+    return out
+  })
+}
+
 /** `image_slots`(복수)는 슬롯 **이름**의 배열이다. 장수·순서는 `sort_order`가 정한다(§9.3). */
 export function slotNames(data: Record<string, unknown>): string[] {
   const v = data.image_slots

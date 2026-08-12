@@ -32,7 +32,8 @@ type SkillKind = 'ai' | 'mechanical' | 'spec'
 interface Skill {
   kind: SkillKind
   ai: number
-  effort?: 'generate' | 'validate'
+  /** spec §4.3의 3종. `plan`은 초안(§7.5) 전용이며 근거는 `lib/ai/contract.ts` */
+  effort?: 'generate' | 'validate' | 'plan'
   schema?: string
   prompt_sections?: string[]
   /**
@@ -58,7 +59,12 @@ interface Entry {
 }
 interface Route {
   agent: string | null
-  step: string
+  /**
+   * 로그에 남길 단계명. **없을 수 있다** — `plan-draft`(§7.5)는 상품 행이 없어
+   * `execution_logs`·`abnormality_flags`에 남길 곳이 없다(둘 다 `product_id`를
+   * 요구한다). 하네스가 구동하는 라우트에는 필수이며 아래 검산이 강제한다.
+   */
+  step?: string
   extra_steps?: string[]
   counter: string | null
   retry_from: number | null
@@ -119,6 +125,13 @@ function fence(sectionBody: string): string | null {
   const open = '```text\n'
   const i = sectionBody.indexOf(open)
   if (i < 0) return null
+  /*
+   * ⚠️ 펜스 안에 `## `로 시작하는 줄을 두면 **프롬프트가 조용히 잘린다.**
+   * `section()`이 다음 `^## `까지를 섹션으로 보기 때문이다 — 그 줄이 펜스
+   * 안이라는 것을 모른다. 실제로 겪은 결함이라(2026-08-12) 여기서 막는다.
+   * 프롬프트 안의 소제목은 `[제목]`처럼 적는다.
+   */
+  if (/^## /m.test(sectionBody.slice(i))) return null
   const start = i + open.length
   const end = sectionBody.indexOf('\n```', start)
   if (end < 0) return null
@@ -209,6 +222,16 @@ for (const [rk, route] of Object.entries(manifest.routes)) {
   } else if (!manifest.agents[route.agent]) {
     fatal(`라우트 ${rk}: 없는 에이전트 «${route.agent}»`)
   }
+
+  /*
+   * `step`이 없어도 되는 것은 **로그를 남길 수 없는 라우트뿐이다.** `runStep`은
+   * 단계명으로 로그를 쓰므로(§5.4), 하네스가 구동하는 라우트에 `step`이 없으면
+   * 실행 이력이 조용히 비게 된다 — 그 상태로 배포되면 관리 화면(§14.3)에
+   * 아무것도 안 보이고 원인을 찾을 단서도 없다.
+   */
+  if (!route.step && route.driven_by !== 'route') {
+    fatal(`라우트 ${rk}: step이 없는데 driven_by가 "route"가 아니다 — runStep이 로그를 남길 단계명이 없다`)
+  }
 }
 
 if (errors.length) {
@@ -247,7 +270,7 @@ export type SkillKind = 'ai' | 'mechanical' | 'spec'
 export interface SkillSpec {
   readonly kind: SkillKind
   readonly ai: number
-  readonly effort?: 'generate' | 'validate'
+  readonly effort?: 'generate' | 'validate' | 'plan'
   readonly schema?: string
   readonly impl?: string
   readonly implemented_by?: string
@@ -257,7 +280,8 @@ export interface SkillSpec {
 
 export interface RouteSpec {
   readonly agent: string | null
-  readonly step: string
+  /** 로그 단계명. \`driven_by: "route"\`이고 로그를 남기지 않는 라우트에는 없다 */
+  readonly step?: string
   readonly extra_steps?: readonly string[]
   readonly counter: string | null
   readonly retry_from: number | null
@@ -317,7 +341,8 @@ export const SKILLS = ${JSON.stringify(
  */
 export const ROUTES = ${JSON.stringify(
   Object.fromEntries(Object.entries(manifest.routes).map(([rk, r]) => [rk, {
-    agent: r.agent, step: r.step,
+    agent: r.agent,
+    ...(r.step ? { step: r.step } : {}),
     ...(r.extra_steps ? { extra_steps: r.extra_steps } : {}),
     counter: r.counter, retry_from: r.retry_from,
     ai_budget: r.ai_budget,

@@ -3,6 +3,7 @@
 import type { PageSection } from '@/lib/pipeline/page'
 import type { PageImage } from '@/components/page/types'
 import { BLOCK_SPEC, LENGTH_LIMITS_SAVE, type BlockType } from '@/lib/edit-contract'
+import { SHOP_KINDS } from '@/lib/types'
 
 /**
  * 중앙 편집 패널 (§10.1) — 선택한 섹션 1개의 `data`를 편집한다.
@@ -58,6 +59,15 @@ export function SectionForm({ section, images, errors, onChange }: SectionFormPr
             <DaysField
               key={key} section={section} slots={slots} errors={errors}
               onChange={(days) => set('days', days)}
+            />
+          )
+        }
+
+        if (key === '숙소들' || key === '상점들') {
+          return (
+            <RowsField
+              key={key} field={key} section={section} errors={errors}
+              onChange={(rows) => set(key, rows)}
             />
           )
         }
@@ -210,6 +220,75 @@ function DaysField({
               {slots.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ── 값 배열 (`숙소들`·`상점들`) ───────────────────────────────────
+ * **행의 개수는 편집 대상이 아니다.** `form_input`에서 온 사실이고 검증 4축이
+ * 그 행 수를 기준으로 판정했다(§7.4·§11.1). 늘리면 입력에 없는 숙소·상점이
+ * 생기고 줄이면 부분 삭제다 — 그래서 [행 추가] 버튼이 없다. 내용을 더하려면
+ * 삽입 블록 3종을 쓴다(§10.2). 일정 배열과 정확히 같은 이유다.
+ * ────────────────────────────────────────────────────────────────── */
+
+const ROW_UNIT: Record<string, string> = { 숙소들: '숙소', 상점들: '상점' }
+
+function RowsField({
+  field, section, errors, onChange,
+}: {
+  field: string
+  section: PageSection
+  errors: Record<string, string>
+  onChange: (rows: Record<string, string>[]) => void
+}) {
+  const rows = (Array.isArray(section.data[field])
+    ? section.data[field] : []) as Record<string, string>[]
+  const unit = ROW_UNIT[field] ?? '항목'
+
+  const patch = (i: number, key: string, v: string) =>
+    onChange(rows.map((r, n) => (n === i ? { ...r, [key]: v } : r)))
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-neutral-500">
+        {unit} 개수는 입력한 값이 정합니다. 여기서는 각 {unit}의 내용만 고칩니다.
+      </p>
+      {rows.map((row, i) => (
+        <div key={i} className="rounded-lg border border-neutral-200 p-3">
+          <p className="mb-2 text-sm font-semibold">{unit} {i + 1}</p>
+          <div className="space-y-3">
+            {Object.entries(row).map(([k, v]) => {
+              const str = typeof v === 'string' ? v : String(v ?? '')
+              const err = errors[`${section.id}.${field}.${i}.${k}`]
+              return (
+                <Field key={k} label={k} error={err}>
+                  {k === '구분' ? (
+                    <select
+                      value={str}
+                      onChange={(e) => patch(i, k, e.target.value)}
+                      className={inputClass}
+                    >
+                      {SHOP_KINDS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  ) : MULTILINE.has(k) || str.length > 60 ? (
+                    <textarea
+                      value={str} rows={3}
+                      onChange={(e) => patch(i, k, e.target.value)}
+                      className={inputClass}
+                    />
+                  ) : (
+                    <input
+                      type="text" value={str}
+                      onChange={(e) => patch(i, k, e.target.value)}
+                      className={inputClass}
+                    />
+                  )}
+                </Field>
+              )
+            })}
+          </div>
         </div>
       ))}
     </div>

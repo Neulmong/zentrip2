@@ -10,8 +10,14 @@
 import { checkPrecondition, RESET_ON, ZERO_COUNTS, hasRetryBudget, resetCounters, COUNTER_AXIS, planRestart, RESUBMIT_PLAN } from '../lib/policy'
 import { computeVerdict, discardAxes, withAxis, contentHash, passedAxis, failedAxis, axisPassed } from '../lib/validation'
 import { maskName, maskEmail, maskPhone, maskPii } from '../lib/mask'
-import { RETRY_COUNTERS, RETRY_LIMIT, type ProductRow, type ValidationSnapshot } from '../lib/types'
-import { validateFormInput, buildFormInput, tripDays, hasDayMarker, combineTripPeriod } from '../lib/form-validation'
+import {
+  RETRY_COUNTERS, RETRY_LIMIT,
+  type FormInput, type ProductRow, type ValidationSnapshot,
+} from '../lib/types'
+import {
+  validateFormInput, buildFormInput, tripDays, hasDayMarker, combineTripPeriod, coerceFormInput,
+} from '../lib/form-validation'
+import { parseFreeform } from '../lib/pipeline/freeform'
 import {
   describeStatus, screenPath, verificationBadge, editBadge,
   publishGate, publishProcedure, PUBLISHABLE_STATUSES, deleteGate,
@@ -204,13 +210,19 @@ section('§7.1·§6.2.1 — 폼 검증')
 check('일수는 양끝 포함 — 하루 여행은 1일', tripDays('2026-03-14', '2026-03-14') === 1)
 check('3/14~3/17은 4일', tripDays('2026-03-14', '2026-03-17') === 4)
 
+/**
+ * 폼이 실제로 보내는 이름으로 만든다 — 배열은 `숙박[0].숙소명` 표기다(§7.4).
+ * 그 이름이 검증 오류 키·`source` 경로와 같은 문자열이라는 것이 계약의 일부다.
+ */
 function form(over: Record<string, string> = {}) {
   return buildFormInput({
     행사명: '제주 올레 바람 여행', 여행지: '제주',
     여행기간_시작: '2026-03-14', 여행기간_종료: '2026-03-17',
     일정원문: '1일: 김해공항 출발, 올레 7코스 걷기, 중식·석식 제공\n2일: 성산일출봉 관람',
-    숙소명: '롯데호텔 제주', 객실타입: '디럭스룸', 위치: '중문',
-    상점명: '제주 로컬 기념품 숍', 상점정보: '여행객 10% 할인',
+    '숙박[0].숙소명': '롯데호텔 제주', '숙박[0].위치': '중문',
+    '숙박[0].객실타입': '디럭스룸', '숙박[0].숙박일정': '',
+    '상점[0].상점명': '제주 로컬 기념품 숍', '상점[0].구분': '추천',
+    '상점[0].위치': '', '상점[0].상점정보': '여행객 10% 할인',
     가격_성인: '120000', 가격_아동: '해당 없음', 가격_기타: '항공료 별도',
     식사정보: '조식 3회, 중식 2회, 석식 1회',
     ...over,
@@ -250,7 +262,18 @@ check('여행기간은 2필드 — 결합은 confirmed_data에서만 (§6.2.1)',
   f.행사정보.여행기간_시작 === '2026-03-14' && f.행사정보.여행기간_종료 === '2026-03-17'
   && !('여행기간' in f.행사정보))
 check('미입력 선택 항목은 빈 문자열 — `추후 추가 예정`은 confirmed_data에서만 (§7.4)',
-  f.행사정보.타겟층 === '' && f.숙박.숙박일정 === '' && f.항공편.공항 === '')
+  f.행사정보.타겟층 === '' && f.숙박[0].숙박일정 === '' && f.항공편.공항 === '')
+check('숙박·상점은 객체 배열이고 순서를 보존한다 (§7.4)',
+  Array.isArray(f.숙박) && f.숙박.length === 1 && f.숙박[0].숙소명 === '롯데호텔 제주'
+  && Array.isArray(f.상점) && f.상점[0].구분 === '추천')
+check('배열이 0건이면 필수 그룹 미충족 (§7.4)',
+  !!validateFormInput({ ...f, 숙박: [] })['숙박'])
+check('행 오류 키는 source 경로와 같은 표기다 (§7.4)',
+  !!validateFormInput(form({ '숙박[0].숙소명': '가' }))['숙박[0].숙소명'])
+check('전부 빈 행은 버린다 — [행 추가] 후 안 채운 경우',
+  form({ '숙박[1].숙소명': '', '숙박[1].위치': '' }).숙박.length === 1)
+check('둘째 숙소를 채우면 2행이 된다',
+  form({ '숙박[1].숙소명': '성산 한옥스테이', '숙박[1].위치': '성산읍' }).숙박.length === 2)
 check('금액은 {숫자}원 문자열 (§6.2)', f.가격.성인 === '120000원')
 check('아동 미운영은 `해당 없음` 그대로 (0원 표시 방지 §6.1)', f.가격.아동 === '해당 없음')
 check('여행기간 결합 형식 — 물결표 앞뒤 공백 1칸',
@@ -437,11 +460,15 @@ function pageContent(over: Partial<Record<string, Record<string, unknown>>> = {}
     sec_hero: ['hero', { headline: '제주 여행', subcopy: '봄', image_slot: '' }],
     sec_summary: ['summary', { 여행기간: '3일', 여행지: '제주', 타겟층: '가족', 여행스타일: '자연' }],
     sec_itinerary: ['itinerary', { days: [{ day: '1', text: '도착', image_slot: '' }] }],
-    sec_accommodation: ['accommodation', { 숙소명: 'A', 객실타입: 'B', 위치: 'C', 숙박일정: 'D', image_slots: [] }],
+    sec_accommodation: ['accommodation', {
+      숙소들: [{ 숙소명: 'A', 객실타입: 'B', 위치: 'C', 숙박일정: 'D' }], image_slots: [],
+    }],
     sec_flight: ['flight', { 공항: 'A', 항공사: 'B', 편명: 'C', 출발시간: 'D', 도착시간: 'E' }],
     sec_meal: ['meal', { 식사정보: '조식' }],
     sec_price: ['price', { 성인: '1', 아동: '2', 기타: '3' }],
-    sec_shop: ['shop', { 상점명: 'S', 상점정보: 'I', image_slots: [] }],
+    sec_shop: ['shop', {
+      상점들: [{ 상점명: 'S', 구분: '추천', 위치: '', 상점정보: 'I' }], image_slots: [],
+    }],
     sec_apply: ['apply', {
       제목: '신청', 안내문구: '연락 주세요',
       가격요약: { 성인: '1', 아동: '2' }, 행사정보요약: { 행사명: '제주 여행', 여행기간: '3일' },
@@ -957,8 +984,9 @@ section('U19 — 여행주제 · 기획메모 (§6.1·§7.4)')
     행사명: '제주 여행', 여행지: '제주',
     여행기간_시작: '2026-03-14', 여행기간_종료: '2026-03-17',
     일정원문: '1일: 김해공항 출발, 올레 7코스 걷기',
-    숙소명: '롯데호텔 제주', 객실타입: '디럭스룸', 위치: '중문',
-    상점명: '기념품 숍', 상점정보: '10% 할인',
+    '숙박[0].숙소명': '롯데호텔 제주', '숙박[0].위치': '중문',
+    '숙박[0].객실타입': '디럭스룸',
+    '상점[0].상점명': '기념품 숍', '상점[0].구분': '추천', '상점[0].상점정보': '10% 할인',
     가격_성인: '120000', 가격_아동: '해당 없음', 식사정보: '조식 3회',
     여행스타일: '자연',
   }
@@ -1095,7 +1123,7 @@ section('하네스 체인 — 새 검사가 정상 산출물을 반려하지 않
    */
   const 누락 = structuredClone(br)
   const 숙박 = 누락.sections.find((s) => s.id === 'b_accommodation')!
-  delete 숙박.data.숙소명
+  delete 숙박.data.숙소들
   check('tonal-manner-apply: source에 있는데 값이 없으면 잡는다',
     assertFactsUnchanged(cd, 누락).length > 0, assertFactsUnchanged(cd, 누락))
   check('brochure-contract-check: source에 있는데 data에 없으면 잡는다',
@@ -1245,6 +1273,76 @@ section('0차 — 명사구는 표시만, 확정 위반만 실패')
   }
 
   check('원문근거 위조는 확정 위반이다', verifyAxis0(fi, 위조, 4).items.length > 0)
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * U21 — 2.7 배열화·자연어 초안에서 실제로 났던 결함 (§7.4·§7.5)
+ *
+ * 넷 다 감사에서 발견됐다. 셋은 **조용한** 결함이었다 — 화면과 검사기가 정상으로
+ * 보이는데 값이 사라지거나 잘못 표시된다. 그래서 회귀 검사로 못박는다.
+ * ════════════════════════════════════════════════════════════════ */
+section('U21 — 2.7에서 났던 결함 (§7.4·§7.5)')
+
+{
+  /*
+   * ① 불릿으로 적은 항목이 라벨로 먹혔다 → 후보 0건.
+   *
+   * 후보에서 빠지면 **누락 검사가 그 가게를 아예 보지 않는다.** 「누락 0건」이
+   * 나오는데 실제로는 사라진 상태가 되는, 가장 나쁜 형태의 결함이었다.
+   */
+  const 불릿 = parseFreeform('-카페 및 음식점:\n- 종달달\n- 공든\n- 시간을담다 (구좌읍 평대7길)')
+  check('불릿으로 적은 장소가 라벨로 먹히지 않는다 (§7.5)',
+    불릿.장소후보.length === 3
+    && 불릿.장소후보.map((c) => c.이름).join(',') === '종달달,공든,시간을담다',
+    불릿.장소후보.map((c) => c.이름))
+  check('콜론 없는 라벨은 여전히 라벨이다 — `-여행지 포인트`',
+    parseFreeform('-여행지 포인트\n 아부오름\n 서우봉').장소후보
+      .map((c) => c.이름).join(',') === '아부오름,서우봉',
+    parseFreeform('-여행지 포인트\n 아부오름\n 서우봉').장소후보.map((c) => c.이름))
+
+  /*
+   * ② 괄호가 빠진 줄(`보롬창고 구좌읍 종달항길3)`)도 살린다. 실제 메모에 있었다.
+   */
+  check('여는 괄호가 빠진 줄도 후보로 잡는다',
+    parseFreeform('-카페:\n 보롬창고 구좌읍 종달항길3)').장소후보[0]?.이름 === '보롬창고')
+
+  /*
+   * ③ 기간 표현(`4박5일 (11.04~11.08)`)은 장소가 아니다. 후보에 남으면
+   *    누락 검사가 「4박5일이 초안에 없다」고 보고한다.
+   */
+  const 기간 = parseFreeform('-여행일정: 4박5일 (11.04~11.08)')
+  check('기간 표현은 장소 후보가 아니다',
+    !기간.장소후보.some((c) => /박\s*\d*\s*일/.test(c.이름)), 기간.장소후보.map((c) => c.이름))
+
+  /*
+   * ④ 2.6에 저장된 `form_input`(숙박·상점이 단일 객체)이 파이프라인에 들어가면
+   *    `TypeError` → **500**이었다. 읽는 시점에 올린다(`coerceFormInput`).
+   */
+  const 옛입력 = {
+    행사정보: {
+      행사명: 'A', 여행지: '제주', 여행기간_시작: '2026-03-14', 여행기간_종료: '2026-03-15',
+      일정원문: '1일: 도착\n2일: 귀가', 타겟층: '', 여행스타일: '자연', 여행주제: '', 기획메모: '',
+    },
+    숙박: { 숙소명: '롯데호텔', 객실타입: '디럭스', 위치: '중문', 숙박일정: '' },
+    상점: { 상점명: '기념품', 상점정보: '10%' },
+    가격: { 성인: '1000원', 아동: '해당 없음', 기타: '' },
+    식사: { 식사정보: '조식' },
+    항공편: { 공항: '', 항공사: '', 편명: '', 출발시간: '', 도착시간: '' },
+  } as unknown as FormInput
+
+  const 올린것 = coerceFormInput(옛입력)
+  check('2.6 form_input을 읽는 시점에 배열로 올린다 (§7.4)',
+    Array.isArray(올린것.숙박) && 올린것.숙박.length === 1
+    && 올린것.숙박[0].숙소명 === '롯데호텔'
+    && Array.isArray(올린것.상점) && 올린것.상점[0].구분 === '추천',
+    { 숙박: 올린것.숙박, 상점: 올린것.상점 })
+
+  let 팀 = false
+  try { buildConfirmedData(올린것) } catch { 팀 = true }
+  check('올린 뒤에는 파이프라인이 돈다 (전에는 TypeError → 500)', !팀)
+
+  check('이미 2.7 형태면 같은 객체를 그대로 돌려준다 (비용 0)',
+    coerceFormInput(f) === f)
 }
 
 /* ── 결과 ────────────────────────────────────────────────────── */

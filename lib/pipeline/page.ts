@@ -95,14 +95,19 @@ export function buildPage(input: PageInputs): PageContent {
 
       section('sec_accommodation', 'accommodation', 4,
         {
-          숙소명: cd.숙박.숙소명, 객실타입: cd.숙박.객실타입,
-          위치: cd.숙박.위치, 숙박일정: cd.숙박.숙박일정,
+          // 행 순서를 승계한다 — 순서가 값의 일부다(§7.4). 키 순서는 §9.3 표와 같다
+          숙소들: cd.숙박.map((st) => ({
+            숙소명: st.숙소명, 객실타입: st.객실타입, 위치: st.위치, 숙박일정: st.숙박일정,
+          })),
+          /*
+           * 이미지 슬롯은 **행마다 갈라지지 않는다.** `accommodation` 슬롯 하나를
+           * 숙소 전체가 공유한다(§7.3의 슬롯 4종은 그대로다). 행마다 슬롯을 주려면
+           * 업로드 화면·슬롯 상한·`product_images.slot` 값이 함께 바뀌어야 하므로
+           * 이번 개정 범위 밖이다 — 그렇게 하지 않아도 목록은 온전히 표시된다.
+           */
           image_slots: slots.has('accommodation') ? ['accommodation'] : [],
         },
-        {
-          숙소명: '숙박.숙소명', 객실타입: '숙박.객실타입',
-          위치: '숙박.위치', 숙박일정: '숙박.숙박일정',
-        }),
+        { 숙소들: '숙박' }),
 
       section('sec_flight', 'flight', 5, { ...cd.항공편 }, {
         공항: '항공편.공항', 항공사: '항공편.항공사', 편명: '항공편.편명',
@@ -118,10 +123,12 @@ export function buildPage(input: PageInputs): PageContent {
 
       section('sec_shop', 'shop', 8,
         {
-          상점명: cd.상점.상점명, 상점정보: cd.상점.상점정보,
+          상점들: cd.상점.map((sh) => ({
+            상점명: sh.상점명, 구분: sh.구분, 위치: sh.위치, 상점정보: sh.상점정보,
+          })),
           image_slots: slots.has('shop') ? ['shop'] : [],
         },
-        { 상점명: '상점.상점명', 상점정보: '상점.상점정보' }),
+        { 상점들: '상점' }),
 
       // 신청 폼의 **필드 구성(이름·이메일·연락처·인원수·동의)은 넣지 않는다** —
       // 고정 컴포넌트가 렌더링하며 편집 불가다(§9.3·§13.1).
@@ -196,14 +203,37 @@ export function checkPage(p: PageContent, slots: Set<string>): string[] {
     }
 
     for (const [k, v] of Object.entries(s.data)) {
-      if (k === 'days' || k === 'image_slot' || k === 'image_slots') continue
+      // 이미지 참조에는 source를 **붙이지 않는다** — 사실정보가 아니다(§9.3)
+      if (k === 'image_slot' || k === 'image_slots') {
+        if (k in s.source) {
+          errors.push(`${s.id}.${k}에 source가 붙어 있습니다. 이미지 참조는 사실정보가 아닙니다.`)
+        }
+        continue
+      }
       if (k === '가격요약' || k === '행사정보요약') {
         for (const sub of Object.keys(v as object)) {
           if (!(`${k}.${sub}` in s.source)) errors.push(`${s.id}.${k}.${sub}에 source가 없습니다.`)
         }
         continue
       }
+
       if (!(k in s.source)) errors.push(`${s.id}.${k}에 source가 없습니다.`)
+
+      // 배열 필드(`days`·`숙소들`·`상점들`)는 원소 안의 문자열을 본다.
+      // `days`를 통째로 건너뛰던 이전 코드에서는 일차 서술의 미치환 토큰이
+      // 이 검사를 그대로 통과했다.
+      if (Array.isArray(v)) {
+        for (const [i, row] of v.entries()) {
+          if (row === null || typeof row !== 'object') continue
+          for (const [sub, val] of Object.entries(row as Record<string, unknown>)) {
+            if (typeof val === 'string' && /\{\{|\}\}/.test(val)) {
+              errors.push(`${s.id}.${k}[${i}].${sub}에 미치환 토큰이 남았습니다.`)
+            }
+          }
+        }
+        continue
+      }
+
       if (typeof v === 'string' && /\{\{|\}\}/.test(v)) {
         errors.push(`${s.id}.${k}에 미치환 토큰이 남았습니다.`)
       }

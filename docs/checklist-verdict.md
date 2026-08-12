@@ -30,7 +30,7 @@
 | A-05 | ✅ | `runStep`에 재시도 루프 없음. 재호출은 `run-pipeline.ts` |
 | A-06 | ✅ | `products.retry_counts` 4종, `hasRetryBudget`가 판정 |
 | A-07 | ✅ | `setInterval`·폴링 0건. 백오프는 실패 후 대기(폴링 아님) |
-| A-08 | ✅ | `AI_TIMEOUT_MS = 25_000`, `maxDuration = 60` 라우트 16개 |
+| A-08 | ✅ | `AI_TIMEOUT_MS = 40_000`(2.7 · 25초에서 상향), `maxDuration = 60` 라우트 17개 |
 | A-09 | ✅ | 큐·Cron·워커 0건 |
 | A-10 | ✅ | `applications/route.ts:139` `after()` |
 | **A-11** | ⚠️→✅ | 문구는 `claude-opus-5`(2.4). **2.6은 `deepseek-v4-flash`** — 코드 일치, 날짜 접미사 없음. «2.6: `pro` 계열은 `assertAllowed`가 호출 전에 차단 — `test:policy` U20» |

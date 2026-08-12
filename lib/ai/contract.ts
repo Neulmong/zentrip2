@@ -10,8 +10,26 @@
  *   3. **종료 사유를 먼저 확인한 뒤** 본문을 읽는다 — 거부 시 본문이 비어 있다
  */
 
-/** 사고 깊이. spec §4.3의 effort 생성 `medium` / 검증 `low`에 대응한다. */
-export type Effort = 'generate' | 'validate'
+/**
+ * 사고 깊이. spec §4.3의 effort 3종에 대응한다.
+ *
+ * | 이름 | 추론 | 쓰는 곳 |
+ * |---|---|---|
+ * | `generate` | medium | 소개서 개요·페이지 확장·일차 분해 |
+ * | `validate` | low | 1·2차 사실정보 대조 |
+ * | `plan` | **끈다** | 자연어 초안(§7.5) |
+ *
+ * `plan`이 사고를 끄는 것은 **실측으로 정해졌다.** 장소 26곳을 5일에 배분하는 것은
+ * 제약 만족 문제라 사고 연쇄가 발산한다 — `medium`·`low`·`minimal`·파라미터 없음
+ * 네 경우 모두 `max_tokens` 8000을 전부 추론에 쓰고 본문이 **0자**로 나왔다
+ * (63~74초). 사고를 끄면 **2.9초에 416토큰**으로 정확한 배분이 나온다.
+ * 자세한 표는 `lib/ai/deepseek.ts`의 `EFFORT`에 있다.
+ *
+ * 이름을 `validate`와 나눈 이유: 근거가 이름에 남아야 한다. 같은 값으로 적어 두면
+ * 「검증도 아닌데 왜 validate인가」를 다음 사람이 다시 조사하게 되고, `generate`로
+ * 되돌리는 변경이 조용히 들어온다 — 그러면 초안 라우트가 항상 409를 낸다.
+ */
+export type Effort = 'generate' | 'validate' | 'plan'
 
 export interface AiRequest {
   /**
@@ -41,7 +59,7 @@ export interface AiUsage {
  * 409 retry를 반환한다. 원인 구분은 `execution_logs.output`에만 남는다.
  */
 export type AiErrorType =
-  | 'timeout'        // 25초 초과
+  | 'timeout'        // AI_TIMEOUT_MS 초과
   | 'rate_limited'   // 429 — 무료 티어에서 가장 흔하다
   | 'api_error'      // 5xx·네트워크·인증
   | 'max_tokens'     // 출력 절단
@@ -94,7 +112,7 @@ export function toLogOutput(r: AiResult<unknown>): Record<string, unknown> {
 
 /** 사람이 읽을 실패 사유. 검증 항목(`items`)의 사유 칸에 그대로 들어간다. */
 export const ERROR_LABEL: Record<AiErrorType, string> = {
-  timeout: 'AI 응답이 25초 안에 오지 않았습니다.',
+  timeout: 'AI 응답이 제한 시간 안에 오지 않았습니다.',
   rate_limited: 'AI 호출 한도에 걸렸습니다. 잠시 후 다시 시도해 주세요.',
   api_error: 'AI 호출이 실패했습니다.',
   max_tokens: 'AI 출력이 최대 길이에서 잘렸습니다.',

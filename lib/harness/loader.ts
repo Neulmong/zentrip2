@@ -27,13 +27,18 @@ export type ManifestRoute = keyof typeof ROUTES
  * | `form-input` | `attempt_no`를 올리고 산출물을 비운다. 같은 시도 안의 재시도가 아니다 |
  * | `content` | 편집은 사람이 한다. AI·카운터가 없고 담당 에이전트도 없다 |
  * | `slug` | 사람이 입력한 값의 형식 판정. AI·카운터 없음 |
+ * | `plan-draft` | 상품 행이 **아직 없다.** 조건부 갱신·카운터·로그의 대상이 없다(§7.5) |
  *
  * 매니페스트가 `driven_by: "route"`로 선언하고, `routeSpec`이 런타임에 막는다.
  * 이 합집합을 손으로 적는 이유는 **오타를 컴파일에서 잡기 위해서다** —
  * 매니페스트에서 파생시키면 `RouteKey`가 넓어져 그 이점이 사라진다.
+ *
+ * `plan-draft`는 `runStep` 밖에 있지만 **체인은 돈다**(`lib/harness/draft.ts`).
+ * 그래서 아래 조회·예산 함수는 `ManifestRoute`를 받는다 — `HarnessRoute`로
+ * 좁혀 두면 그 라우트가 AI 예산 대조(R3)를 못 받는다.
  */
 export type HarnessRoute =
-  Exclude<ManifestRoute, 'products' | 'form-input' | 'content' | 'slug'>
+  Exclude<ManifestRoute, 'products' | 'form-input' | 'content' | 'slug' | 'plan-draft'>
 
 /*
  * 코드젠이 `as const satisfies`로 굽기 때문에 각 항목의 타입은 **리터럴**이다.
@@ -44,9 +49,22 @@ const ROUTE_TABLE = ROUTES as Readonly<Record<string, RouteSpec>>
 const SKILL_TABLE = SKILLS as Readonly<Record<string, SkillSpec>>
 const AGENT_TABLE = AGENTS as Readonly<Record<string, { readonly routes: readonly string[] }>>
 
-export function routeSpec(route: HarnessRoute): RouteSpec {
+/**
+ * 배선 조회만 한다 — `driven_by` 검사를 하지 않는다.
+ *
+ * `runAgent`가 구동하지 않는 라우트도 배선(체인 순서·AI 예산)은 필요하다.
+ * `plan-draft`가 그 경우다: `runStep` 밖에서 체인을 돌리므로 순서와 예산을
+ * 매니페스트에서 읽어야 하고, 그것을 못 읽으면 규약 R3·R5가 그 라우트에만
+ * 적용되지 않는 구멍이 생긴다.
+ */
+export function manifestRouteSpec(route: ManifestRoute): RouteSpec {
   const spec = ROUTE_TABLE[route]
   if (!spec) throw new Error(`하네스: 매니페스트에 라우트 «${route}»가 없다`)
+  return spec
+}
+
+export function routeSpec(route: HarnessRoute): RouteSpec {
+  const spec = manifestRouteSpec(route)
   if (spec.driven_by === 'route') {
     throw new Error(
       `하네스: 라우트 «${route}»는 driven_by=route로 선언돼 있다. runAgent로 구동하지 않는다`,
@@ -91,8 +109,16 @@ export function userPromptOf(skill: string, variant = 'default'): string {
   return text
 }
 
-export function agentOf(route: HarnessRoute): string {
-  const agent = routeSpec(route).agent
+/**
+ * 라우트 → 에이전트 배선을 **양방향으로** 확인한다.
+ *
+ * `manifestRouteSpec`을 쓰므로 `driven_by: "route"` 라우트에도 적용된다 —
+ * `plan-draft`는 `runAgent`가 아니라 `runPlanDraft`가 구동하지만, 「어느
+ * 에이전트의 일인가」는 똑같이 매니페스트에 적혀 있어야 한다(R6).
+ * `runAgent`는 이것과 별도로 `routeSpec`을 불러 `driven_by`를 막는다.
+ */
+export function agentOf(route: ManifestRoute): string {
+  const agent = manifestRouteSpec(route).agent
   /*
    * 하네스가 구동하는 라우트는 **반드시** 에이전트가 있다 — 응답 코드를 결정하는
    * 주체가 에이전트이기 때문이다. `agent: null`은 `driven_by: "route"` 전용이고
@@ -119,8 +145,8 @@ export function agentOf(route: HarnessRoute): string {
  * 호출한 뒤 세면 이미 돈과 25초를 쓴 다음이다.
  * ════════════════════════════════════════════════════════════════ */
 
-export function assertBudget(route: HarnessRoute, skill: string, spent: number): void {
-  const budget = routeSpec(route).ai_budget
+export function assertBudget(route: ManifestRoute, skill: string, spent: number): void {
+  const budget = manifestRouteSpec(route).ai_budget
   const cost = skillSpec(skill).ai
   if (cost === 0) return
   if (spent + cost > budget) {

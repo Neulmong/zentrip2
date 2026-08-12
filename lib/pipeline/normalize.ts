@@ -4,7 +4,7 @@
  * 허용 변환은 **정규화 3종 + 결합 1종**뿐이고, 그 외의 값 변형은 0차 검증에서
  * 실패다. 이 파일이 그 4종의 단일 구현이다.
  */
-import type { FormInput } from '../types'
+import type { FormInput, Shop, Stay } from '../types'
 
 export const PLACEHOLDER = '추후 추가 예정'
 
@@ -73,8 +73,10 @@ export interface ConfirmedData {
      */
     기획메모: string
   }
-  숙박: { 숙소명: string; 객실타입: string; 위치: string; 숙박일정: string }
-  상점: { 상점명: string; 상점정보: string }
+  /** 객체 배열 · 1건 이상. `form_input`의 순서를 그대로 승계한다(§7.4) */
+  숙박: Stay[]
+  /** 객체 배열 · 1건 이상 */
+  상점: Shop[]
   가격: { 성인: string; 아동: string; 기타: string }
   식사: { 식사정보: string }
   항공편: { 공항: string; 항공사: string; 편명: string; 출발시간: string; 도착시간: string }
@@ -112,9 +114,20 @@ function space(v: string, changes: NormalizeChange[], path: string): string {
  */
 export const FILL_FIELDS = [
   '행사정보.여행스타일', '행사정보.타겟층', '행사정보.여행주제',
-  '숙박.숙박일정',
   '항공편.공항', '항공편.항공사', '항공편.편명', '항공편.출발시간', '항공편.도착시간',
 ] as const
+
+/**
+ * 배열 행의 채움 대상 (§7.2).
+ *
+ * 행 수가 가변이라 정적 경로 목록으로 적을 수 없다 — 행마다 순회해 경로를
+ * `숙박[0].객실타입`으로 만든다. `상점.구분`은 여기 없다: select 기본값이
+ * `추천`이라 미입력 상태가 존재하지 않으므로 채울 것이 없다(§6.1).
+ */
+export const FILL_ROW_FIELDS = {
+  숙박: ['객실타입', '숙박일정'],
+  상점: ['위치', '상점정보'],
+} as const
 
 type Bag = Record<string, Record<string, string>>
 
@@ -142,6 +155,20 @@ export function fillOptional(
     bag[sub] = PLACEHOLDER
     changes.push({ 경로: path, 원본값: '', 정규화값: PLACEHOLDER, 적용규칙: '채움' })
     채운경로.push(path)
+  }
+
+  // 배열 행 — 경로에 인덱스를 붙인다(§7.4). 행 수가 가변이므로 순회한다
+  for (const [key, fields] of Object.entries(FILL_ROW_FIELDS)) {
+    const rows = (filled as unknown as Record<string, Record<string, string>[]>)[key] ?? []
+    for (const [i, row] of rows.entries()) {
+      for (const sub of fields) {
+        if (normalizeSpace(row[sub] ?? '') !== '') continue
+        row[sub] = PLACEHOLDER
+        const path = `${key}[${i}].${sub}`
+        changes.push({ 경로: path, 원본값: '', 정규화값: PLACEHOLDER, 적용규칙: '채움' })
+        채운경로.push(path)
+      }
+    }
   }
 
   return { filled, changes, 채운경로 }
@@ -196,16 +223,24 @@ export function normalizeFields(
         // 채우지 않는다 — 고객에게 보이지 않는 필드다(§6.1의 채움 목적 밖).
         기획메모: space(fi.행사정보.기획메모, changes, '행사정보.기획메모'),
       },
-      숙박: {
-        숙소명: space(fi.숙박.숙소명, changes, '숙박.숙소명'),
-        객실타입: space(fi.숙박.객실타입, changes, '숙박.객실타입'),
-        위치: space(fi.숙박.위치, changes, '숙박.위치'),
-        숙박일정: space(fi.숙박.숙박일정, changes, '숙박.숙박일정'),
-      },
-      상점: {
-        상점명: space(fi.상점.상점명, changes, '상점.상점명'),
-        상점정보: space(fi.상점.상점정보, changes, '상점.상점정보'),
-      },
+      /*
+       * 배열 원소의 문자열 필드도 공백 규칙의 대상이다(§6.2). 배열이라고
+       * 건너뛰면 원소 안의 표기만 정규화되지 않아 0차가 「정규화 누락」을 잡는다.
+       * 행 순서는 그대로 승계한다 — 순서가 값의 일부다(§7.4).
+       */
+      숙박: fi.숙박.map((st, i) => ({
+        숙소명: space(st.숙소명, changes, `숙박[${i}].숙소명`),
+        위치: space(st.위치, changes, `숙박[${i}].위치`),
+        객실타입: space(st.객실타입, changes, `숙박[${i}].객실타입`),
+        숙박일정: space(st.숙박일정, changes, `숙박[${i}].숙박일정`),
+      })),
+      상점: fi.상점.map((sh, i) => ({
+        상점명: space(sh.상점명, changes, `상점[${i}].상점명`),
+        구분: space(sh.구분, changes, `상점[${i}].구분`),
+        위치: space(sh.위치, changes, `상점[${i}].위치`),
+        // 자유 서술 필드 — 공백 규칙만 적용한다(§6.2)
+        상점정보: space(sh.상점정보, changes, `상점[${i}].상점정보`),
+      })),
       가격: {
         성인: money(fi.가격.성인, MONEY_FIELDS[0]),
         아동: money(fi.가격.아동, MONEY_FIELDS[1]),

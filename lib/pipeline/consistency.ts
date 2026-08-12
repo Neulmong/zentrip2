@@ -29,6 +29,7 @@
 import type { ValidationItem } from '../types'
 import { normalizeSpace } from './normalize'
 import { extractNouns, NOUN_PREFIX_LEN } from './axis0'
+import { expandRows, ROW_FIELDS } from './paths'
 import { BROCHURE_SECTION_IDS, type BrochureContent } from './brochure'
 import { PAGE_SECTION_IDS, type PageContent } from './page'
 
@@ -64,23 +65,39 @@ interface Occurrence { 값: string; 위치: string }
  *
  * 제외하는 것 둘:
  *   · `source`가 `"generated"`인 필드 — AI가 쓴 서술이라 대조 대상이 아니다
- *   · 배열 값(`일정`) — 일차 대조는 아래에서 따로 한다
+ *   · `days` 배열 — 일차 서술은 압축 vs 확장이라 아래에서 따로 본다
+ *
+ * **`숙소들`·`상점들`은 펼친다.** 값 배열이므로 원소 단위로 문자열이 같아야
+ * 하고, 경로에 인덱스를 붙이면(`숙박[0].숙소명`) 조인 키가 그대로 성립한다.
+ * 행 수가 다르면 **한쪽에만 있는 경로가 생겨** 「대응 필드 없음」으로 잡힌다 —
+ * 행 누락을 잡기 위해 따로 검사를 더 붙일 필요가 없다.
  */
 function collect(
   sections: readonly { id: string; data: Record<string, unknown>; source: Record<string, string> }[],
   skip: ReadonlySet<string>,
 ): Map<string, Occurrence[]> {
   const out = new Map<string, Occurrence[]>()
+  const push = (path: string, 값: string, 위치: string) => {
+    const list = out.get(path) ?? []
+    list.push({ 값: normalizeSpace(값), 위치 })
+    out.set(path, list)
+  }
 
   for (const s of sections) {
     if (skip.has(s.id)) continue
     for (const [field, path] of Object.entries(s.source ?? {})) {
       if (path === 'generated') continue
       const v = s.data[field]
+
+      if (Array.isArray(v)) {
+        // `days`는 여기서 빠진다 — `ROW_FIELDS`에 없다
+        if (!(field in ROW_FIELDS)) continue
+        for (const [p, 값] of expandRows(path, v)) push(p, 값, `${s.id}.${field}`)
+        continue
+      }
+
       if (typeof v !== 'string' && typeof v !== 'number') continue
-      const list = out.get(path) ?? []
-      list.push({ 값: normalizeSpace(String(v)), 위치: `${s.id}.${field}` })
-      out.set(path, list)
+      push(path, String(v), `${s.id}.${field}`)
     }
   }
   return out

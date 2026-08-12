@@ -25,6 +25,8 @@
     "test:security": "tsx --env-file=.env.local scripts/test-security.mts",
     "test:delete": "tsx --env-file=.env.local scripts/test-delete.mts",
     "test:demo": "tsx --env-file=.env.local scripts/test-demo.mts",
+    "test:plan-draft": "tsx --env-file=.env.local scripts/test-plan-draft.mts",
+    "test:real": "tsx --env-file=.env.local scripts/test-real.mts",
     "test:images": "tsx --env-file=.env.local scripts/test-images.mts",
     "test:exhaustion": "tsx --env-file=.env.local scripts/test-exhaustion.mts",
     "test:auth": "tsx --env-file=.env.local scripts/test-auth.mts",

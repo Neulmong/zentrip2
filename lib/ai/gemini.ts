@@ -29,10 +29,16 @@ import type { AiErrorType, AiProvider, AiRequest, AiResult, AiUsage } from './co
  */
 const DEFAULT_MODEL = 'gemini-3.5-flash'
 
-/** spec §4.3의 effort 대응. 생성은 medium, 검증은 low. */
+/** spec §4.3의 effort 대응. 생성은 medium, 검증·초안은 low. */
 const THINKING: Record<AiRequest['effort'], ThinkingLevel> = {
   generate: ThinkingLevel.MEDIUM,
   validate: ThinkingLevel.LOW,
+  /*
+   * 주 경로(DeepSeek)는 초안에서 사고를 **끈다**(`thinking: disabled`) — 발산하기
+   * 때문이다. Gemini의 `ThinkingLevel`에는 끄는 값이 없어 `LOW`가 최선이다.
+   * 예비 경로로 전환했을 때 초안이 느리거나 잘리면 그 원인이 여기다.
+   */
+  plan: ThinkingLevel.LOW,
 }
 
 /** 안전 분류기 계열 종료 사유 — 전부 거부로 본다. */
@@ -70,7 +76,7 @@ function classify(err: unknown): { type: AiErrorType; detail: string; retryAfter
   const msg = e?.message ?? String(err)
 
   if (e?.name === 'TimeoutError' || e?.name === 'AbortError' || /abort|timed? ?out/i.test(msg)) {
-    return { type: 'timeout', detail: `25초 타임아웃: ${msg.slice(0, 200)}` }
+    return { type: 'timeout', detail: `${AI_TIMEOUT_MS / 1000}초 타임아웃: ${msg.slice(0, 200)}` }
   }
   const code = Number(msg.match(/"code":\s*(\d+)/)?.[1] ?? e?.status ?? 0)
   if (code === 429) {
@@ -144,7 +150,7 @@ export function createGeminiProvider(apiKey: string, model = DEFAULT_MODEL): AiP
             maxOutputTokens: AI_MAX_TOKENS,
             thinkingConfig: { thinkingLevel: THINKING[req.effort] },
             // 재시도는 클라이언트가 같은 API를 재호출한다(§4.2).
-            // SDK가 자동 재시도하면 25초 예산을 넘긴다.
+            // SDK가 자동 재시도하면 요청 예산(AI_TIMEOUT_MS)을 넘긴다.
             abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
           },
         })

@@ -236,16 +236,91 @@ function checkBaseSection(
     }
   }
 
-  if (id === 'sec_itinerary') checkDays(id, data, fail)
+  if (id === 'sec_itinerary') checkDays(id, prev, data, fail)
+  if (id === 'sec_accommodation') checkRows(id, '숙소들', prev, data, fail)
+  if (id === 'sec_shop') checkRows(id, '상점들', prev, data, fail)
 }
 
-/** 일차 배열은 개수·번호가 `confirmed_data`에서 온 사실이라 편집으로 늘리지 않는다. */
-function checkDays(id: string, data: Record<string, unknown>, fail: (k: string, m: string) => void) {
+/**
+ * 일차 배열은 개수·번호가 `confirmed_data`에서 온 사실이라 편집으로 늘리지 않는다.
+ *
+ * ⚠️ 개수 검사는 **이 주석이 원래 규정한 것인데 구현에 없었다.** `text` 유무만
+ * 보았으므로 편집기가 일차를 하나 더 붙여 저장하면 그대로 통과했다 —
+ * 그러면 일차 수가 여행기간과 어긋나고(§11.2), 다시 검증을 돌리는 순간
+ * 3차가 「일차 수가 다릅니다」로 실패한다. 저장 시점에 막는다.
+ */
+function checkDays(
+  id: string, prev: PageSection, data: Record<string, unknown>,
+  fail: (k: string, m: string) => void,
+) {
   const days = data.days
   if (!Array.isArray(days)) { fail(`${id}.days`, '일정 배열이 없습니다.'); return }
+
+  const before = Array.isArray(prev.data.days) ? prev.data.days.length : days.length
+  if (days.length !== before) {
+    fail(`${id}.days`,
+      `일차는 ${before}개여야 합니다(현재 ${days.length}개). `
+      + '일차 수는 여행기간에서 오므로 편집으로 늘리거나 줄일 수 없습니다.')
+    return
+  }
+
   for (const [i, d] of days.entries()) {
     const day = d as Record<string, unknown>
     if (typeof day?.text !== 'string') fail(`${id}.days.${i}`, `${i + 1}번째 일차의 서술이 없습니다.`)
+  }
+}
+
+/**
+ * 값 배열(`숙소들`·`상점들`)의 편집 계약 (§9.3·§10.2).
+ *
+ * **값은 편집할 수 있고 행은 편집할 수 없다.** 행은 `form_input`에서 온 사실이라
+ * 편집기에서 늘리면 입력에 없는 숙소·상점이 생기고(§16.1), 줄이면 부분 삭제다.
+ * 새 내용을 더하고 싶으면 삽입 블록 3종을 쓴다(§10.2).
+ *
+ * 행 안의 **키 구성**도 고정이다 — 키가 사라지면 렌더러가 필드를 찾지 못하고,
+ * 늘어나면 `source`가 없는 사실정보 필드가 생긴다(§8.8).
+ */
+function checkRows(
+  id: string, field: string, prev: PageSection, data: Record<string, unknown>,
+  fail: (k: string, m: string) => void,
+) {
+  /*
+   * 2.6에 만든 `page_content`에는 이 배열 키가 없다 — `숙소명`이 섹션 data의
+   * 최상위 키였다. 그 상품은 편집으로 구조를 바꿀 수 없으므로(§9.3의 키 구성은
+   * 편집 대상이 아니다) **무엇을 하면 되는지** 알려준다. 「배열이 없습니다」만
+   * 보여주면 사람은 자기가 무엇을 잘못했는지 찾다가 못 찾는다.
+   */
+  if (!(field in prev.data)) {
+    fail(`${id}.${field}`,
+      '이전 판본으로 만들어진 상품입니다. [다시 생성]으로 상품 페이지를 새로 만든 뒤 편집해 주세요.')
+    return
+  }
+
+  const rows = data[field]
+  if (!Array.isArray(rows)) { fail(`${id}.${field}`, `${field} 배열이 없습니다.`); return }
+
+  const prevRows = Array.isArray(prev.data[field]) ? (prev.data[field] as unknown[]) : []
+  if (rows.length !== prevRows.length) {
+    fail(`${id}.${field}`,
+      `${field}은(는) ${prevRows.length}건이어야 합니다(현재 ${rows.length}건). `
+      + '행은 입력에서 오므로 편집으로 늘리거나 줄일 수 없습니다. '
+      + '내용을 더하려면 삽입 블록을 쓰세요(§10.2).')
+    return
+  }
+
+  for (const [i, row] of rows.entries()) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      fail(`${id}.${field}.${i}`, `${i + 1}번째 행의 모양이 올바르지 않습니다.`)
+      continue
+    }
+    const before = new Set(Object.keys((prevRows[i] ?? {}) as object))
+    const after = new Set(Object.keys(row as object))
+    for (const k of after) {
+      if (!before.has(k)) fail(`${id}.${field}.${i}.${k}`, `없는 필드입니다: ${k}`)
+    }
+    for (const k of before) {
+      if (!after.has(k)) fail(`${id}.${field}.${i}.${k}`, `필드가 빠졌습니다: ${k}`)
+    }
   }
 }
 

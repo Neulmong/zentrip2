@@ -1,9 +1,25 @@
 {
-  "version": "2.6.0",
-  "authority": "spec.md 2.6. 이 파일과 spec이 어긋나면 spec이 이기고 이 파일을 고친다.",
+  "version": "2.7.0",
+  "authority": "spec.md 2.7. 이 파일과 spec이 어긋나면 spec이 이기고 이 파일을 고친다.",
   "covenant": "CLAUDE.md의 🔒 하네스 규약 R1~R7",
 
   "routes": {
+    "plan-draft": {
+      "agent": "planner-agent",
+      "spec": "§7.5 · #20 · POST /api/plan-draft",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 1,
+      "driven_by": "route",
+      "driven_by_note": "상품 행이 **아직 없는** 시점에 호출된다. `runStep`의 전제(기존 행·조건부 갱신·카운터·로그)가 하나도 성립하지 않으므로 `runAgent`로 구동할 수 없다. 대신 `lib/harness/draft.ts`의 `runPlanDraft`가 같은 규율로 체인을 돌린다 — 매니페스트 순서대로 실행하고, ai 스킬 앞에서 `assertBudget`으로 예산을 대조한다(R3). `step`이 없는 유일한 라우트다: `execution_logs`·`abnormality_flags`가 둘 다 `product_id`를 요구하므로 남길 곳이 없다(§5.4·§5.5).",
+      "skills": [
+        { "name": "freeform-parse" },
+        { "name": "trip-planning" },
+        { "name": "draft-assemble" },
+        { "name": "draft-form-check" }
+      ]
+    },
+
     "products": {
       "agent": "intake-agent",
       "spec": "§7.4 · 라우트 ①",
@@ -156,6 +172,7 @@
   },
 
   "agents": {
+    "planner-agent": { "routes": ["plan-draft"] },
     "intake-agent": { "routes": ["products", "form-input", "decompose"] },
     "content-writer-agent": { "routes": ["brochure"] },
     "validator-agent": { "routes": ["validate-brochure", "validate-page", "validate-consistency"] },
@@ -164,6 +181,44 @@
   },
 
   "skills": {
+    "freeform-parse": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/freeform#parseFreeform",
+      "does": "자연어 메모에서 라벨 블록·날짜·URL·«이름 (주소)» 장소 후보를 추출한다",
+      "why_mechanical": "라벨(`-항목:`)·괄호 주소·`11.04~11.08` 날짜는 규칙 치환으로 환원된다. 그리고 이 추출 결과가 §7.5 ②의 **누락 0건 검사의 기준 목록**이 되므로, AI가 만들면 AI가 빠뜨린 것을 AI의 목록으로 검사하게 된다",
+      "status": "new"
+    },
+    "trip-planning": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "plan",
+      "effort_note": "`plan`은 **사고를 끈다**(`thinking: disabled`). 실측으로 정해졌다 — medium·low·minimal·파라미터 없음 네 경우 모두 max_tokens 8000을 전부 추론에 쓰고 본문이 0자로 나왔다(63~74초 · 2026-08-12). 끄면 2.9초에 완전한 출력이 나온다. `generate`로 되돌리면 이 라우트가 항상 409를 낸다. 표는 spec §4.3.",
+      "schema": "PLAN_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "does": "추출된 장소·행사 일정을 근거로 일차별 동선을 배분하고 폼 초안을 쓴다",
+      "user_prompt_sections": { "default": "user 지시문" },
+      "why_ai": "일차 배분은 권역·행사일·이동 순서를 함께 보는 판단이고, 규칙 치환으로 환원되지 않는다. 입력에 없는 서술(일정원문 문장·식사정보)을 새로 쓰는 유일한 초안 단계다",
+      "status": "new"
+    },
+    "draft-assemble": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/freeform#assembleDraft",
+      "does": "AI가 고른 후보 번호를 실제 이름·주소로 치환해 form_input 구조를 만든다",
+      "why_mechanical": "값 치환은 R3의 mechanical 영역이다. 실측 근거도 있다 — AI가 이름·주소를 다시 쓰게 했을 때 카페 13곳에서 `max_tokens`로 실패했다(2026-08-12 · 62초). 값이 AI를 거치지 않으므로 이름·주소가 바뀔 수 없고, 그것이 §7.5 ② 누락 0건 검사가 문자열 대조로 성립하는 근거다",
+      "why_separate_skill": "`draft-form-check`는 판정하고 이것은 조립한다(R2). 합치면 「검사만 하고 조립은 안 하는」 경로가 없어지고, 조립 결함이 검사 결과에 섞인다",
+      "status": "new"
+    },
+    "draft-form-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/freeform#checkDraft",
+      "does": "초안을 §7.1 규칙으로 검사하고 origin 3종·누락 목록을 만든다",
+      "why_mechanical": "판정을 AI에게 되묻지 않는다(§7.5 ②). `origin`도 기계가 정한다 — 값이 입력 텍스트에 실제로 있는지 대조한 결과여야 하고, AI의 자기 신고는 근거가 아니다",
+      "status": "new"
+    },
+
     "input-guard": {
       "kind": "mechanical",
       "ai": 0,
@@ -368,7 +423,8 @@
 
   "invariants": {
     "ai_per_route_max": 1,
-    "ai_per_script_total": 5,
+    "ai_per_script_total": 6,
+    "ai_per_script_total_note": "라우트 예산의 총합이다. **§20 대본 경로는 여전히 5회다** — 6번째는 `plan-draft`(§7.5)이고 대본에 없다. 자연어 초안을 쓰면 그 요청 1회가 추가된다.",
     "spec_skills_never_in_chain": true,
     "prompts_only_in_skill_md": true,
     "user_instructions_only_in_skill_md": true

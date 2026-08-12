@@ -22,44 +22,79 @@ const SECTION_TITLE: Record<string, string> = {
   b_flight: '항공', b_meal: '식사', b_price: '가격', b_shop: '제휴상점',
 }
 
-function SectionCard({ s }: { s: BrochureSection }) {
-  const days = s.data.days as { day: string; text: string }[] | undefined
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3 text-sm">
+      <dt className="w-24 shrink-0 text-neutral-500">{label}</dt>
+      <dd className="min-w-0 break-words leading-relaxed text-neutral-800">{children}</dd>
+    </div>
+  )
+}
 
+/**
+ * 값 배열(`숙소들`·`상점들`)을 행 단위로 그린다 (§8.7).
+ *
+ * `String(v)`로 찍으면 `[object Object]`가 나온다 — 배열이 3개로 늘어난 지금
+ * 스칼라만 가정한 렌더링은 검토 화면에서 값을 **읽을 수 없게** 만든다.
+ * 검토 화면의 목적이 사실정보 확인이므로(§8.9) 여기서 값이 보이지 않으면
+ * 화면 자체가 쓸모없어진다.
+ */
+function ValueRows({ rows }: { rows: Record<string, unknown>[] }) {
+  return (
+    <ol className="space-y-2">
+      {rows.map((row, i) => (
+        <li key={i} className="rounded-lg bg-neutral-50 p-3">
+          <dl className="space-y-1">
+            {Object.entries(row).map(([k, v]) => (
+              <Row key={k} label={k}>{String(v)}</Row>
+            ))}
+          </dl>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function SectionCard({ s }: { s: BrochureSection }) {
   return (
     <section className="rounded-xl border border-neutral-200 p-4">
       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">
         {SECTION_TITLE[s.id] ?? s.id}
       </h3>
 
-      {days ? (
-        <ol className="space-y-2">
-          {days.map((d) => (
-            <li key={d.day} className="flex gap-3 text-sm">
-              <span className="shrink-0 rounded bg-neutral-100 px-2 py-0.5 text-xs font-medium
-                               text-neutral-600">{d.day}일차</span>
-              <span className="leading-relaxed text-neutral-800">{d.text}</span>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <dl className="space-y-2">
-          {Object.entries(s.data).map(([k, v]) => (
-            <div key={k} className="flex gap-3 text-sm">
-              <dt className="w-24 shrink-0 text-neutral-500">
-                {k === 'text' ? '행사명' : k}
-              </dt>
-              <dd className="leading-relaxed text-neutral-800">
-                {String(v)}
-                {s.source[k] === 'generated' && (
-                  <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-600">
-                    AI 서술
-                  </span>
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      <dl className="space-y-3">
+        {Object.entries(s.data).map(([k, v]) => {
+          if (Array.isArray(v)) {
+            // 일차 배열은 「n일차 + 서술」 한 줄로, 값 배열은 행 카드로 그린다
+            if (k === 'days') {
+              const days = v as { day: string; text: string }[]
+              return (
+                <ol key={k} className="space-y-2">
+                  {days.map((d) => (
+                    <li key={d.day} className="flex gap-3 text-sm">
+                      <span className="shrink-0 rounded bg-neutral-100 px-2 py-0.5 text-xs
+                                       font-medium text-neutral-600">{d.day}일차</span>
+                      <span className="min-w-0 leading-relaxed text-neutral-800">{d.text}</span>
+                    </li>
+                  ))}
+                </ol>
+              )
+            }
+            return <ValueRows key={k} rows={v as Record<string, unknown>[]} />
+          }
+
+          return (
+            <Row key={k} label={k === 'text' ? '행사명' : k}>
+              {String(v)}
+              {s.source[k] === 'generated' && (
+                <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-600">
+                  AI 서술
+                </span>
+              )}
+            </Row>
+          )
+        })}
+      </dl>
     </section>
   )
 }

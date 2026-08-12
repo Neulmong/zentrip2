@@ -80,11 +80,11 @@ slug는 반환하지 않는다 — `slug-issue`(체인 6번)의 산출물이다.
 | 1 | `hero` | **true** | 행사명, 여행기간 부제, hero 이미지 |
 | 2 | `summary` | false | 여행기간, 여행지, 타겟층, 여행스타일 |
 | 3 | `itinerary` | false | 일차별 일정·이동·식사, 일차 이미지 |
-| 4 | `accommodation` | false | 숙소명, 객실타입, 위치, 숙박일정 |
+| 4 | `accommodation` | false | `숙소들[]` — 행마다 숙소명, 객실타입, 위치, 숙박일정 · 숙소 이미지 |
 | 5 | `flight` | false | 공항, 항공사, 편명, 출발·도착 시간 |
 | 6 | `meal` | false | 식사정보 |
 | 7 | `price` | false | 성인, 아동, 기타 |
-| 8 | `shop` | false | 상점명, 상점정보 |
+| 8 | `shop` | false | `상점들[]` — 행마다 상점명, 구분, 위치, 상점정보 · 상점 이미지 |
 | 9 | `apply` | **true** | 신청 폼, 가격 요약, 행사 정보 |
 
 - `hero`와 `apply`는 `locked: true`로 설정한다. 편집기에서 삭제할 수 없다(spec §10.2).

@@ -32,7 +32,16 @@ import type { HarnessContext } from './context'
  * 에이전트가 그것을 카운터·409로 옮긴다(R7).
  */
 
-const EFFORT: Record<string, Effort> = { generate: 'generate', validate: 'validate' }
+/**
+ * 매니페스트의 `effort` 문자열 → `lib/ai`의 `Effort`.
+ *
+ * `plan`이 여기 있는 이유: 지금 이 파일의 스킬 중에 쓰는 것은 없지만, 빠뜨리면
+ * `EFFORT[...]`가 `undefined`를 내고 provider가 추론 깊이 없이 호출된다 —
+ * **조용히.** 3종을 다 적어 두면 새 스킬이 어느 값을 써도 그런 일이 없다.
+ */
+const EFFORT: Record<string, Effort> = {
+  generate: 'generate', validate: 'validate', plan: 'plan',
+}
 
 /** 스킬의 AI 라벨. 매니페스트 `args.label`이 있으면 그것이 우선한다 */
 function labelOf(skill: string, args: Record<string, unknown>): string {
@@ -81,10 +90,25 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
     if (!c.cd) throw new Error('하네스: itinerary-decomposition이 confirmed_data를 요구한다')
     const cd = c.cd
 
+    /*
+     * 참고 값은 **이름만 줄로 넣는다.** 이 호출이 요청 예산에 가장 가깝기 때문이다
+     * (실측 22.5초 · CLAUDE.md). 전에는 `숙박`·`상점` 객체를 `JSON.stringify(…, null, 2)`로
+     * 통째로 넣었는데, 2.7에서 둘이 **배열**이 되면서 상점이 13곳인 상품에서 이 덩어리만
+     * 2000자를 넘겼다 — 그리고 실제로 분해가 3회 연속 타임아웃했다.
+     *
+     * 이 값들이 필요한 이유는 하나다: 일차 서술에 숙소명·상점명이 등장할 수 있어야 하고
+     * (§6.3의 「다른 확정 값」), 그 근거 대조는 **기계가** 한다(`otherValues`).
+     * 그러니 AI에게는 이름 목록이면 충분하고 주소·구분·객실타입은 필요 없다.
+     */
+    const 이름줄 = (label: string, xs: string[]) =>
+      (xs.filter(Boolean).length ? `${label}: ${xs.filter(Boolean).join(', ')}\n` : '')
+
     const data = await call<DecomposeResult>(c, 'itinerary-decomposition', args,
       `여행기간 일수: ${c.days}일\n\n일정원문:\n${cd.행사정보.일정원문}\n\n`
       + `${userPromptOf('itinerary-decomposition')}\n`
-      + JSON.stringify({ 식사: cd.식사, 숙박: cd.숙박, 상점: cd.상점 }, null, 2),
+      + 이름줄('숙소', cd.숙박.map((s) => s.숙소명))
+      + 이름줄('상점', cd.상점.map((s) => s.상점명))
+      + `식사: ${cd.식사.식사정보}\n`,
       DECOMPOSE_SCHEMA)
     if (!data) return
 

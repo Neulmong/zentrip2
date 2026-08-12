@@ -40,7 +40,7 @@ description: 재시도 누적·중단 확정·검증 반복 실패·처리 지�
     { "type": "retry_accumulated", "step": "validation_1_completed",
       "detail": "brochure 카운터가 2에 도달했습니다. 다음 실패 시 axis_1이 fail로 확정됩니다." },
     { "type": "processing_delayed", "step": "validation_1_completed",
-      "detail": "요청 소요 22.4초. 임계값 20초(AI 타임아웃 25초의 80%)를 초과했습니다." }
+      "detail": "요청 소요 22.4초. 임계값 20초를 초과했습니다." }
   ],
   "기록건수": 2
 }
@@ -65,7 +65,7 @@ description: 재시도 누적·중단 확정·검증 반복 실패·처리 지�
 | `retry_accumulated` | 한 단계의 `retry_counts` 값이 **2에 도달**(= 마지막 재시도 진입) | 카운터 증가 직후 |
 | `pipeline_aborted` | 한 단계의 재시도가 **소진**되어 `status = input_error` 또는 해당 축 `verdict = fail`로 확정 | 확정 직후 |
 | `validation_repeated_failure` | **같은 검증 항목**(`검증영역` 값 기준)이 같은 `attempt_no` 안에서 **2회 이상** 실패 | 검증 실패 기록 직후 |
-| `processing_delayed` | 한 요청의 소요 시간이 **20초 초과**(AI 호출 타임아웃 25초의 80%) | 모든 단계 종료 시 |
+| `processing_delayed` | 한 요청의 소요 시간이 **20초 초과** | 모든 단계 종료 시 |
 | `itinerary_partial` | 일정 원문의 일차 수가 여행기간보다 적어 `추후 추가 예정`으로 채운 경우 | Step 02 완료 시 |
 
 ### 조건별 세부 규칙

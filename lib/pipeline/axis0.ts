@@ -47,20 +47,47 @@ export function checkNormalization(fi: FormInput, cd: ConfirmedData): Validation
   expectSpace('행사정보.행사명', fi.행사정보.행사명, cd.행사정보.행사명)
   expectSpace('행사정보.여행지', fi.행사정보.여행지, cd.행사정보.여행지)
   expectSpace('행사정보.일정원문', fi.행사정보.일정원문, cd.행사정보.일정원문)
-  expectSpace('숙박.숙소명', fi.숙박.숙소명, cd.숙박.숙소명)
-  expectSpace('숙박.객실타입', fi.숙박.객실타입, cd.숙박.객실타입)
-  expectSpace('숙박.위치', fi.숙박.위치, cd.숙박.위치)
-  expectSpace('상점.상점명', fi.상점.상점명, cd.상점.상점명)
-  expectSpace('상점.상점정보', fi.상점.상점정보, cd.상점.상점정보)
   expectSpace('식사.식사정보', fi.식사.식사정보, cd.식사.식사정보)
   // `가격.기타`는 자유 서술 필드다 — 금액 규칙을 적용하지 않는다(§6.2)
   expectSpace('가격.기타', fi.가격.기타, cd.가격.기타)
 
   expectFill('행사정보.여행스타일', fi.행사정보.여행스타일, cd.행사정보.여행스타일)
   expectFill('행사정보.타겟층', fi.행사정보.타겟층, cd.행사정보.타겟층)
-  expectFill('숙박.숙박일정', fi.숙박.숙박일정, cd.숙박.숙박일정)
+  expectFill('행사정보.여행주제', fi.행사정보.여행주제, cd.행사정보.여행주제)
   for (const k of ['공항', '항공사', '편명', '출발시간', '도착시간'] as const) {
     expectFill(`항공편.${k}`, fi.항공편[k], cd.항공편[k])
+  }
+
+  /* ── 배열 그룹 (§7.4) ──────────────────────────────────────────
+   * **행 수와 순서가 값의 일부다.** 행이 늘거나 줄거나 자리를 바꾸면 `source`
+   * 경로가 다른 원소를 가리켜 1·2·3차가 전부 어긋나므로, 여기서 먼저 잡는다.
+   * 행 수가 다르면 원소 대조는 하지 않는다 — 인덱스가 무엇을 가리키는지
+   * 알 수 없는 상태에서 낸 항목은 사람을 엉뚱한 칸으로 보낸다.
+   * ──────────────────────────────────────────────────────────── */
+  const rowFields = {
+    숙박: { required: ['숙소명', '위치'], optional: ['객실타입', '숙박일정'] },
+    상점: { required: ['상점명', '구분'], optional: ['위치', '상점정보'] },
+  } as const
+
+  for (const [key, spec] of Object.entries(rowFields)) {
+    const before = (fi as unknown as Record<string, Record<string, string>[]>)[key] ?? []
+    const after = (cd as unknown as Record<string, Record<string, string>[]>)[key] ?? []
+
+    if (before.length !== after.length) {
+      out.push(item('정규화 범위', key, `${before.length}건`, `${after.length}건`,
+        `${key} 행 수가 달라졌습니다. 행을 추가·삭제·병합할 수 없습니다.`,
+        `confirmed_data.${key}`))
+      continue
+    }
+
+    for (const [i, row] of before.entries()) {
+      for (const f of spec.required) {
+        expectSpace(`${key}[${i}].${f}`, row[f] ?? '', after[i][f] ?? '')
+      }
+      for (const f of spec.optional) {
+        expectFill(`${key}[${i}].${f}`, row[f] ?? '', after[i][f] ?? '')
+      }
+    }
   }
 
   // 금액 — 콤마 제거만 허용. 계산·환산·단위 변경은 금지(§16.1)
@@ -140,8 +167,11 @@ export function extractNouns(text: string): string[] {
 export function otherValues(cd: ConfirmedData): string {
   return [
     cd.행사정보.행사명, cd.행사정보.여행지, cd.행사정보.일정원문,
-    cd.숙박.숙소명, cd.숙박.객실타입, cd.숙박.위치,
-    cd.상점.상점명, cd.상점.상점정보, cd.식사.식사정보, cd.가격.기타,
+    // **모든 행을 넣는다.** 첫 행만 넣으면 두 번째 숙소나 열두 번째 카페가
+    // 일정 서술에 등장할 때 근거 없음으로 잡힌다 — 입력에 있는 값인데도.
+    ...cd.숙박.flatMap((st) => [st.숙소명, st.객실타입, st.위치]),
+    ...cd.상점.flatMap((sh) => [sh.상점명, sh.위치, sh.상점정보]),
+    cd.식사.식사정보, cd.가격.기타,
   ].join(' ')
 }
 

@@ -2,6 +2,7 @@ import 'server-only'
 import { db } from './supabase'
 import { appendLog, detectAbnormalities } from './logging'
 import { checkPrecondition, hasRetryBudget, type RouteKey } from './policy'
+import { coerceFormInput } from './form-validation'
 import { conflict, ok, unprocessable, type StepResultBody } from './http'
 import {
   PUBLIC_STATUS,
@@ -24,10 +25,26 @@ import {
  * 자동 재시도하지 않는다 — 클라이언트가 재조회 후 사용자에게 알린다.
  * ════════════════════════════════════════════════════════════════ */
 
+/**
+ * 조회 결과 1건을 파이프라인이 쓸 수 있는 형태로 만든다.
+ *
+ * 지금 하는 일은 하나다 — 2.6에 저장된 `form_input`(숙박·상점이 단일 객체)을
+ * 2.7의 배열 구조로 올린다(§7.4). 그 행을 그대로 넣으면 `normalizeFields`의
+ * `fi.숙박.map(...)`에서 `TypeError`가 나고 **500이 된다.**
+ *
+ * **세 조회 함수가 전부 이걸 거친다.** 한 곳만 빠뜨리면 그 경로에서만 500이
+ * 나는데, 그런 결함은 「특정 상품에서만 터진다」는 형태로 나타나 원인을 찾기 어렵다.
+ */
+function hydrate(data: unknown): ProductRow | null {
+  if (!data) return null
+  const row = data as ProductRow
+  return { ...row, form_input: coerceFormInput(row.form_input) }
+}
+
 export async function loadProduct(id: string): Promise<ProductRow | null> {
   const { data, error } = await db().from('products').select('*').eq('id', id).maybeSingle()
   if (error) throw new Error(`상품 조회 실패: ${error.message}`)
-  return (data as ProductRow | null) ?? null
+  return hydrate(data)
 }
 
 /**
@@ -41,7 +58,7 @@ export async function loadProductByExecution(execution_id: string): Promise<Prod
   const { data, error } = await db()
     .from('products').select('*').eq('execution_id', execution_id).maybeSingle()
   if (error) throw new Error(`상품 조회 실패: ${error.message}`)
-  return (data as ProductRow | null) ?? null
+  return hydrate(data)
 }
 
 /**
@@ -61,7 +78,12 @@ export async function loadPublishedBySlug(slug: string): Promise<ProductRow | nu
     .eq('status', PUBLIC_STATUS)
     .maybeSingle()
   if (error) throw new Error(`상품 조회 실패: ${error.message}`)
-  return (data as ProductRow | null) ?? null
+  /*
+   * 공개 페이지·신청 접수가 이 경로다. `buildSnapshot`이 `form_input.숙박.map`을
+   * 쓰므로(§13.2) 옛 상품에 고객이 신청하면 여기서 500이 난다 — 고객에게 보이는
+   * 500이라 파이프라인 500보다 나쁘다.
+   */
+  return hydrate(data)
 }
 
 export type UpdateResult =

@@ -62,7 +62,7 @@ description: 서버 라우트 안에서 에이전트 1개를 호출하고, 재�
 ```text
 1. 인증 확인            (POST /api/applications 제외)
 2. 선행 조건 확인        미충족 → 409 또는 403
-3. 에이전트 1개 호출     AI 최대 1회, 타임아웃 25초
+3. 에이전트 1개 호출     AI 최대 1회, 타임아웃 40초
 4. 결과 판정 반영
      ├─ 성공        → status·current_step 갱신
      ├─ 검증 실패    → retry_counts +1 (여력 있으면)

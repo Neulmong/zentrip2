@@ -84,12 +84,15 @@ intake-agent의 `decompose` 체인 4번이다.
 | `b_title` | `sec_hero` | 행사명 |
 | `b_overview` | `sec_summary` | 여행지, 여행기간, 타겟층, 여행스타일 |
 | `b_itinerary` | `sec_itinerary` | **일차 수, 각 일차의 사실정보 값(장소·활동·식사)** |
-| `b_accommodation` | `sec_accommodation` | 숙소명, 객실타입, 위치, 숙박일정 |
+| `b_accommodation` | `sec_accommodation` | **숙소 행 수**, 행마다 숙소명·객실타입·위치·숙박일정 |
 | `b_flight` | `sec_flight` | 공항, 항공사, 편명, 출발·도착 시간 |
 | `b_meal` | `sec_meal` | 식사정보 |
 | `b_price` | `sec_price` | 성인, 아동, 기타 |
-| `b_shop` | `sec_shop` | 상점명, 상점정보 |
+| `b_shop` | `sec_shop` | **상점 행 수**, 행마다 상점명·구분·위치·상점정보 |
 | — | `sec_apply` | **제외**(`skipped`) |
+
+**배열 섹션은 인덱스 경로로 원소 단위 대조한다** — `숙박[0].숙소명`(§7.4). 행 수가 다르거나
+순서가 바뀌면 실패다. 행을 요약·병합해 줄이는 것은 §16.1의 부분 삭제다.
 
 **`원문근거`를 대조하지 않는다.** 그 필드는 `confirmed_data`에만 있고 두 콘텐츠 모델에는 없다. 0차 검증의 몫이다.
 

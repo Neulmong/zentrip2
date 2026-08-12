@@ -43,7 +43,7 @@ const BASE_URL = 'https://api.deepseek.com'
  * 기본 모델. **이 프로젝트가 쓰는 유일한 모델이다.**
  *
  * `pro` 계열은 쓰지 않는다 — 품질이 부족해서가 아니라 **쓰지 않기로 확정된
- * 제약**이다(§4.3). 25초 예산·비용·산출물 품질 전부 flash로 성립하는 것을
+ * 제약**이다(§4.3). 예산·비용·산출물 품질 전부 flash로 성립하는 것을
  * 실측으로 확인했으므로, 느려 보인다는 이유로 pro로 올리는 선택지를 아예
  * 코드에서 없앤다. 아래 `assertAllowed`가 그 확정을 기계로 지킨다.
  */
@@ -80,9 +80,30 @@ function assertAllowed(model: string): void {
  * 추측해서 400을 맞는 것보다, 문서에 있는 `reasoning_effort`만 쓰고
  * 실측(`npm run probe:deepseek`)으로 확인하는 편이 안전하다.
  */
-const EFFORT: Record<AiRequest['effort'], 'low' | 'medium'> = {
+const EFFORT: Record<AiRequest['effort'], 'low' | 'medium' | null> = {
   generate: 'medium',
   validate: 'low',
+  /**
+   * 초안(§7.5)은 **사고를 끈다** — `reasoning_effort`를 보내지 않고
+   * `thinking: {type: 'disabled'}`를 보낸다. `null`이 그 표시다.
+   *
+   * ## 실측으로 정해졌다 (2026-08-12 · 같은 입력 · 같은 프롬프트)
+   *
+   * | 모드 | 소요 | 출력 |
+   * |---|---:|---|
+   * | `reasoning_effort: medium` | 69.4초 | **0자** (`reasoning_tokens: 8000` · `finish: length`) |
+   * | `reasoning_effort: low` | 73.8초 | **0자** (같음) |
+   * | `reasoning_effort: minimal` | 63.0초 | **0자** (같음) |
+   * | 파라미터 없음 | 68.0초 | **0자** (같음) |
+   * | **`thinking: disabled`** | **2.9초** | 416토큰 · 완전 |
+   *
+   * 장소 26곳을 5일에 배분하는 것은 제약 만족 문제라 사고 연쇄가 **발산한다** —
+   * 어느 effort 값을 줘도 `max_tokens` 전부를 추론에 쓰고 본문이 비어 나온다.
+   * 사고를 끄면 2.9초에 정확한 배분이 나온다(권역별 묶음·페르소나 반영 확인).
+   *
+   * 이 값을 `low`나 `medium`으로 되돌리면 **초안 라우트가 항상 409를 낸다.**
+   */
+  plan: null,
 }
 
 function classify(err: unknown): { type: AiErrorType; detail: string; retryAfterMs?: number } {
@@ -91,7 +112,7 @@ function classify(err: unknown): { type: AiErrorType; detail: string; retryAfter
 
   if (e?.name === 'APIUserAbortError' || e?.name === 'TimeoutError'
       || /abort|timed? ?out/i.test(msg)) {
-    return { type: 'timeout', detail: `25초 타임아웃: ${msg.slice(0, 200)}` }
+    return { type: 'timeout', detail: `${AI_TIMEOUT_MS / 1000}초 타임아웃: ${msg.slice(0, 200)}` }
   }
 
   const status = e?.status ?? 0
@@ -131,7 +152,7 @@ export function createDeepseekProvider(apiKey: string, model = DEFAULT_MODEL): A
   const client = new OpenAI({
     apiKey, baseURL: BASE_URL,
     // 재시도는 클라이언트가 같은 API를 재호출한다(§4.2).
-    // SDK가 자동 재시도하면 25초 예산을 넘긴다.
+    // SDK가 자동 재시도하면 요청 예산(AI_TIMEOUT_MS)을 넘긴다.
     maxRetries: 0,
     timeout: AI_TIMEOUT_MS,
   })
@@ -160,10 +181,26 @@ export function createDeepseekProvider(apiKey: string, model = DEFAULT_MODEL): A
             { role: 'user', content: req.user },
           ],
           max_tokens: AI_MAX_TOKENS,
-          reasoning_effort: EFFORT[req.effort],
+          /*
+           * 사고 파라미터는 **둘 중 하나만** 보낸다. `reasoning_effort`와
+           * `thinking: disabled`를 같이 보내면 서로 모순된 지시가 된다.
+           */
+          ...(EFFORT[req.effort] === null
+            ? { thinking: { type: 'disabled' } }
+            : { reasoning_effort: EFFORT[req.effort] }),
           // strict 스키마가 없으므로 문법 보장까지만 받고, 구조는 아래에서 검사한다.
           response_format: { type: 'json_object' },
-        } as Parameters<typeof client.chat.completions.create>[0])
+        } as Parameters<typeof client.chat.completions.create>[0],
+        /*
+         * ⚠️ 클라이언트의 `timeout` 옵션만으로는 끊기지 않는다 — **실측**.
+         * 추론이 길어진 호출이 `elapsed_ms: 58218`로 돌아왔다(2026-08-12).
+         * `maxDuration`이 60초이므로(§4.2) 그 상태로는 플랫폼이 먼저 죽여
+         * 409 대신 504가 나가고, §11.6 재시도 경로를 건너뛴다.
+         *
+         * 그래서 요청마다 `AbortSignal.timeout`을 직접 건다. 예비 경로(Gemini)는
+         * 처음부터 이 방식이었고(`abortSignal`), 주 경로만 SDK 옵션을 믿고 있었다.
+         */
+        { signal: AbortSignal.timeout(AI_TIMEOUT_MS) })
       } catch (e) {
         const { type, detail, retryAfterMs } = classify(e)
         return fail(type, detail, null, null, retryAfterMs)

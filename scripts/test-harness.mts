@@ -15,9 +15,12 @@
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+// `pathname`은 공백·괄호를 퍼센트 인코딩한다 — 폴더 이름에 공백이 있으면 경로가 어긋나
+// 매니페스트를 못 찾는다. build-harness.mts와 같은 방식(fileURLToPath)으로 맞춘다.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const p = (...s: string[]) => join(ROOT, ...s)
 
 let pass = 0, fail = 0, todo = 0
@@ -304,17 +307,55 @@ const IMPLS = p('lib', 'harness', 'impls.ts')
 const implsSrc = existsSync(IMPLS) ? readFileSync(IMPLS, 'utf8') : ''
 const aiSrc = existsSync(AI_SKILLS_SRC) ? readFileSync(AI_SKILLS_SRC, 'utf8') : ''
 
+/**
+ * 체인 러너가 둘이다.
+ *
+ * | 라우트 | 구동 | 러너가 사는 곳 |
+ * |---|---|---|
+ * | 파이프라인 6개 | `runAgent` → `runStep` | `impls.ts` · `ai-skills.ts` |
+ * | `plan-draft` | `runPlanDraft` | `draft.ts` |
+ *
+ * `plan-draft`는 상품 행이 없어 `runStep`의 전제가 성립하지 않는다(§7.5). 그래서
+ * `driven_by: "route"`이지만 **체인은 돈다** — 매니페스트 순서대로 실행하고 ai 스킬
+ * 앞에서 예산을 대조한다. 러너가 없으면 런타임에 던지므로 여기서 미리 잡는다.
+ */
+const DRAFT_CHAIN = 'plan-draft'
+const DRAFT_SRC_PATH = p('lib', 'harness', 'draft.ts')
+const draftSrc = existsSync(DRAFT_SRC_PATH) ? readFileSync(DRAFT_SRC_PATH, 'utf8') : ''
+
+const draftChained = new Set((m.routes[DRAFT_CHAIN]?.skills ?? []).map((s) => s.name))
+
 /** 하네스가 구동하는 라우트의 체인에 들어간 스킬만 러너가 필요하다 */
 const harnessChained = new Set(
   Object.entries(m.routes).filter(([rk]) => !routeDriven.has(rk))
     .flatMap(([, r]) => r.skills.map((s) => s.name)))
 
 for (const name of [...chained]) {
-  if (!harnessChained.has(name)) continue
-  const kind = m.skills[name]?.kind
-  const src = kind === 'ai' ? aiSrc : implsSrc
-  const where = kind === 'ai' ? 'ai-skills.ts' : 'impls.ts'
-  check(`${name} — ${where}에 러너 등록`, src.includes(`'${name}'`))
+  if (harnessChained.has(name)) {
+    const kind = m.skills[name]?.kind
+    const src = kind === 'ai' ? aiSrc : implsSrc
+    const where = kind === 'ai' ? 'ai-skills.ts' : 'impls.ts'
+    check(`${name} — ${where}에 러너 등록`, src.includes(`'${name}'`))
+    continue
+  }
+  if (draftChained.has(name)) {
+    check(`${name} — draft.ts에 러너 등록`, draftSrc.includes(`'${name}'`))
+  }
+}
+
+/*
+ * 초안 체인도 R3·R4를 지키는가. 「`runStep` 밖」은 「규약 밖」이 아니다 —
+ * 예산 대조를 빠뜨리면 그 라우트만 AI를 무제한 부를 수 있게 된다.
+ */
+if (draftSrc) {
+  check('draft.ts가 ai 스킬 앞에서 assertBudget으로 예산을 대조한다',
+    /assertBudget\(/.test(draftSrc))
+  check('draft.ts의 system이 promptOf()에서만 온다',
+    /system:\s*promptOf\(/.test(draftSrc) && !/system:\s*[`'"]/.test(draftSrc))
+  check('draft.ts의 user 지시문이 userPromptOf()로 들어온다',
+    /userPromptOf\(/.test(draftSrc))
+  check('draft.ts가 체인 순서를 매니페스트에서 읽는다 (하드코딩 아님)',
+    /manifestRouteSpec\(/.test(draftSrc) && /spec\.skills/.test(draftSrc))
 }
 
 /* ── 8. 실행 계층이 존재하는가 ──────────────────────────────── */
@@ -408,11 +449,24 @@ for (const [name, s] of Object.entries(m.skills)) {
  * 후자를 `impls.ts`에서 찾으면 실행되지 않는 러너를 쓰게 만든다. 어느 쪽이든
  * 「선언한 함수를 실제로 부르는가」를 보는 것이 이 검사의 목적이다.
  */
+/**
+ * `app/api/products/[id]/<라우트>/route.ts` 밖에 있는 라우트의 파일 경로.
+ *
+ * 전부 `{id}`를 받지 않는 라우트다 — `products`는 상품을 **만들고**,
+ * `plan-draft`는 상품이 **아직 없는** 시점에 호출된다(§7.5).
+ */
+const ROUTE_FILES: Record<string, string[]> = {
+  products: ['app', 'api', 'products', 'route.ts'],
+  'plan-draft': ['app', 'api', 'plan-draft', 'route.ts'],
+}
+
 const routeSrcOf = (rk: string): string => {
   const f = routeFiles.find((x) => x.name === rk)
   if (f) return f.src
-  const root = p('app', 'api', 'products', 'route.ts')
-  return rk === 'products' && existsSync(root) ? readFileSync(root, 'utf8') : ''
+  const seg = ROUTE_FILES[rk]
+  if (!seg) return ''
+  const file = p(...seg)
+  return existsSync(file) ? readFileSync(file, 'utf8') : ''
 }
 
 for (const [name, s] of Object.entries(m.skills)) {
@@ -423,6 +477,12 @@ for (const [name, s] of Object.entries(m.skills)) {
 
   if (harnessChained.has(name)) {
     check(`${name}: impls.ts가 «${sym}»을 실제로 호출한다`, calls.test(implsSrc), s.impl)
+    continue
+  }
+
+  // 초안 체인의 스킬은 `draft.ts`가 부른다 — 라우트 파일이 아니다
+  if (draftChained.has(name)) {
+    check(`${name}: draft.ts가 «${sym}»을 실제로 호출한다`, calls.test(draftSrc), s.impl)
     continue
   }
 

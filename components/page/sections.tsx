@@ -4,7 +4,7 @@ import type { ThemeTokens } from '@/lib/pipeline/theme'
 import { headlineClass, SectionHeading } from './theme'
 import { Figure, RATIO, SlotGallery } from './media'
 import {
-  days, PLACEHOLDER_VALUES, slotNames, text,
+  days, PLACEHOLDER_VALUES, rows, slotNames, text,
   type ImageIndex,
 } from './types'
 
@@ -62,6 +62,62 @@ function Fields({ items }: { items: [string, string][] }) {
         </div>
       ))}
     </dl>
+  )
+}
+
+/**
+ * 값 배열 1행 = 카드 1장 (§9.3의 `숙소들`·`상점들`).
+ *
+ * 왜 `Fields`(정의 목록)를 쓰지 않는가: 행이 여러 건이면 `숙소명`·`위치`가
+ * 반복되어 **어느 위치가 어느 숙소의 것인지 알 수 없다.** 카드로 묶으면 행이
+ * 30건이 되어도 소속이 흐트러지지 않는다.
+ *
+ * 375px 1열 → 640px 이상 2열. 카드 안에서 값이 길어지면 `break-words`로 접히고
+ * 가로 스크롤은 생기지 않는다(§17.1).
+ */
+function CardList({ rows: list, 제목필드, 필드, 배지필드 }: {
+  rows: Record<string, string>[]
+  제목필드: string
+  필드: readonly string[]
+  배지필드?: string
+}) {
+  // 빈 목록에도 섹션은 남는다(§9.3) — 값이 안 보이면 입력 누락을 알 수 없다
+  if (list.length === 0) {
+    return <p className="mt-5 text-[15px] italic">등록된 항목이 없습니다.</p>
+  }
+
+  return (
+    <ul className="mt-5 grid gap-4 sm:grid-cols-2">
+      {list.map((row, i) => (
+        <li
+          key={`${i}-${row[제목필드]}`}
+          className="min-w-0 rounded-xl border border-[var(--t-primary)] p-4"
+        >
+          <div className="flex items-start gap-2">
+            <p className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-snug">
+              <Value v={row[제목필드]} />
+            </p>
+            {배지필드 && row[배지필드] && (
+              <span className="shrink-0 rounded-full bg-[var(--t-secondary)] px-2 py-0.5
+                               text-[11px] font-semibold text-[var(--t-text)]">
+                {row[배지필드]}
+              </span>
+            )}
+          </div>
+
+          <dl className="mt-3 space-y-2.5">
+            {필드.map((f) => (
+              <div key={f} className="min-w-0">
+                <dt className="text-[11px] font-semibold uppercase tracking-wider">{f}</dt>
+                <dd className="mt-0.5 break-words text-sm leading-relaxed">
+                  <Value v={row[f]} />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -168,16 +224,20 @@ export function Itinerary({ data, t, idx }: SectionProps) {
 
 export function Accommodation({ data, t, idx }: SectionProps) {
   const images = slotNames(data).flatMap((s) => idx.bySlot.get(s) ?? [])
+  const list = rows(data, '숙소들', ['숙소명', '객실타입', '위치', '숙박일정'])
 
   return (
     <Band>
       <SectionHeading t={t}>숙박</SectionHeading>
-      <Fields items={[
-        ['숙소명', text(data, '숙소명')],
-        ['객실타입', text(data, '객실타입')],
-        ['위치', text(data, '위치')],
-        ['숙박일정', text(data, '숙박일정')],
-      ]} />
+      <CardList
+        rows={list}
+        제목필드="숙소명"
+        필드={['객실타입', '위치', '숙박일정']}
+      />
+      {/*
+        숙소 사진은 `accommodation` 슬롯 하나를 **전체가 공유한다**(§7.3의 슬롯
+        4종은 그대로다). 행마다 갈라 붙이지 않으므로 목록 아래에 함께 놓는다.
+      */}
       <SlotGallery images={images} className="mt-6" />
     </Band>
   )
@@ -272,14 +332,18 @@ export function Price({ data, t }: SectionProps) {
 
 export function Shop({ data, t, idx }: SectionProps) {
   const images = slotNames(data).flatMap((s) => idx.bySlot.get(s) ?? [])
+  const list = rows(data, '상점들', ['상점명', '구분', '위치', '상점정보'])
 
   return (
     <Band>
-      <SectionHeading t={t}>제휴상점</SectionHeading>
-      <Fields items={[
-        ['상점명', text(data, '상점명')],
-        ['상점정보', text(data, '상점정보')],
-      ]} />
+      {/* `구분`이 2종(제휴·추천)이므로 제목도 둘을 함께 말한다(§6.1) */}
+      <SectionHeading t={t}>제휴·추천 상점</SectionHeading>
+      <CardList
+        rows={list}
+        제목필드="상점명"
+        배지필드="구분"
+        필드={['위치', '상점정보']}
+      />
       <SlotGallery images={images} className="mt-6" />
     </Band>
   )

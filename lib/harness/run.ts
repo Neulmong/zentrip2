@@ -178,6 +178,17 @@ export async function runAgent(
     effectiveUpdatedAt = moved.updatedAt
   }
 
+  /*
+   * `step`은 매니페스트에서 선택 필드다 — 로그를 남길 수 없는 라우트가 있기
+   * 때문이다(`plan-draft`는 상품 행이 없다 · §7.5). 하네스가 구동하는 라우트에는
+   * 코드젠이 `step`을 강제하므로 여기 오면 반드시 있다. 그래도 던진다:
+   * 없는 채로 `runStep`에 들어가면 로그가 조용히 비고, 그 상태를 관리 화면에서
+   * 알아차릴 방법이 없다.
+   */
+  if (!spec.step) {
+    throw new Error(`하네스: 라우트 «${route}»에 step이 없다 — runStep이 로그를 남길 수 없다`)
+  }
+
   return runStep(
     {
       route,

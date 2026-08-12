@@ -89,7 +89,7 @@ model: inherit
 | `retry_accumulated` | 한 단계의 `retry_counts` 값이 **2에 도달**(마지막 재시도 진입) |
 | `pipeline_aborted` | 한 단계의 재시도가 **소진**되어 `input_error` 또는 해당 축 `verdict = fail` 확정 |
 | `validation_repeated_failure` | **같은 검증 항목**이 같은 `attempt_no` 안에서 2회 이상 실패 |
-| `processing_delayed` | 한 요청의 소요 시간이 **20초 초과**(AI 타임아웃 25초의 80%) |
+| `processing_delayed` | 한 요청의 소요 시간이 **20초 초과** |
 | `itinerary_partial` | 일정 원문의 일차 수가 여행기간보다 적어 `추후 추가 예정`으로 채운 경우 |
 
 **감지된 경우에만 기록한다.** "이상 없음" 류 항목을 남기지 않는다. 한 단계에서 여러 이상이 감지되면 유형별로 각각 1행을 기록한다.

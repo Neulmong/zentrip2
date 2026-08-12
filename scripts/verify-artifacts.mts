@@ -95,14 +95,28 @@ for (const p of complete) {
     ['행사정보.행사명', fi.행사정보.행사명, cdAny.행사정보.행사명 as string],
     ['행사정보.여행지', fi.행사정보.여행지, cdAny.행사정보.여행지 as string],
     ['행사정보.일정원문', fi.행사정보.일정원문, cdAny.행사정보.일정원문 as string],
-    ['숙박.숙소명', fi.숙박.숙소명, cdAny.숙박.숙소명 as string],
-    ['숙박.객실타입', fi.숙박.객실타입, cdAny.숙박.객실타입 as string],
-    ['숙박.위치', fi.숙박.위치, cdAny.숙박.위치 as string],
-    ['상점.상점명', fi.상점.상점명, cdAny.상점.상점명 as string],
-    ['상점.상점정보', fi.상점.상점정보, cdAny.상점.상점정보 as string],
     ['식사.식사정보', fi.식사.식사정보, cdAny.식사.식사정보 as string],
     ['가격.기타', fi.가격.기타, cdAny.가격.기타 as string],
   ]
+
+  /*
+   * 배열 그룹은 **행마다** 대조한다(§7.4). 행 수부터 본다 — 행이 늘거나 줄면
+   * `source` 경로가 다른 원소를 가리켜 대조 자체가 성립하지 않는다.
+   */
+  for (const [key, fields] of [
+    ['숙박', ['숙소명', '위치', '객실타입', '숙박일정']],
+    ['상점', ['상점명', '구분', '위치', '상점정보']],
+  ] as const) {
+    const before = (fi as unknown as Record<string, Record<string, string>[]>)[key] ?? []
+    const after = (cdAny as unknown as Record<string, Record<string, string>[]>)[key] ?? []
+    if (before.length !== after.length) {
+      drift.push(`${key}: ${before.length}행 → ${after.length}행 (행 수가 달라졌다)`)
+      continue
+    }
+    for (const [i, row] of before.entries()) {
+      for (const f of fields) compare.push([`${key}[${i}].${f}`, row[f] ?? '', after[i][f] ?? ''])
+    }
+  }
   for (const [path, before, after] of compare) {
     const b = sp(before), a = sp(after)
     if (b === '' && a === PLACEHOLDER) continue          // 채움 (§6.1)
@@ -295,9 +309,23 @@ for (const p of complete) {
 
   /* ══ W. 데이터 무결성 ═════════════════════════════════════════ */
   section('W. 고유명사 · 수치 무결성 (AI 생성분)')
+  /*
+   * **모든 행의 고유명사를 본다.** 첫 행만 보면 두 번째 숙소가 소개서·페이지에서
+   * 사라져도 통과한다 — 행이 여럿인 상품에서 가장 흔한 회귀가 정확히 그것이다.
+   */
+  /** `fi`는 `Record<string, Record<string, string>>`로 좁혀져 있어 배열 접근에 넓힘이 필요하다 */
+  const rowsOf = (key: string): Record<string, string>[] => {
+    const v = (fi as unknown as Record<string, unknown>)[key]
+    return Array.isArray(v) ? (v as Record<string, string>[]) : []
+  }
+
   const 고유명사: [string, string][] = [
-    ['여행지', fi.행사정보.여행지], ['숙소명', fi.숙박.숙소명],
-    ['객실타입', fi.숙박.객실타입], ['위치', fi.숙박.위치], ['상점명', fi.상점.상점명],
+    ['여행지', fi.행사정보.여행지],
+    ...rowsOf('숙박').flatMap((st, i): [string, string][] => [
+      [`숙박[${i}].숙소명`, st.숙소명 ?? ''], [`숙박[${i}].객실타입`, st.객실타입 ?? ''],
+      [`숙박[${i}].위치`, st.위치 ?? ''],
+    ]),
+    ...rowsOf('상점').map((sh, i): [string, string] => [`상점[${i}].상점명`, sh.상점명 ?? '']),
   ]
   const brText = JSON.stringify(br), pgText = JSON.stringify(base)
   const 누락 = 고유명사.filter(([, v]) => v && v !== PLACEHOLDER
