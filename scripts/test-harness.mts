@@ -197,6 +197,39 @@ const routeFiles = existsSync(routeDir)
 const withPrompt = routeFiles.filter((f) => /_SYSTEM|system:\s*[`'"]/.test(f.src)).map((f) => f.name)
 check('라우트에 시스템 프롬프트 문자열이 없다', withPrompt.length === 0, withPrompt)
 
+/*
+ * 하네스 안쪽도 검사한다. 프롬프트를 라우트에서 `lib/harness/`로 **옮기기만**
+ * 하면 이 검사가 통과하면서 규약은 깨진 상태가 된다 — 검사가 거짓말을 하는
+ * 가장 흔한 방식이다. system은 `promptOf()`로만 들어가야 한다.
+ */
+const AI_SKILLS_SRC = p('lib', 'harness', 'ai-skills.ts')
+if (existsSync(AI_SKILLS_SRC)) {
+  const src = readFileSync(AI_SKILLS_SRC, 'utf8')
+  check('lib/harness/ai-skills.ts의 system이 promptOf()에서만 온다',
+    /system:\s*promptOf\(/.test(src) && !/system:\s*[`'"]/.test(src))
+}
+
+/*
+ * ⏳ 남은 R4 격차 — **정직하게 보고한다.**
+ *
+ * user 메시지 조립은 가변 입력을 엮는 코드이므로 문서로 동결할 수 없다.
+ * 그런데 조립 끝에 붙는 지시문(「각 섹션의 source가 가리키는 경로를…」)은
+ * 사실상 프롬프트다. 지금은 TS에 있다.
+ *
+ * 옮기지 않은 이유: 옮기면 user 메시지 바이트가 흔들릴 수 있고, 그러면
+ * 전환이 「동작을 바꾸지 않는다」는 전제를 잃는다. 데모 후 `probe:deepseek`
+ * 재실측과 함께 옮긴다.
+ */
+if (existsSync(AI_SKILLS_SRC)) {
+  const 지시문 = [...readFileSync(AI_SKILLS_SRC, 'utf8')
+    .matchAll(/^\s*\+ `(?:\\n)*(?:-|각|추가로|섹션|원문근거)[^`]*`/gm)].length
+  if (지시문 > 0) {
+    pending(`user 메시지 지시문 ${지시문}건이 SKILL.md 밖에 있다`,
+      'system 프롬프트는 전부 SKILL.md로 옮겼다. user 쪽 지시문은 바이트 보존을 '
+      + '위해 남겼다 — 데모 후 probe 재실측과 함께 옮긴다')
+  }
+}
+
 /* ── 7. R1 — 라우트는 에이전트만 부른다 ────────────────────── */
 
 section('7. R1 — 라우트가 ai()를 직접 호출하지 않는다')
@@ -212,6 +245,35 @@ if (notConverted.length) {
     `미전환: ${notConverted.join(', ')}`)
 } else {
   check('파이프라인 라우트가 모두 runAgent()를 쓴다', true)
+}
+
+/*
+ * 라우트가 하네스 **외의** 파이프라인 모듈을 직접 import하면 R1 위반이다.
+ * 전환의 요점은 「라우트가 얇아진다」가 아니라 「라우트가 배선을 모른다」다.
+ */
+const 직접의존 = routeFiles
+  .filter((f) => pipelineRoutes.includes(f.name))
+  .filter((f) => /@\/lib\/pipeline\//.test(f.src) || /@\/lib\/ai\b/.test(f.src))
+  .map((f) => f.name)
+check('전환된 라우트가 lib/pipeline·lib/ai를 직접 import하지 않는다',
+  직접의존.length === 0, 직접의존)
+
+/*
+ * 체인의 모든 스킬에 러너가 등록돼 있는가.
+ *
+ * 등록이 빠지면 런타임에 던진다 — 조용히 건너뛰지 않는다. 그래도 **던지는
+ * 시점이 요청 중**이므로, 배선과 등록표의 불일치는 여기서 미리 잡는다.
+ */
+section('7-1. 체인 스킬 ↔ 러너 등록표')
+
+const IMPLS = p('lib', 'harness', 'impls.ts')
+const implsSrc = existsSync(IMPLS) ? readFileSync(IMPLS, 'utf8') : ''
+const aiSrc = existsSync(AI_SKILLS_SRC) ? readFileSync(AI_SKILLS_SRC, 'utf8') : ''
+for (const name of [...chained]) {
+  const kind = m.skills[name]?.kind
+  const src = kind === 'ai' ? aiSrc : implsSrc
+  const where = kind === 'ai' ? 'ai-skills.ts' : 'impls.ts'
+  check(`${name} — ${where}에 러너 등록`, src.includes(`'${name}'`))
 }
 
 /* ── 8. 실행 계층이 존재하는가 ──────────────────────────────── */
@@ -272,8 +334,8 @@ if (!existsSync(REG)) {
 console.log(`\n${'─'.repeat(60)}`)
 console.log(`통과 ${pass} · 실패 ${fail} · 미구현 ${todo}`)
 if (todo > 0) {
-  console.log(`\n⏳ 미구현 ${todo}건은 문서 계층이 선언했고 코드가 아직 따라오지 않은 항목이다.`)
-  console.log('   규약 R6의 정상 순서(문서 먼저 → 코드 다음)이며, 전환이 끝나면 0이 된다.')
+  console.log(`\n⏳ ${todo}건은 **알고 남겨둔 격차**다. 위반이 아니지만 통과도 아니다.`)
+  console.log('   내용은 위 항목의 사유를 읽는다 — 각 항목이 왜 지금 그 상태인지 적혀 있다.')
 }
 if (fail > 0) {
   console.log('\n❌ 규약 위반이 있다. 커밋하지 않는다.')

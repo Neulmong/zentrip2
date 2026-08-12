@@ -22,10 +22,16 @@
  */
 import { createDeepseekProvider } from '../lib/ai/deepseek'
 import {
-  DECOMPOSE_SCHEMA, DECOMPOSE_SYSTEM,
-  EXPAND_SCHEMA, EXPAND_SYSTEM,
-  FACTCHECK_SYSTEM, VALIDATION_SCHEMA,
+  DECOMPOSE_SCHEMA,
+  EXPAND_SCHEMA,
+  VALIDATION_SCHEMA,
 } from '../lib/pipeline/ai-contracts'
+/*
+ * 프롬프트는 **실행되는 것과 같은 것**을 써야 실측이 의미를 갖는다.
+ * 그래서 SKILL.md에서 구운 registry를 읽는다 — 사본을 만들면 이 스크립트가
+ * 측정하는 프롬프트와 파이프라인이 보내는 프롬프트가 갈라진다(규약 R4).
+ */
+import { PROMPTS } from '../lib/harness/generated/registry'
 import type { AiRequest, AiResult } from '../lib/ai/contract'
 
 const key = process.env.DEEPSEEK_API_KEY
@@ -73,7 +79,7 @@ const call = <T,>(req: AiRequest) => provider.call<T>(req)
 /* ── ① 일차 분해 (§8.2) ──────────────────────────────────────── */
 console.log('\n① 일차 분해 — DECOMPOSE_SCHEMA (effort: generate)')
 report(await call<{ 판정: string; 일정: { day: string }[] }>({
-  system: DECOMPOSE_SYSTEM,
+  system: PROMPTS['itinerary-decomposition'],
   user: '여행기간 일수: 3일\n\n일정원문:\n'
     + '1일: 김해공항 출발, 올레 7코스 걷기\n2일: 성산일출봉 관람\n3일: 귀국\n\n'
     + '참고 (다른 확정 값 — 여기 있는 표현은 내용에 써도 된다):\n{}',
@@ -88,7 +94,7 @@ report(await call<{ 판정: string; 일정: { day: string }[] }>({
 /* ── ② 페이지 확장 서술 (§9.5 ①) — 가장 긴 출력 ──────────────── */
 console.log('\n② 페이지 확장 서술 — EXPAND_SCHEMA (effort: generate)')
 report(await call<{ days: unknown[]; apply: { 제목: string } }>({
-  system: EXPAND_SYSTEM,
+  system: PROMPTS['content-structuring'],
   user: '## 일차별 압축 서술 (소개서) — 이것을 확장하라\n'
     + '1일차: 김해공항 출발, 올레 7코스 걷기\n2일차: 성산일출봉 관람\n3일차: 귀국\n\n'
     + '## 확정 값\n행사명: 제주 올레 바람 여행 / 여행지: 제주\n'
@@ -109,7 +115,7 @@ report(await call<{ days: unknown[]; apply: { 제목: string } }>({
 /* ── ③ 사실 검증 (§8.4) — enum + validate effort ─────────────── */
 console.log('\n③ 사실 검증 — VALIDATION_SCHEMA (effort: validate · enum 포함)')
 report(await call<{ 판정: string; items: unknown[] }>({
-  system: FACTCHECK_SYSTEM,
+  system: PROMPTS['fact-check'],
   user: '## 기준값 (form_input)\n{"행사정보":{"행사명":"제주 올레 바람 여행","여행지":"제주"}}\n\n'
     + '## 검사 대상\n{"b_overview":{"data":{"여행지":"제주"},"source":{"여행지":"행사정보.여행지"}}}\n\n'
     + 'source가 가리키는 경로를 form_input에 적용해 값을 대조하라.',
