@@ -26,7 +26,7 @@ description: 실행 ID 기준으로 단계별 입력·출력·판정·상태를 
 | `step` | string | 필수 | 아래 단계명 표 참조 |
 | `attempt_no` | number | 필수 | 시도 회차. 최초 1 |
 | `retry_index` | number | 필수 | 해당 시도 안의 재시도 회차. 0 = 최초 |
-| `verdict` | `"통과"` \| `"반려"` \| `"-"` | 필수 | 판정 결과. 판정이 없는 단계는 `-` |
+| `verdict` | `"pass"` \| `"fail"` \| `"-"` | 필수 | 판정 결과. 판정이 없는 단계는 `-` |
 | `status` | string | 필수 | 기록 시점 상품 상태(7종) |
 | `input` | any | 필수 | 해당 단계가 받은 값. **가공하지 않은 원본** |
 | `output` | any | 필수 | 해당 단계가 반환한 값. **가공하지 않은 원본** |
@@ -39,7 +39,7 @@ description: 실행 ID 기준으로 단계별 입력·출력·판정·상태를 
   "step": "brochure_generated",
   "attempt_no": 1,
   "retry_index": 0,
-  "verdict": "통과",
+  "verdict": "pass",
   "status": "generating",
   "input": { "confirmed_data": "…", "소개서_템플릿": "…" },
   "output": { "brochure_content": "…", "보호값검증": { "검사한값수": 21, "변경된값수": 0 } }

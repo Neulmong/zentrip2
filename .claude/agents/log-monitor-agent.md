@@ -47,7 +47,7 @@ model: inherit
 | `step` | string | 필수 | 아래 단계명 표 |
 | `attempt_no` | number | 필수 | 시도 회차 |
 | `retry_index` | number | 필수 | 재시도 회차 |
-| `verdict` | `"통과"` \| `"반려"` \| `"-"` | 필수 | |
+| `verdict` | `"pass"` \| `"fail"` \| `"-"` | 필수 | **저장은 영어다**(§5.4). 한글 「통과/반려」는 화면 표시뿐이고 변환은 `VERDICT_LABEL`이 한다 |
 | `status` | string | 필수 | 기록 시점 상품 상태(7종) |
 | `input` / `output` | any | 필수 | **가공하지 않은 원본** |
 | `retry_counts` | object | 필수 | 플래그 판정용 |
