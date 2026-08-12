@@ -175,17 +175,13 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
     c.items.push(...toItems(data))
   },
 
-  /** 3차 — 소개서 ↔ 페이지 교차 검증. `sec_apply`는 제외한다(§11.1) */
-  'consistency-check': async (c, args) => {
-    const data = await call<ValidationResult>(c, 'consistency-check', args,
-      `## 소개서 (brochure_content)\n${JSON.stringify(c.p.brochure_content, null, 2)}\n\n`
-      + `## 상품 페이지 (page_content)\n${JSON.stringify(c.p.page_content as PageContent, null, 2)}\n\n`
-      + `섹션 대응표대로 사실정보 값을 대조하라. sec_apply는 제외한다.\n`
-      + `원문근거는 대조하지 않는다 — 그 필드는 confirmed_data에만 있고 0차의 몫이다.`,
-      VALIDATION_SCHEMA)
-    if (!data) return
-
-    c.verdict = data.판정
-    c.items.push(...toItems(data))
-  },
 }
+
+/*
+ * `consistency-check`는 **여기 없다.** `kind: ai` → `kind: mechanical`로 내렸다.
+ *
+ * 두 콘텐츠 모델이 같은 `source` 경로 문자열을 쓰므로 그것을 조인 키로 기계
+ * 대조가 된다(`lib/pipeline/consistency.ts`). AI 의미 대조보다 오히려 엄격하다 —
+ * AI는 「대충 같아 보이면」 통과시키지만 기계는 공백 정리 외의 차이를 통과시키지
+ * 않는다. 라우트당 AI가 6회에서 **5회**로 줄었다.
+ */

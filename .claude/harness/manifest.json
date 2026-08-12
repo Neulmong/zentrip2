@@ -148,7 +148,7 @@
       "step": "validation_3_completed",
       "counter": "consistency",
       "retry_from": 5,
-      "ai_budget": 1,
+      "ai_budget": 0,
       "skills": [
         { "name": "consistency-check" }
       ]
@@ -323,15 +323,13 @@
     },
 
     "consistency-check": {
-      "kind": "ai",
-      "ai": 1,
-      "effort": "validate",
-      "schema": "VALIDATION_SCHEMA",
-      "prompt_sections": ["프롬프트"],
-      "does": "소개서와 페이지를 섹션 대응표로 대조한다. apply 섹션 제외",
-      "why_ai": "서술 분량·어순 차이를 실패로 잡지 않으려면 의미 대조가 필요하다",
-      "mechanical_candidate": "페이지가 소개서 값을 코드로 승계하므로 기계 대조로 내릴 여지가 있다. 데모 후 검토 — 3차 축의 의미와 §20 검증 배지가 바뀌므로 지금 건드리지 않는다",
-      "status": "existing"
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/consistency#checkConsistency",
+      "does": "소개서와 페이지를 source 경로를 조인 키로 대조한다. apply 섹션 제외",
+      "why_mechanical": "두 콘텐츠 모델이 **같은 source 경로 문자열**을 쓰므로 필드 이름을 하드코딩하지 않고 값을 맞대볼 수 있다. §11.1이 규정한 3차의 목적(교차 검증·회귀 감지)은 source를 기준으로 봐야 드러난다 — AI 의미 대조보다 오히려 엄격하다",
+      "gave_up": "일차별 서술의 「페이지에만 새로 등장한 요소」 판정. 의미 판정이라 기계로 환원되지 않는다. 반대 방향(소개서 명사구가 페이지에 살아남았는가)만 보고, 입력에 없는 요소는 form_input을 쥔 1·2차 fact-check가 잡는다",
+      "status": "changed:ai→mechanical (AI 6→5회)"
     },
 
     "product-orchestrator": {
@@ -366,7 +364,7 @@
 
   "invariants": {
     "ai_per_route_max": 1,
-    "ai_per_script_total": 6,
+    "ai_per_script_total": 5,
     "spec_skills_never_in_chain": true,
     "prompts_only_in_skill_md": true
   }

@@ -2,8 +2,11 @@ import 'server-only'
 import { validateFormInput } from '@/lib/form-validation'
 import { fillOptional, normalizeFields, PLACEHOLDER } from '@/lib/pipeline/normalize'
 import { verifyAxis0 } from '@/lib/pipeline/axis0'
-import { assertFactsUnchanged, buildBrochure, checkBrochure } from '@/lib/pipeline/brochure'
-import { buildPage, checkPage } from '@/lib/pipeline/page'
+import {
+  assertFactsUnchanged, buildBrochure, checkBrochure, type BrochureContent,
+} from '@/lib/pipeline/brochure'
+import { buildPage, checkPage, type PageContent } from '@/lib/pipeline/page'
+import { checkConsistency } from '@/lib/pipeline/consistency'
 import { resolveTheme } from '@/lib/pipeline/theme'
 import { findMemoLeaks } from '@/lib/pipeline/memo-leak'
 import { proposeSlug, withSuffix } from '@/lib/pipeline/slug'
@@ -22,7 +25,7 @@ import type { HarnessContext } from './context'
 export type SkillRunner = (c: HarnessContext, args: Record<string, unknown>) => void
 
 /** 재료가 없으면 배선이 틀린 것이다 — 조용히 넘기지 않고 던진다 */
-function need<T>(v: T | undefined, skill: string, what: string): T {
+function need<T>(v: T | undefined | null, skill: string, what: string): T {
   if (v === undefined || v === null) {
     throw new Error(`하네스: 스킬 «${skill}»이 «${what}»를 요구하는데 없다. 체인 순서를 확인하라`)
   }
@@ -135,6 +138,23 @@ export const MECHANICAL: Record<string, SkillRunner> = {
     const slug = withSuffix(proposed.slug, c.materials.usedSlugs)
     if (!slug) { c.slug충돌 = proposed.slug; return }
     c.slug = slug
+  },
+
+  /* ── validator-agent ──────────────────────────────────────── */
+
+  /**
+   * 3차 교차 대조 — **AI 0회**(이전에는 `kind: ai`였다).
+   *
+   * 두 콘텐츠 모델이 같은 `source` 경로를 쓰므로 그것을 조인 키로 값을 맞댄다.
+   * 판정을 `verdict`에도 적는다 — `validator-agent`가 AI 검증 3종과 **같은
+   * 갈래**로 처리하게 하기 위해서다(항목이 없는 `fail`은 실패로 세지 않는다).
+   */
+  'consistency-check': (c) => {
+    const b = need(c.p.brochure_content as BrochureContent | null, 'consistency-check', 'brochure_content')
+    const page = need(c.p.page_content as PageContent | null, 'consistency-check', 'page_content')
+    const items = checkConsistency(b, page)
+    c.items.push(...items)
+    c.verdict = items.length > 0 ? 'fail' : 'pass'
   },
 
   /* ── 양쪽 체인 공용 ───────────────────────────────────────── */

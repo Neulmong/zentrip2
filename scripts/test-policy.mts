@@ -23,6 +23,7 @@ import { LENGTH_LIMITS_GENERATE, type PageContent, type PageSection } from '../l
 import { buildConfirmedData } from '../lib/pipeline/normalize'
 import { assertFactsUnchanged, buildBrochure, checkBrochure } from '../lib/pipeline/brochure'
 import { buildPage, checkPage } from '../lib/pipeline/page'
+import { assertSectionCoverage, checkConsistency } from '../lib/pipeline/consistency'
 import { resolveTheme } from '../lib/pipeline/theme'
 import { findMemoLeaks } from '../lib/pipeline/memo-leak'
 import { verifyAxis0 } from '../lib/pipeline/axis0'
@@ -1114,6 +1115,29 @@ section('하네스 체인 — 새 검사가 정상 산출물을 반려하지 않
     ['apply.제목', '신청 안내'],
     ['apply.안내문구', '아래 양식으로 신청해 주세요. 확인 후 연락드립니다.'],
   ]
+  /*
+   * 3차 교차 대조 — `kind: ai` → `kind: mechanical`로 내린 검사다.
+   * **정상 산출물에 0건**이 아니면 파이프라인이 매 실행 반려된다.
+   */
+  check('consistency-check: 대응표가 두 모델의 섹션을 전부 덮는다',
+    assertSectionCoverage().length === 0, assertSectionCoverage())
+  check('consistency-check: 정상 산출물에 위반 0건',
+    checkConsistency(br, pageContent).length === 0, checkConsistency(br, pageContent))
+
+  const 값조작 = structuredClone(pageContent)
+  ;(값조작.sections.find((s) => s.id === 'sec_price')!.data as Record<string, unknown>).성인 = '130000'
+  check('consistency-check: 값이 다르면 잡는다', checkConsistency(br, 값조작).length > 0)
+
+  const 섹션삭제 = structuredClone(pageContent)
+  섹션삭제.sections = 섹션삭제.sections.filter((s) => s.id !== 'sec_flight')
+  check('consistency-check: 섹션이 사라지면 잡는다', checkConsistency(br, 섹션삭제).length > 0)
+
+  const 서술누락 = structuredClone(pageContent)
+  const dd = 서술누락.sections.find((s) => s.id === 'sec_itinerary')!.data.days as Record<string, unknown>[]
+  dd[0].text = '첫날은 이동합니다.'
+  check('consistency-check: 소개서에 있던 요소가 페이지에서 사라지면 잡는다',
+    checkConsistency(br, 서술누락).length > 0)
+
   check('memo-leak-check: 메모가 비면 유출 0건',
     findMemoLeaks(기획메모, 확정값, 서술).length === 0)
   check('memo-leak-check: 메모에만 있는 숫자가 서술에 나오면 잡는다',

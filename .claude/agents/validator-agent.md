@@ -26,12 +26,16 @@ model: inherit
 |---|---|---|---|---:|
 | 1차 | `validate-brochure` | `fact-check` | `{target: brochure, axis: axis_1}` | 1 |
 | 2차 | `validate-page` | `fact-check` | `{target: page, axis: axis_2}` | 1 |
-| 3차 | `validate-consistency` | `consistency-check` | — | 1 |
+| 3차 | `validate-consistency` | `consistency-check` | — | **0** |
 
 체인이 스킬 1개뿐인 이유: 검증은 단일 기능이고, 조립·치환이 없다. 기계 검사가 필요한 구조 계약은
 생성 라우트의 `brochure-contract-check`·`page-contract-check`가 이미 끝냈다(규약 R2).
 
-**각 요청에서 AI를 1회만 호출한다**(spec §4.2). 세 검증은 별도 라우트이므로 한 요청에 두 축을 넣지 않는다.
+**각 요청에서 AI를 최대 1회 호출한다**(spec §4.2). 세 검증은 별도 라우트이므로 한 요청에 두 축을 넣지 않는다.
+
+**3차는 AI를 쓰지 않는다.** 두 콘텐츠 모델이 같은 `source` 경로 문자열을 쓰므로
+그것을 조인 키로 기계 대조가 된다 — AI 의미 대조보다 오히려 엄격하다.
+대본 1회 AI 총합이 6 → **5회**로 줄었다. 근거는 `.claude/skills/consistency-check/SKILL.md`.
 
 **0차 검증은 이 에이전트가 담당하지 않는다.** `axis0-verification` 스킬이 전부 기계로 처리하며
 intake-agent의 `decompose` 체인 4번이다.
