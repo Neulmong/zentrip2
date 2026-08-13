@@ -41,7 +41,7 @@ export function Figure({
 }) {
   return (
     <figure className={className}>
-      <div className={`relative w-full overflow-hidden rounded-xl bg-black/5 ${RATIO[ratio]}`}>
+      <div className={`relative w-full overflow-hidden rounded-2xl bg-black/5 ${RATIO[ratio]}`}>
         <Image
           src={image.url}
           alt={image.alt}

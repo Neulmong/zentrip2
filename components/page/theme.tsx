@@ -116,7 +116,7 @@ const WIDTH_CLASS = {
 } as const
 
 const PAD_CLASS = {
-  tight: 'py-7 md:py-10', normal: 'py-12 md:py-16', loose: 'py-20 md:py-28',
+  tight: 'py-8 md:py-12', normal: 'py-14 md:py-20', loose: 'py-24 md:py-32',
 } as const
 
 /**

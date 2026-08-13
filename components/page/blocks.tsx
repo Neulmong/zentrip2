@@ -41,7 +41,7 @@ export function ImageBlock({ data, idx, style, nextTone }: SectionProps) {
 export function NoticeBlock({ data, style, nextTone }: SectionProps) {
   return (
     <Band style={style} nextTone={nextTone}>
-      <div className="rounded-xl border-l-4 border-[var(--t-primary)] bg-[var(--t-secondary)]/25 px-4 py-3">
+      <div className="rounded-2xl border-l-4 border-[var(--t-primary)] bg-[var(--t-secondary)]/30 px-5 py-4">
         <p className="break-words whitespace-pre-line text-[15px] leading-relaxed">{text(data, '본문')}</p>
       </div>
     </Band>
@@ -137,7 +137,7 @@ export function Cta({ data, t, style, nextTone }: SectionProps) {
   const bar = (style?.layout ?? 'bar') === 'bar'
   return (
     <Band style={style} nextTone={nextTone}>
-      <div className={`rounded-2xl bg-[var(--t-primary)] px-6 py-6 text-white ${bar ? 'flex flex-wrap items-center justify-between gap-4' : 'text-center'}`}>
+      <div className={`rounded-[1.75rem] bg-[var(--t-primary)] px-7 py-7 text-white shadow-[0_16px_40px_-20px_rgba(0,0,0,0.45)] ${bar ? 'flex flex-wrap items-center justify-between gap-4' : 'text-center'}`}>
         <div className="min-w-0">
           {제목 && <p className={`break-words text-xl font-bold ${headlineClass(t)}`}>{제목}</p>}
           {본문 && <p className="mt-1 break-words text-sm text-white/90">{본문}</p>}
@@ -159,7 +159,7 @@ export function Stat({ data, t, style, nextTone }: SectionProps) {
     <Band style={style} nextTone={nextTone}>
       <dl className={`grid gap-4 ${grid ? 'grid-cols-2 md:grid-cols-3' : `grid-cols-${Math.min(items.length, 3)}`} text-center`}>
         {items.map((it) => (
-          <div key={it.label} className="rounded-xl border border-[var(--t-primary)]/25 px-3 py-4">
+          <div key={it.label} className="rounded-2xl border border-black/[0.05] bg-white/70 px-3 py-5 shadow-[0_4px_20px_-14px_rgba(0,0,0,0.25)]">
             <dd className={`text-2xl font-bold ${headlineClass(t)}`}>{it.value}</dd>
             <dt className="mt-1 text-xs font-semibold uppercase tracking-wider">{it.label}</dt>
           </div>

@@ -38,7 +38,7 @@ export interface SectionProps {
 /** 위빙용 — 이름·요약·출처를 짧게. 실제 웹 검색 근거 표시 */
 function PlaceNote({ place }: { place: EnrichmentPlace }) {
   return (
-    <div className="rounded-lg border border-[var(--t-primary)]/20 bg-[var(--t-surface)] p-3.5">
+    <div className="rounded-2xl border border-black/[0.05] bg-white/85 p-4 shadow-[0_2px_16px_-10px_rgba(0,0,0,0.25)]">
       <p className="break-keep text-sm font-semibold">{place.이름}</p>
       <p className="mt-1 break-keep text-[13px] leading-relaxed opacity-90">{place.요약}</p>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -112,11 +112,11 @@ function CardList({ rows: list, 제목필드, 필드, 배지필드, cols = 2, en
         const place = enrich?.get(row[제목필드])
         const 사실필드 = 필드.filter((f) => hasVal(row[f]))
         return (
-          <li key={`${i}-${row[제목필드]}`} className="flex min-w-0 flex-col rounded-lg border border-[var(--t-primary)]/25 bg-[var(--t-surface)] p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-[var(--t-primary)]/10">
+          <li key={`${i}-${row[제목필드]}`} className="flex min-w-0 flex-col rounded-3xl border border-black/[0.05] bg-white p-6 shadow-[0_6px_28px_-14px_rgba(0,0,0,0.22)] transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_20px_44px_-18px_rgba(0,0,0,0.28)]">
             <div className="flex items-start gap-2">
               <p className="min-w-0 flex-1 break-keep text-lg font-bold leading-snug tracking-tight">{row[제목필드]}</p>
               {배지필드 && row[배지필드] && (
-                <span className="shrink-0 rounded-full bg-[var(--t-secondary)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--t-text)]">
+                <span className="shrink-0 rounded-full bg-[var(--t-secondary)] px-3 py-1 text-[11px] font-semibold text-[var(--t-text)]">
                   {row[배지필드]}
                 </span>
               )}
@@ -175,7 +175,7 @@ export function Hero({ data, t, idx }: SectionProps) {
       ) : (
         <div aria-hidden className="absolute inset-0 bg-gradient-to-br from-[var(--t-primary)] to-[var(--t-secondary)]" />
       )}
-      <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/5" />
+      <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
       <div className="relative mx-auto w-full max-w-5xl px-5 pb-14 md:px-8 md:pb-20">
         {행사명 && (
           <p className="mb-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/85">
@@ -348,7 +348,7 @@ export function Price(p: SectionProps) {
       <SectionHeading t={t}>가격</SectionHeading>
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         {([['성인', text(data, '성인')], ['아동', text(data, '아동')]] as [string, string][]).map(([k, v]) => (
-          <div key={k} className="rounded-lg border border-[var(--t-primary)]/25 bg-[var(--t-surface)] p-6 transition duration-200 hover:shadow-lg hover:shadow-[var(--t-primary)]/10">
+          <div key={k} className="rounded-3xl border border-black/[0.05] bg-white p-6 shadow-[0_6px_28px_-16px_rgba(0,0,0,0.2)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_40px_-18px_rgba(0,0,0,0.26)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-60">{k}</p>
             <p className={`mt-2 break-all font-serif text-3xl font-medium tabular-nums md:text-4xl ${headlineClass(t)}`}><Value v={v} /></p>
           </div>
@@ -387,7 +387,7 @@ export function Apply({ data, t, style, nextTone, form }: SectionProps & { form?
   return (
     <Band style={style} nextTone={nextTone}>
       {/* 매거진식 예약 배너 — 감성 헤드라인으로 끌고, 세리프 요금으로 닫는다 */}
-      <div className="overflow-hidden rounded-2xl bg-[var(--t-primary)] text-white">
+      <div className="overflow-hidden rounded-[2rem] bg-[var(--t-primary)] text-white shadow-[0_20px_50px_-20px_rgba(0,0,0,0.4)]">
         <div className="grid gap-8 p-7 md:grid-cols-[1.15fr_.85fr] md:items-center md:p-12">
           <div className="min-w-0">
             <p className="font-serif text-[15px] italic text-white/80">신청</p>
@@ -402,7 +402,7 @@ export function Apply({ data, t, style, nextTone, form }: SectionProps & { form?
               <div className="min-w-0"><dt className="inline text-white/60">기간 </dt><dd className="inline"><Value v={text(행사정보요약, '여행기간')} /></dd></div>
             </dl>
           </div>
-          <div className="rounded-xl bg-white/10 p-6 text-center md:text-right">
+          <div className="rounded-2xl bg-white/10 p-6 text-center md:text-right">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">1인 요금</p>
             <p className="mt-2 break-all font-serif text-4xl font-medium tabular-nums md:text-5xl"><Value v={성인} /></p>
             {아동노출 && <p className="mt-1 text-sm text-white/70">아동 <Value v={아동} /></p>}
