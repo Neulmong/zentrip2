@@ -2,7 +2,7 @@ import Image from 'next/image'
 import type { ReactNode } from 'react'
 import type { BlockStyle, Tone } from '@/lib/pipeline/vocabulary'
 import { Band, headlineClass, SectionHeading, type RenderTheme } from './theme'
-import { Figure, RATIO, SlotGallery } from './media'
+import { Figure, SlotGallery } from './media'
 import {
   days, PLACEHOLDER_VALUES, rows, slotNames, text,
   type ImageIndex,
@@ -96,42 +96,43 @@ function CardList({ rows: list, 제목필드, 필드, 배지필드, cols = 2 }: 
 
 /* ── 1. hero (layout: classic·split·minimal) ─────────────────── */
 
-export function Hero({ data, t, idx, style }: SectionProps) {
+/**
+ * 시네마틱 히어로 — **감성 카피가 크게, 행사명은 공식 명칭 키커로** (재설계).
+ *
+ * `headline`은 AI 감성 카피(source: generated), `행사명`은 사실값이다. 큰 제목은
+ * 여행의 결을 말하고, 위 키커가 정식 명칭을 밝힌다. 이미지가 없으면 테마
+ * 그라디언트로 떨어진다. 흰 글자는 어두운 스크림 위라 대비 예외가 허용된다(§17.2).
+ */
+export function Hero({ data, t, idx }: SectionProps) {
   const headline = text(data, 'headline')
   const subcopy = text(data, 'subcopy')
+  const 행사명 = text(data, '행사명')
   const slot = text(data, 'image_slot')
   const image = slot ? idx.bySlot.get(slot)?.[0] : undefined
-  const layout = style?.layout ?? 'classic'
-
-  // minimal: 이미지 없이 테마 그라디언트 + 큰 제목 (분위기 전환)
-  if (layout === 'minimal' || !image) {
-    return (
-      <section className={`zt-reveal relative w-full overflow-hidden ${RATIO.hero}`}>
-        {image ? (
-          <Image src={image.url} alt={image.alt} fill sizes="100vw" priority className="object-cover" />
-        ) : (
-          <div aria-hidden className="absolute inset-0 bg-gradient-to-br from-[var(--t-primary)] to-[var(--t-secondary)]" />
-        )}
-        <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/35 to-black/10" />
-        <div className="absolute inset-x-0 bottom-0">
-          <div className={`mx-auto max-w-3xl px-5 pb-7 md:px-8 md:pb-10 ${layout === 'split' ? '' : ''}`}>
-            <h1 className={`text-2xl leading-tight text-white md:text-4xl ${headlineClass(t)}`}>{headline}</h1>
-            {subcopy && <p className="mt-2 text-sm text-white/90 md:text-base">{subcopy}</p>}
-          </div>
-        </div>
-      </section>
-    )
-  }
 
   return (
-    <section className={`zt-reveal relative w-full overflow-hidden ${RATIO.hero}`}>
-      <Image src={image.url} alt={image.alt} fill sizes="100vw" priority className="object-cover" />
-      <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/35 to-black/10" />
-      <div className={`absolute inset-x-0 ${layout === 'split' ? 'inset-y-0 flex items-center' : 'bottom-0'}`}>
-        <div className="mx-auto max-w-3xl px-5 pb-7 md:px-8 md:pb-10">
-          <h1 className={`text-2xl leading-tight text-white [text-shadow:0_2px_18px_rgb(0_0_0/0.45)] md:text-4xl ${headlineClass(t)}`}>{headline}</h1>
-          {subcopy && <p className="mt-2 max-w-2xl text-sm text-white/90 [text-shadow:0_1px_10px_rgb(0_0_0/0.5)] md:text-base">{subcopy}</p>}
-        </div>
+    <section className="zt-reveal relative flex min-h-[82svh] w-full flex-col justify-end overflow-hidden">
+      {image ? (
+        <Image src={image.url} alt={image.alt} fill sizes="100vw" priority className="object-cover" />
+      ) : (
+        <div aria-hidden className="absolute inset-0 bg-gradient-to-br from-[var(--t-primary)] to-[var(--t-secondary)]" />
+      )}
+      <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/5" />
+      <div className="relative mx-auto w-full max-w-5xl px-5 pb-14 md:px-8 md:pb-20">
+        {행사명 && (
+          <p className="mb-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/85">
+            <span aria-hidden className="inline-block h-px w-8 bg-white/50" />
+            {행사명}
+          </p>
+        )}
+        <h1 className={`max-w-[15ch] break-keep text-[2.6rem] font-extrabold leading-[0.98] tracking-tight text-white [text-shadow:0_2px_28px_rgb(0_0_0/0.5)] md:text-6xl lg:text-7xl ${headlineClass(t)}`}>
+          {headline}
+        </h1>
+        {subcopy && (
+          <p className="mt-6 max-w-2xl break-keep text-base leading-relaxed text-white/90 [text-shadow:0_1px_14px_rgb(0_0_0/0.55)] md:text-xl">
+            {subcopy}
+          </p>
+        )}
       </div>
     </section>
   )
@@ -141,19 +142,27 @@ export function Hero({ data, t, idx, style }: SectionProps) {
 
 export function Summary(p: SectionProps) {
   const { data, t } = p
+  const 행사명 = text(data, '행사명')
+  const 여행주제 = text(data, '여행주제')
   const 행사기간 = text(data, '행사기간')
   const items: [string, string][] = [
     ['여행기간', text(data, '여행기간')],
     ...(행사기간 ? [['행사 기간', 행사기간] as [string, string]] : []),
     ['여행지', text(data, '여행지')],
-    ['여행주제', text(data, '여행주제')],
     ['타겟층', text(data, '타겟층')],
     ['여행스타일', text(data, '여행스타일')],
   ]
   const layout = layoutOf(p)
   return (
     <Band style={p.style} nextTone={p.nextTone}>
+      {/* 정식 명칭 — 상세 본문에 행사명을 그대로 싣는 자리(재설계 · 사실값) */}
+      {행사명 && (
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] opacity-70">{행사명}</p>
+      )}
       <SectionHeading t={t}>여행 개요</SectionHeading>
+      {여행주제 && (
+        <p className="mt-4 max-w-2xl break-keep text-lg leading-relaxed md:text-xl">{여행주제}</p>
+      )}
       <Fields items={items} cols={layout !== 'list'} />
     </Band>
   )

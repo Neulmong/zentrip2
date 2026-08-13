@@ -68,6 +68,8 @@ export interface HarnessContext {
   theme?: ResolvedTheme
   expanded?: Map<string, string>
   apply?: { 제목: string; 안내문구: string }
+  /** content-structuring 산출 — 히어로 감성 카피 (source: generated) */
+  hero?: { headline: string; subcopy: string }
   page?: PageContent
   slug?: string | null
   /** slug 충돌이 해소되지 않은 경우의 후보값 */

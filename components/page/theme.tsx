@@ -116,7 +116,7 @@ const WIDTH_CLASS = {
 } as const
 
 const PAD_CLASS = {
-  tight: 'py-5 md:py-6', normal: 'py-8 md:py-10', loose: 'py-14 md:py-20',
+  tight: 'py-7 md:py-10', normal: 'py-12 md:py-16', loose: 'py-20 md:py-28',
 } as const
 
 /**
@@ -210,9 +210,9 @@ export function headlineClass(t: { headline: HeadlineTone }): string {
 /** scale → 제목 크기 (명령서 4-② `scale`) */
 function headingSize(scale: Scale): string {
   switch (scale) {
-    case 'compact': return 'text-base md:text-lg'
-    case 'dramatic': return 'text-2xl md:text-3xl'
-    case 'balanced': default: return 'text-lg md:text-xl'
+    case 'compact': return 'text-xl md:text-2xl'
+    case 'dramatic': return 'text-3xl md:text-5xl'
+    case 'balanced': default: return 'text-2xl md:text-4xl'
   }
 }
 

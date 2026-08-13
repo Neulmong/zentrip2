@@ -131,6 +131,7 @@ export const MECHANICAL: Record<string, SkillRunner> = {
       plan: need(c.plan, 'web-content-structure-gen', '블록 계획'),
       expanded: need(c.expanded, 'web-content-structure-gen', '확장 서술'),
       apply: need(c.apply, 'web-content-structure-gen', 'apply 문구'),
+      hero: c.hero,
     })
   },
 

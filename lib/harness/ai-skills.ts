@@ -190,6 +190,11 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
 
     // 관대한 스키마라 일부가 빠질 수 있다 — 조립이 완결하도록 기본값을 둔다(재시도 소진 방지)
     c.themeSpec = data.theme
+    // 히어로 감성 카피 — 있으면 배너에, 없으면 조립이 행사명으로 폴백한다
+    c.hero = {
+      headline: data.hero?.headline?.trim() ?? '',
+      subcopy: data.hero?.subcopy?.trim() ?? '',
+    }
     c.plan = Array.isArray(data.blocks) ? data.blocks : []
     c.expanded = new Map((data.days ?? []).map((d) => [d.day, d.text]))
     c.apply = data.apply?.제목 || data.apply?.안내문구

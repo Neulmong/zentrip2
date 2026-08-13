@@ -279,6 +279,16 @@ const 블록 = {
 export const COMPOSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
+    /**
+     * 히어로 감성 카피 (source: generated). 배너에 크게 실린다. 행사명이 아니라
+     * 여행의 결을 담은 문장이다 — 사실값(행사명·기간)은 기계가 따로 싣는다.
+     * 없으면 조립이 행사명으로 폴백한다.
+     */
+    hero: {
+      type: Type.OBJECT,
+      properties: { headline: { type: Type.STRING }, subcopy: { type: Type.STRING } },
+      required: [],
+    },
     theme: {
       type: Type.OBJECT,
       properties: {
@@ -336,6 +346,8 @@ export interface ComposeBlock {
 }
 
 export interface ComposeResult {
+  /** 히어로 감성 카피 (source: generated). 없으면 조립이 행사명으로 폴백 */
+  hero?: { headline?: string; subcopy?: string }
   /** 디자인 의도. 색이 아니라 hue+mood. 무효 필드는 `resolveThemeSpec`이 폴백 */
   theme: {
     hue?: number; mood?: string; background?: string; headline?: string

@@ -45,6 +45,7 @@ description: 확정 데이터와 어휘·재료 표를 받아 상품 페이지�
 
 | 항목 | 설명 |
 |---|---|
+| `hero` | 배너 감성 카피 `{headline, subcopy}` — 행사명이 아니라 여행의 결. `source: generated`. 없으면 조립이 행사명으로 폴백 |
 | `theme` | 디자인 의도 — `hue`(0~359)·`mood`·`background`·`headline`·`accent`·`rhythm`·`scale`·`근거`. **색(#RRGGBB) 없음** |
 | `blocks` | 블록 계획 배열 — `{type, ref?, layout?, tone?, width?, align?, pad?, edge?, media?, 제목?, 본문?, 문구들?}` |
 | `days` | 일차별 확장 서술 `{day, text}` |
@@ -82,15 +83,19 @@ description: 확정 데이터와 어휘·재료 표를 받아 상품 페이지�
 ```text
 너는 여행 상품 페이지를 디자인한다. 구성·순서·분위기·블록별 레이아웃을 네가 정한다.
 
-만드는 것 넷:
-1. theme — 디자인 의도. 색이 아니라 색의 「의도」다.
+만드는 것 다섯:
+1. hero — 배너에 크게 실을 감성 헤드라인과 한 줄 부제. **행사명을 그대로 쓰지 말고** 여행의
+   결·분위기를 담은 문장을 짓는다(예: 걷기 여행이면 "걷고, 쉬고, 다시 채우는 제주"). headline은
+   40자 이내, subcopy는 80자 이내. 출처 없는 숫자·후기·과장을 넣지 않는다. 행사명·기간 같은
+   사실값은 기계가 따로 싣는다.
+2. theme — 디자인 의도. 색이 아니라 색의 「의도」다.
    hue는 0~359 정수, mood는 주어진 목록에서 고른다. 상품의 성격을 hue로 정한다
    (귤 축제면 주황 계열 30~45, 숲 여행이면 초록 130~160처럼). background·headline·accent·
    rhythm·scale도 분위기에 맞게 고른다. 근거는 한 문장으로 남긴다.
-2. blocks — 블록 계획 배열. 각 블록은 type과 스타일 손잡이(layout·tone·width·align·pad·edge·media),
+3. blocks — 블록 계획 배열. 각 블록은 type과 스타일 손잡이(layout·tone·width·align·pad·edge·media),
    그리고 생성 블록이면 서술을 갖는다. 값 필드(가격·이름·기간)는 쓰지 않는다 — 기계가 채운다.
-3. days — 각 일차의 확장 서술.
-4. apply — 신청 섹션의 제목과 안내문구.
+4. days — 각 일차의 확장 서술.
+5. apply — 신청 섹션의 제목과 안내문구.
 
 구성 원칙:
 - 네가 넣고 싶은 순서로 사실 블록을 배치한다. 재료가 있는 사실 블록 중 네가 빠뜨린 것은

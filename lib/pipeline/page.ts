@@ -60,6 +60,8 @@ export interface PageInputs {
   expanded: Map<string, string>
   /** AI 산출 — 신청 섹션 문구 */
   apply: { 제목: string; 안내문구: string }
+  /** AI 산출 — 히어로 감성 카피 (source: generated). 없으면 행사명으로 폴백 */
+  hero?: { headline: string; subcopy: string }
 }
 
 /* ── 콘텐츠 길이 계약 (§17.1) — 생성 시점 요약 ────────────────────
@@ -116,20 +118,41 @@ function buildBlock(
   const slotIf = (name: string) => (slots.has(name) ? name : '')
 
   switch (type) {
-    case 'hero':
+    case 'hero': {
+      /*
+       * 배너는 **AI 감성 카피**(source: generated)를 크게 싣고, **행사명·기간은
+       * 사실값**으로 함께 둔다(§Task 재설계). AI 카피가 없으면 행사명으로 폴백한다 —
+       * 그때는 headline이 사실값이므로 source도 행사명 경로다. `행사명` 필드는 항상
+       * 사실 source를 가져 커버리지(행사정보.행사명)를 만족한다.
+       */
+      const hHead = inp.hero?.headline?.trim()
+      const hSub = inp.hero?.subcopy?.trim()
       return {
-        type, data: { headline: g.행사명, subcopy: g.여행기간, image_slot: slotIf('hero') },
-        source: { headline: '행사정보.행사명', subcopy: '행사정보.여행기간' },
+        type,
+        data: {
+          headline: hHead || g.행사명,
+          subcopy: hSub || g.여행기간,
+          행사명: g.행사명,
+          image_slot: slotIf('hero'),
+        },
+        source: {
+          headline: hHead ? 'generated' : '행사정보.행사명',
+          subcopy: hSub ? 'generated' : '행사정보.여행기간',
+          행사명: '행사정보.행사명',
+        },
       }
+    }
 
     case 'summary':
       return {
         type,
         data: {
+          행사명: g.행사명,
           행사기간: g.행사기간, 여행기간: g.여행기간, 여행지: g.여행지, 타겟층: g.타겟층,
           여행스타일: g.여행스타일, 여행주제: g.여행주제,
         },
         source: {
+          행사명: '행사정보.행사명',
           행사기간: '행사정보.행사기간', 여행기간: '행사정보.여행기간', 여행지: '행사정보.여행지',
           타겟층: '행사정보.타겟층', 여행스타일: '행사정보.여행스타일', 여행주제: '행사정보.여행주제',
         },
