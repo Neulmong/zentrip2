@@ -20,6 +20,19 @@
       ]
     },
 
+    "plan-chat": {
+      "agent": "planner-agent",
+      "spec": "Task 1 · AI 역질문 챗봇 · POST /api/plan-chat",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 1,
+      "driven_by": "route",
+      "driven_by_note": "폼 앞단의 앞단(plan-draft식 · driven_by:route). 상품 행이 없고 상태 전이도 없다. 대화 이력은 클라이언트가 매 요청에 싣고(서버 무상태), 한 턴이 AI 1회다(1요청 1AI). 산출은 form_input이 아니라 메모이며, 그 메모가 plan-draft로 넘어가 사람이 폼에서 확정한다. lib/harness/chat.ts가 체인을 돌린다.",
+      "skills": [
+        { "name": "plan-chat" }
+      ]
+    },
+
     "products": {
       "agent": "intake-agent",
       "spec": "§7.4 · 라우트 ①",
@@ -199,7 +212,7 @@
   },
 
   "agents": {
-    "planner-agent": { "routes": ["plan-draft"] },
+    "planner-agent": { "routes": ["plan-draft", "plan-chat"] },
     "intake-agent": { "routes": ["products", "form-input", "decompose"] },
     "content-writer-agent": { "routes": ["brochure"] },
     "validator-agent": { "routes": ["validate-brochure", "validate-page", "validate-consistency"] },
@@ -243,6 +256,18 @@
       "impl": "pipeline/freeform#checkDraft",
       "does": "초안을 §7.1 규칙으로 검사하고 origin 3종·누락 목록을 만든다",
       "why_mechanical": "판정을 AI에게 되묻지 않는다(§7.5 ②). `origin`도 기계가 정한다 — 값이 입력 텍스트에 실제로 있는지 대조한 결과여야 하고, AI의 자기 신고는 근거가 아니다",
+      "status": "new"
+    },
+
+    "plan-chat": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "CHAT_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "user_prompt_sections": { "default": "user 지시문" },
+      "does": "대화 이력을 받아 역질문(ask) 또는 메모 합성(ready)을 낸다",
+      "why_ai": "부족한 정보를 판단해 다음 질문을 정하고 대화를 메모로 합성하는 일은 규칙 치환으로 환원되지 않는다. 최종 값 확정은 사람이 폼에서 하므로 반환각 보장은 유지된다",
       "status": "new"
     },
 
@@ -483,8 +508,8 @@
 
   "invariants": {
     "ai_per_route_max": 1,
-    "ai_per_script_total": 8,
-    "ai_per_script_total_note": "라우트 예산의 총합이다. **§20 관통 경로는 여전히 5회다** — 나머지 셋은 §20 경로 밖의 선택 요청이다: `plan-draft`(§7.5) 1회, place-enrichment(Task 2 · `enrich-search`+`enrich-structure`) 2회. 자연어 초안을 쓰거나 웹 리뷰 보강을 누를 때만 그 요청이 추가된다.",
+    "ai_per_script_total": 9,
+    "ai_per_script_total_note": "라우트 예산의 총합이다. **§20 관통 경로는 여전히 5회다** — 나머지 넷은 §20 경로 밖의 선택 요청이다: `plan-draft`(§7.5) 1회, `plan-chat`(Task 1 · 대화 한 턴) 1회, place-enrichment(Task 2 · `enrich-search`+`enrich-structure`) 2회. 자연어 초안·챗봇·웹 리뷰 보강을 쓸 때만 그 요청이 추가된다.",
     "spec_skills_never_in_chain": true,
     "prompts_only_in_skill_md": true,
     "user_instructions_only_in_skill_md": true

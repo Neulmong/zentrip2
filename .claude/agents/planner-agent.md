@@ -49,6 +49,21 @@ model: inherit
 않는다. 대신 `lib/harness/draft.ts`의 `runPlanDraft`가 같은 규율을 지킨다: 매니페스트 순서대로
 실행하고, `ai` 스킬 **앞에서** `assertBudget`으로 예산을 대조한다(규약 R3).
 
+### `plan-chat` (Task 1 · `POST /api/plan-chat`) — AI 1회
+
+`plan-draft`가 완성된 메모를 받는다면, 이 라우트는 **대화로 그 메모를 함께 만든다.** 기획자가
+핵심 키워드만 던지면 부족한 정보를 한 번에 하나씩 되묻고(multi-turn), 충분하면 메모를 합성한다.
+
+| 순서 | 스킬 | AI | 역할 |
+|---:|---|---:|---|
+| 1 | `plan-chat` | **1** | 대화 이력 → 역질문(ask) 또는 메모 합성(ready) (`CHAT_SCHEMA`) |
+
+- **대화 이력은 클라이언트가** 매 요청에 싣는다 — 서버는 상태를 저장하지 않는다(서버 무상태).
+  대화 한 턴이 AI 1회다(1요청 1AI).
+- 산출은 `form_input`이 아니라 **메모**다. `ready`가 되면 화면이 그 메모를 `plan-draft`로 넘기고,
+  이후는 위 `plan-draft` 체인과 사람의 폼 확정이 그대로 이어진다 — 값이 AI로 확정되는 경로가 없다.
+- `runStep` 밖이라 `lib/harness/chat.ts`의 `runPlanChat`이 같은 규율(R3·R4·R5)로 체인을 돌린다.
+
 ## 입력
 
 | 항목 | 형식 | 필수 | 설명 |

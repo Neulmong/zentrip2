@@ -347,6 +347,42 @@ export interface ComposeResult {
 }
 
 /* ════════════════════════════════════════════════════════════════
+ * Task 1 — AI 역질문 챗봇 (`plan-chat` · 폼 앞단)
+ *
+ * `plan-draft`(#20)가 **완성된 메모 한 덩어리**를 받는다면, 이 라우트는 대화로
+ * 그 메모를 **함께 만든다.** 기획자가 핵심 키워드만 던지면 AI가 부족한 정보를
+ * 한 번에 하나씩 되묻고(multi-turn), 충분해지면 메모를 합성해 돌려준다.
+ *
+ * ## 원칙과의 조율
+ *
+ *   1요청 1AI      : 대화 한 턴 = 요청 1건 = AI 1회. 서버 루프·폴링 없음.
+ *   서버 무상태     : 대화 이력을 **클라이언트가** 매 요청에 실어 보낸다. 서버는
+ *                    상태를 저장하지 않는다(재시도를 클라이언트가 쥐는 것과 같은 결).
+ *   반환각 보장     : 최종 산출은 form_input이 아니라 **메모**다. 그 메모는 기존
+ *                    `plan-draft` 파이프라인(freeform-parse→trip-planning→…)을 그대로
+ *                    거치고, 사람이 폼을 검토·확정한다. 값이 AI로 확정되는 경로가 없다.
+ * ════════════════════════════════════════════════════════════════ */
+
+export const CHAT_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    mode: { type: Type.STRING, enum: ['ask', 'ready'] },
+    /** ask: 다음 질문 한 개 / ready: 마무리 인사 한 문장 */
+    message: { type: Type.STRING },
+    /** ready일 때만 — `plan-draft`에 넘길 자연어 메모(라벨·«이름 (주소)» 형식) */
+    memo: { type: Type.STRING },
+  },
+  required: ['mode', 'message'],
+}
+
+export interface ChatResult {
+  mode: 'ask' | 'ready'
+  message: string
+  /** ready일 때 채워진다. `freeform-parse`가 읽을 메모 텍스트 */
+  memo?: string
+}
+
+/* ════════════════════════════════════════════════════════════════
  * Task 2 — place-enrichment (그라운딩 웹 리뷰 · Option A · 2호출)
  *
  * 상태 기계 밖 선택 라우트 2개. `docs/planner-pivot-design.md` §7.

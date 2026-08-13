@@ -40,7 +40,7 @@ export type ManifestRoute = keyof typeof ROUTES
  */
 export type HarnessRoute =
   Exclude<ManifestRoute,
-    'products' | 'form-input' | 'content' | 'slug' | 'plan-draft'
+    'products' | 'form-input' | 'content' | 'slug' | 'plan-draft' | 'plan-chat'
     | 'enrich-search' | 'enrich-structure'>
 
 /*

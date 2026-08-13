@@ -8,6 +8,7 @@ import { runPipeline, phasesFrom, BROCHURE_PHASES, type Phase } from '@/lib/clie
 import { GenerationProgress } from '@/components/GenerationProgress'
 import { slotLabel } from '@/lib/images'
 import { FreeformPanel, type DraftNotes } from './freeform-panel'
+import { ChatPanel } from './chat-panel'
 import { emptyRow, RowGroup, SHOP_SPEC, STAY_SPEC, type Row, type RowSpec } from './rows'
 
 /**
@@ -303,6 +304,8 @@ export function ProductForm({
   const [genPhases, setGenPhases] = useState<Phase[] | null>(null)
   const [origin, setOrigin] = useState<Record<string, string>>({})
   const [notes, setNotes] = useState<DraftNotes | null>(null)
+  /** Task 1 — 대화형 입력 패널 펼침 여부 */
+  const [chatOpen, setChatOpen] = useState(false)
   const [childNotOffered, setChildNotOffered] = useState(
     initial?.가격.아동 === CHILD_NOT_OFFERED,
   )
@@ -491,7 +494,32 @@ export function ProductForm({
         돌리면 사람이 승인한 값 위에 AI 산출물이 덮인다.
       */}
       {!resubmit && (
-        <FreeformPanel busy={drafting} notes={notes} onFill={fillFromText} />
+        <div className="mb-5 space-y-3">
+          {/* Task 1 — 대화로 입력(역질문 챗봇). 대화가 끝나면 메모를 합성해 초안 경로로 넘긴다 */}
+          <section className="rounded-xl border border-neutral-900/15 bg-neutral-50/70 p-5">
+            <button type="button" onClick={() => setChatOpen(!chatOpen)}
+              className="flex w-full items-center justify-between text-left">
+              <span>
+                <span className="text-sm font-semibold text-neutral-900">대화로 입력</span>
+                <span className="ml-2 rounded bg-neutral-900 px-1.5 py-0.5 text-[11px] font-medium text-white">
+                  AI 챗봇
+                </span>
+                <span className="mt-1 block text-xs text-neutral-600">
+                  핵심만 말하면 AI가 부족한 것을 하나씩 여쭤보고, 대화가 끝나면 아래 폼을 채웁니다.
+                </span>
+              </span>
+              <span className="ml-3 shrink-0 text-xs text-neutral-500">{chatOpen ? '접기' : '열기'}</span>
+            </button>
+            {chatOpen && (
+              <div className="mt-4">
+                <ChatPanel busy={drafting} onReady={fillFromText} />
+              </div>
+            )}
+          </section>
+
+          {/* 붙여넣기(자연어 초안) — 이미 메모가 있는 사람용 */}
+          <FreeformPanel busy={drafting} notes={notes} onFill={fillFromText} />
+        </div>
       )}
 
       <form onSubmit={submit} className="space-y-5">
