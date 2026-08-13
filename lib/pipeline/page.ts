@@ -62,6 +62,12 @@ export interface PageInputs {
   apply: { 제목: string; 안내문구: string }
   /** AI 산출 — 히어로 감성 카피 (source: generated). 없으면 행사명으로 폴백 */
   hero?: { headline: string; subcopy: string }
+  /**
+   * 소개서 개요 서술(`intro-content-fill`의 핵심일정) — source: generated.
+   * 페이지 여행 개요에 그대로 싣는다. 소개서 단계에서 이미 memo-leak·fact-check(generated
+   * 스킵)를 통과한 값이라 페이지에서 새로 만드는 것이 아니다. 없으면 개요는 주제만 남는다.
+   */
+  개요?: string
 }
 
 /* ── 콘텐츠 길이 계약 (§17.1) — 생성 시점 요약 ────────────────────
@@ -143,20 +149,25 @@ function buildBlock(
       }
     }
 
-    case 'summary':
+    case 'summary': {
+      const 개요 = inp.개요?.trim()
       return {
         type,
         data: {
+          // 개요(generated)를 맨 앞에 — 렌더가 여행 개요 서술로 크게 싣는다
+          ...(개요 ? { 개요 } : {}),
           행사명: g.행사명,
           행사기간: g.행사기간, 여행기간: g.여행기간, 여행지: g.여행지, 타겟층: g.타겟층,
           여행스타일: g.여행스타일, 여행주제: g.여행주제,
         },
         source: {
+          ...(개요 ? { 개요: 'generated' } : {}),
           행사명: '행사정보.행사명',
           행사기간: '행사정보.행사기간', 여행기간: '행사정보.여행기간', 여행지: '행사정보.여행지',
           타겟층: '행사정보.타겟층', 여행스타일: '행사정보.여행스타일', 여행주제: '행사정보.여행주제',
         },
       }
+    }
 
     case 'itinerary':
     case 'timeline':

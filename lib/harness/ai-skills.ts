@@ -135,7 +135,7 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
     const data = await call<{ 핵심일정: string }>(c, 'intro-content-fill', args,
       `${userPromptOf('intro-content-fill')}\n`
       + `여행지: ${cd.행사정보.여행지} / 여행기간: ${cd.행사정보.여행기간}\n`
-      + `여행주제: ${cd.행사정보.여행주제}\n\n`
+      + `여행스타일: ${cd.행사정보.여행스타일} / 여행주제: ${cd.행사정보.여행주제}\n\n`
       + cd.행사정보.일정.map((d) => `${d.day}일차: ${d.내용}`).join('\n')
       + memo,
       OVERVIEW_SCHEMA)

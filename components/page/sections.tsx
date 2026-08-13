@@ -201,6 +201,7 @@ export function Hero({ data, t, idx }: SectionProps) {
 export function Summary(p: SectionProps) {
   const { data, t } = p
   const 행사명 = text(data, '행사명')
+  const 개요 = text(data, '개요')
   const 여행주제 = text(data, '여행주제')
   const 행사기간 = text(data, '행사기간')
   const items: [string, string][] = [
@@ -218,8 +219,14 @@ export function Summary(p: SectionProps) {
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] opacity-70">{행사명}</p>
       )}
       <SectionHeading t={t}>여행 개요</SectionHeading>
-      {여행주제 && (
-        <p className="mt-4 max-w-2xl break-keep text-lg leading-relaxed md:text-xl">{여행주제}</p>
+
+      {/* 개요 서술(generated) — 일차별 지역 + 테마. 여행의 결을 크게 싣는다 */}
+      {hasVal(개요) && (
+        <p className={`mt-5 max-w-3xl break-keep text-lg leading-relaxed md:text-xl ${headlineClass(t)}`}>{개요}</p>
+      )}
+      {/* 여행주제 — 개요가 있으면 보조 태그라인, 없으면 이 자리가 리드 */}
+      {hasVal(여행주제) && (
+        <p className={`max-w-2xl break-keep leading-relaxed ${hasVal(개요) ? 'mt-3 text-[15px] opacity-90 md:text-base' : 'mt-5 text-lg md:text-xl'}`}>{여행주제}</p>
       )}
       <Fields items={items} cols={layout !== 'list'} />
     </Band>

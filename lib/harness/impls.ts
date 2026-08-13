@@ -36,6 +36,17 @@ function need<T>(v: T | undefined | null, skill: string, what: string): T {
 const 유출문구 = (위치: string, 토큰: string) =>
   `${위치}에 기획 메모의 «${토큰}»이 노출됐습니다 (고객 미노출 필드).`
 
+/**
+ * 소개서(brochure_content)의 개요 서술(`b_overview.data.핵심일정`)을 꺼낸다.
+ * source: generated이고 소개서 단계에서 이미 검증을 통과한 값이라 페이지가 그대로 승계한다.
+ * 없거나 형태가 다르면 undefined — 그때 페이지 개요는 여행주제만 남는다(graceful).
+ */
+function overviewText(brochure: unknown): string | undefined {
+  const secs = (brochure as { sections?: { id?: string; data?: Record<string, unknown> }[] } | null)?.sections
+  const v = secs?.find((s) => s.id === 'b_overview')?.data?.핵심일정
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined
+}
+
 export const MECHANICAL: Record<string, SkillRunner> = {
   /* ── intake-agent ─────────────────────────────────────────── */
 
@@ -132,6 +143,8 @@ export const MECHANICAL: Record<string, SkillRunner> = {
       expanded: need(c.expanded, 'web-content-structure-gen', '확장 서술'),
       apply: need(c.apply, 'web-content-structure-gen', 'apply 문구'),
       hero: c.hero,
+      // 소개서 개요(generated)를 페이지 여행 개요로 승계 — 새 AI 호출 없이 재사용
+      개요: overviewText(c.p.brochure_content),
     })
   },
 
