@@ -10,6 +10,7 @@
  * 돌린다 — 클라이언트 검사는 사용자 편의이고, 규정을 강제하는 것은 서버다.
  */
 import { type PageContent, type PageSection } from './pipeline/page'
+import { ENRICH_SUMMARY_MAX, type Enrichment, type EnrichmentPlace } from './pipeline/enrichment'
 import { VOCABULARY, isItineraryType, type BlockType as VocabType } from './pipeline/vocabulary'
 
 /* ════════════════════════════════════════════════════════════════
@@ -206,10 +207,42 @@ export function validateEdit(input: unknown, ctx: EditContext): EditResult {
 
   if (Object.keys(errors).length > 0) return { errors }
 
+  // 장소 설명(enrichment.요약) 편집 반영 + 보존. before가 없으면 그대로 없다.
+  const enrichment = mergeEnrichment(ctx.before.enrichment, next.enrichment)
+
   return {
     errors,
-    content: { schema_version: ctx.before.schema_version, theme: ctx.before.theme,
-      sections: renumber(sections) },
+    content: {
+      schema_version: ctx.before.schema_version, theme: ctx.before.theme,
+      sections: renumber(sections),
+      ...(enrichment ? { enrichment } : {}),
+    },
+  }
+}
+
+/**
+ * 편집 저장 시 장소 설명(enrichment) 보존 + **요약만** 편집 반영.
+ *
+ * 예전엔 `validateEdit`가 enrichment를 반환에서 빠뜨려 **저장할 때마다 장소 설명이
+ * 통째로 사라졌다**(잠재 버그). 이제 before의 장소를 기준으로, 편집된 요약만 덮어쓴다 —
+ * 이름·출처·태그는 before 그대로 둔다. 그래야 출처 없는 서술을 새로 만들거나 장소를
+ * 추가·삭제할 수 없다(§8.8 실존 대조 유지). before에 enrichment가 없으면 undefined.
+ */
+function mergeEnrichment(before: Enrichment | undefined, edited: Enrichment | undefined): Enrichment | undefined {
+  if (!before?.places?.length) return before
+  const edits = new Map<string, string>()
+  for (const raw of edited?.places ?? []) {
+    const 이름 = String((raw as EnrichmentPlace)?.이름 ?? '').trim()
+    const 요약 = (raw as EnrichmentPlace)?.요약
+    if (이름 && typeof 요약 === 'string') edits.set(이름, 요약.replace(/\s+/g, ' ').trim().slice(0, ENRICH_SUMMARY_MAX))
+  }
+  return {
+    ...before,
+    places: before.places.map((p) => {
+      const 요약 = edits.get(p.이름)
+      // 빈 편집은 무시(원문 유지) — 설명 없는 카드가 되는 사고를 막는다
+      return 요약 ? { ...p, 요약 } : p
+    }),
   }
 }
 

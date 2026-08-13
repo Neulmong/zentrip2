@@ -37,6 +37,8 @@ export interface SectionProps {
   dining?: Record<string, string>[]
   /** 상점 섹션이 받는 리테일 목록 (식당·카페를 뺀 나머지) */
   retail?: Record<string, string>[]
+  /** 일정이 받는 항공 정보 (PageRenderer가 항공 섹션에서 넘긴다). 값이 있으면 카드, 없으면 별도 */
+  flight?: { 공항: string; 항공사: string; 편명: string; 출발시간: string; 도착시간: string }
 }
 
 /**
@@ -286,6 +288,54 @@ export function Summary(p: SectionProps) {
 
 /* ── 3. itinerary (layout: stack·numbered·rail) ──────────────── */
 
+/** 공항 경로 문자열을 출발지/도착지로 나눈다 (예: "김포(GMP) → 제주(CJU)") */
+function splitRoute(공항: string): [string, string] {
+  const parts = 공항.split(/\s*(?:→|↔|~|―|–|-)\s*/).filter((s) => s.trim())
+  return parts.length >= 2 ? [parts[0], parts[parts.length - 1]] : [공항, '']
+}
+
+/**
+ * 일정 1일차 항공 (12.png식). 값이 있으면 출발→도착 카드, 없으면 「별도」 안내.
+ * 항공 정보는 PageRenderer가 항공 섹션에서 넘긴다 — 일정 안에 함께 보여 준다.
+ */
+function FlightRow({ flight }: { flight: SectionProps['flight'] }) {
+  if (!flight) return null
+  const has = [flight.공항, flight.항공사, flight.편명, flight.출발시간, flight.도착시간].some(hasVal)
+  if (!has) {
+    return (
+      <div className="mt-4 rounded-2xl border border-dashed border-[var(--t-primary)]/35 bg-[var(--t-surface)] px-4 py-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--t-primary)]">항공</p>
+        <p className="mt-1 break-keep text-[15px]">항공편은 <b>별도</b>입니다 — 개별 예약이며 상담 시 안내드립니다.</p>
+      </div>
+    )
+  }
+  const [출발지, 도착지] = splitRoute(flight.공항)
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_4px_20px_-12px_rgba(0,0,0,0.2)] md:p-5">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--t-primary)]">항공</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          {hasVal(출발지) && <p className="break-keep font-bold leading-tight">{출발지}</p>}
+          {hasVal(flight.출발시간) && <p className="mt-0.5 break-keep text-sm tabular-nums opacity-80">{flight.출발시간}</p>}
+        </div>
+        <div className="shrink-0 px-1 text-center">
+          {hasVal(flight.항공사) && <p className="break-keep text-[13px] font-medium">{flight.항공사}</p>}
+          <div aria-hidden className="my-1 flex items-center gap-1 text-[var(--t-primary)]">
+            <span className="h-px w-6 bg-current opacity-40 md:w-10" />
+            <span className="text-xs">✈</span>
+            <span className="h-px w-6 bg-current opacity-40 md:w-10" />
+          </div>
+          {hasVal(flight.편명) && <p className="break-keep text-[11px] opacity-60">{flight.편명}</p>}
+        </div>
+        <div className="min-w-0 text-right">
+          {hasVal(도착지) && <p className="break-keep font-bold leading-tight">{도착지}</p>}
+          {hasVal(flight.도착시간) && <p className="mt-0.5 break-keep text-sm tabular-nums opacity-80">{flight.도착시간}</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Itinerary(p: SectionProps) {
   const { data, t, idx, enrich } = p
   const list = days(data)
@@ -304,7 +354,7 @@ export function Itinerary(p: SectionProps) {
         </p>
       </div>
       <ol className="space-y-10">
-        {list.map((d) => {
+        {list.map((d, di) => {
           const notes = notesFor(d.text)
           return (
             <li key={d.day}>
@@ -318,6 +368,9 @@ export function Itinerary(p: SectionProps) {
                   <p className="mt-1 break-keep text-[15px] leading-relaxed md:text-base">{d.text}</p>
                 </div>
               </div>
+
+              {/* 1일차에 항공을 함께 (12.png식). 항공 별도면 별도 안내 */}
+              {di === 0 && <FlightRow flight={p.flight} />}
 
               {/* 그 날 방문지 — 좌우 스와이프 카루셀 (인스타그램식). 사진 + 요약 + 출처 */}
               {notes.length > 0 && (

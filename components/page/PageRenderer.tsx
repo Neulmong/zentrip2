@@ -59,6 +59,13 @@ export function PageRenderer({
   const dining = 상점들.filter((r) => isDining(r.상점명, enrich))
   const retail = 상점들.filter((r) => !isDining(r.상점명, enrich))
 
+  // 항공 정보 — 일정 1일차에 함께 보여 준다(12.png식). 항공 섹션 데이터를 그대로 넘긴다
+  const fd = visible.find((s) => s.type === 'flight')?.data as Record<string, string> | undefined
+  const flight = fd && {
+    공항: fd.공항 ?? '', 항공사: fd.항공사 ?? '', 편명: fd.편명 ?? '',
+    출발시간: fd.출발시간 ?? '', 도착시간: fd.도착시간 ?? '',
+  }
+
   return (
     <div
       style={themeVars(content.theme)}
@@ -82,6 +89,8 @@ export function PageRenderer({
         // 식사 = 식당·카페 카드, 상점 = 리테일만 (분류를 넘긴다)
         if (s.type === 'meal') return <Meal key={s.id} {...props} dining={dining} />
         if (s.type === 'shop') return <Shop key={s.id} {...props} retail={retail} />
+        // 일정 1일차에 항공 카드를 함께 보여 준다
+        if (s.type === 'itinerary') return <Itinerary key={s.id} {...props} flight={flight || undefined} />
 
         const Component = RENDERERS[s.type]
         /**

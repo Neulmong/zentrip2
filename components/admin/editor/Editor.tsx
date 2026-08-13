@@ -78,6 +78,14 @@ export function Editor(props: EditorProps) {
   const ordered = useMemo(() => renumber(content.sections), [content.sections])
   const current = ordered.find((s) => s.id === selected) ?? ordered[0]
 
+  // 장소 설명(enrichment.요약) 편집 — 일정·숙박·상점 카드에 실제로 보이는 설명이다
+  const places = content.enrichment?.places ?? []
+  const placesMode = selected === '__places__'
+  const setSummary = (이름: string, 요약: string) =>
+    setContent((c) => (c.enrichment
+      ? { ...c, enrichment: { ...c.enrichment, places: c.enrichment.places.map((p) => (p.이름 === 이름 ? { ...p, 요약 } : p)) } }
+      : c))
+
   /** 미리보기는 대체 텍스트도 즉시 반영한다 — 접근성 확인이 저장 뒤로 밀리지 않게. */
   const previewImages = useMemo(
     () => props.images.map((i) => ({ ...i, alt: alts[i.id] ?? i.alt })),
@@ -302,6 +310,21 @@ export function Editor(props: EditorProps) {
             ))}
           </ul>
 
+          {/* 장소 설명(웹 검색) — 일정·숙박·상점 카드에 보이는 설명. enrichment가 있을 때만 */}
+          {places.length > 0 && (
+            <div className="mt-4 border-t border-neutral-200 pt-3">
+              <button
+                type="button" onClick={() => setSelected('__places__')}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
+                  placesMode ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100'
+                }`}
+              >
+                <span className="min-w-0 flex-1 truncate">장소 설명</span>
+                <span className="text-xs opacity-70">{places.length}곳</span>
+              </button>
+            </div>
+          )}
+
           <div className="mt-4 border-t border-neutral-200 pt-3">
             <p className="mb-2 text-xs font-medium text-neutral-500">블록 삽입</p>
             <div className="flex flex-wrap gap-1.5">
@@ -320,7 +343,37 @@ export function Editor(props: EditorProps) {
 
         {/* ── 중앙: 편집 패널 ───────────────────────────────── */}
         <div className="min-w-0 flex-1 overflow-y-auto border-r border-neutral-200 p-5">
-          {current && (
+          {/* 장소 설명 편집 — 일정·숙박·상점 카드에 실제로 보이는 웹 검색 설명 */}
+          {placesMode && (
+            <div>
+              <h2 className="text-base font-semibold">장소 설명</h2>
+              <p className="mb-4 mt-1 text-xs text-neutral-500">
+                일정·숙박·제휴상점 카드에 보이는 설명입니다. 이름·출처는 그대로 두고 설명만 고칩니다.
+              </p>
+              <ul className="space-y-4">
+                {places.map((pl) => (
+                  <li key={pl.이름} className="rounded-lg border border-neutral-200 p-3">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-sm font-semibold">{pl.이름}</p>
+                      {pl.출처[0] && (
+                        <a href={pl.출처[0].uri} target="_blank" rel="noreferrer"
+                          className="shrink-0 truncate text-xs text-neutral-400 underline">출처</a>
+                      )}
+                    </div>
+                    <textarea
+                      value={pl.요약}
+                      onChange={(e) => setSummary(pl.이름, e.target.value)}
+                      rows={3}
+                      className="w-full resize-y rounded-md border border-neutral-300 px-2.5 py-1.5 text-sm leading-relaxed focus:border-neutral-900 focus:outline-none"
+                    />
+                    <p className="mt-1 text-right text-[11px] text-neutral-400">{pl.요약.length}자</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!placesMode && current && (
             <>
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <h2 className="mr-auto text-base font-semibold">
