@@ -63,14 +63,27 @@ export const FREEFORM_MIN = 20
 export const FREEFORM_MAX = 4000
 
 /**
- * 라벨 줄. 콜론이 있으면 그 앞이 라벨이고, **콜론이 없어도 짧은 불릿 줄은 라벨이다.**
+ * 라벨 줄. 콜론이 있으면 그 앞이 라벨이고, **콜론이 없어도 짧은 줄은 라벨이다.**
  *
  * 뒤쪽 규칙이 없으면 실제 메모의 `-여행지 포인트`(콜론 없음)가 라벨로 인식되지
  * 않고 **앞 블록의 본문에 붙는다.** 그러면 함덕해수욕장·아부오름이 「카페 및
  * 음식점」 출처를 갖게 되고, AI가 그것들을 상점 배열에 넣는다.
+ *
+ * ## 불릿(`-`)을 **선택**으로 바꿨다 (2026-08-13 · 사용자 버그)
+ *
+ * 전에는 `[-·*]`가 **필수**였다. 기획자가 플레이스홀더의 대시를 빼고 `숙박:` ·
+ * `숙소:` · `카페:`처럼 적으면 라벨로 안 잡혀 그 블록의 항목이 **출처 없이** 흘렀고,
+ * 괄호(주소)까지 없으면 후보로 **아예 추출되지 않아** 숙소·상점이 빈 채로 왔다.
+ * (`숙박\n롯데호텔 제주` — 대시도 괄호도 없는 형태가 그렇다.)
+ *
+ * 그래서 불릿을 선택으로 내리되, **불릿이 없을 때는 아는 라벨 낱말일 때만** 라벨로
+ * 본다(`isLabelWord`). 불릿이 있으면 지금처럼 아무 낱말이나 라벨이다 — 대시는
+ * 기획자가 「이건 라벨」이라고 명시한 신호이기 때문이다. 이 게이트가 없으면
+ * `롯데호텔 제주: 좋은 곳` 같은 평범한 콜론 문장이 전부 라벨로 먹힌다.
  */
-const LABEL_RE = /^\s*[-·*]\s*([^:：]{1,20})\s*[:：]\s*(.*)$/
-const BARE_LABEL_RE = /^\s*[-·*]\s*([^:：]{1,20})\s*$/
+const LABEL_RE = /^\s*[-·*]?\s*([^:：]{1,20})\s*[:：]\s*(.*)$/
+const BARE_LABEL_RE = /^\s*[-·*]?\s*([^:：]{1,20})\s*$/
+const BULLET_RE = /^\s*[-·*]/
 
 /* ── 콜론 없는 라벨로 인정하는 낱말 (확정 목록) ───────────────────
  * ⚠️ **이 목록이 없으면 불릿으로 적은 항목이 라벨로 먹힌다.**
@@ -169,14 +182,18 @@ export function parseFreeform(text: string): FreeformParse {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
 
   /* ── 라벨 블록 ─────────────────────────────────────────────── */
+  const isLabelWord = (w: string) => BARE_LABEL_WORDS.some((x) => w.includes(x))
   const 블록: { 라벨: string; 본문: string }[] = [{ 라벨: '', 본문: '' }]
   for (const line of lines) {
     const m = LABEL_RE.exec(line)
-    if (m) { 블록.push({ 라벨: m[1].trim(), 본문: m[2] }); continue }
+    // 콜론 라벨 — 불릿이 있으면 아무 낱말이나, 없으면 아는 낱말일 때만(위 근거)
+    if (m && (BULLET_RE.test(line) || isLabelWord(m[1]))) {
+      블록.push({ 라벨: m[1].trim(), 본문: m[2] }); continue
+    }
+    // 콜론 없는 라벨 — 불릿 유무와 무관하게 아는 낱말일 때만
     const bare = BARE_LABEL_RE.exec(line)
-    if (bare && BARE_LABEL_WORDS.some((w) => bare[1].includes(w))) {
-      블록.push({ 라벨: bare[1].trim(), 본문: '' })
-      continue
+    if (bare && isLabelWord(bare[1])) {
+      블록.push({ 라벨: bare[1].trim(), 본문: '' }); continue
     }
     블록[블록.length - 1].본문 += (블록[블록.length - 1].본문 ? '\n' : '') + line
   }
@@ -214,6 +231,12 @@ export function parseFreeform(text: string): FreeformParse {
     const n = 이름.replace(/^[\s\-·*]+/, '').replace(/^[^:：]{1,20}[:：]\s*/, '').trim()
     // URL이 들린 괄호(«관련기사: https://...»)는 장소가 아니다
     if (!n || n.length < 2 || /^https?:/.test(주소) || /^https?:/.test(n) || 본.has(n)) return
+    /*
+     * 정리된 이름이 여행기간 표기(`4박5일`·`5일`)면 장소가 아니다. 규칙 A의
+     * `이름이기간` 검사는 **정리 전** 문자열(`여행일정: 4박5일`)을 보므로, 라벨이
+     * 이름에 붙어 온 경우 그 검사를 통과해 버린다 — 여기서 정리 후 다시 막는다.
+     */
+    if (/^\d+\s*박\s*\d*\s*일?$|^\d+\s*일$/.test(n)) return
     본.add(n)
     장소후보.push({ 이름: n, 주소: 주소.trim(), 출처 })
   }
