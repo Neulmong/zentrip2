@@ -69,18 +69,18 @@ function CardList({ rows: list, 제목필드, 필드, 배지필드, cols = 2 }: 
   return (
     <ul className={`mt-5 grid gap-4 ${grid}`}>
       {list.map((row, i) => (
-        <li key={`${i}-${row[제목필드]}`} className="min-w-0 rounded-xl border border-[var(--t-primary)]/60 bg-[var(--t-surface)]/50 p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[var(--t-primary)] hover:shadow-md">
+        <li key={`${i}-${row[제목필드]}`} className="min-w-0 rounded-lg border border-[var(--t-primary)]/25 bg-[var(--t-surface)] p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-[var(--t-primary)]/10">
           <div className="flex items-start gap-2">
-            <p className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-snug">
+            <p className="min-w-0 flex-1 break-keep text-lg font-bold leading-snug tracking-tight">
               <Value v={row[제목필드]} />
             </p>
             {배지필드 && row[배지필드] && (
-              <span className="shrink-0 rounded-full bg-[var(--t-secondary)] px-2 py-0.5 text-[11px] font-semibold text-[var(--t-text)]">
+              <span className="shrink-0 rounded-full bg-[var(--t-secondary)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--t-text)]">
                 {row[배지필드]}
               </span>
             )}
           </div>
-          <dl className="mt-3 space-y-2.5">
+          <dl className="mt-4 space-y-3">
             {필드.map((f) => (
               <div key={f} className="min-w-0">
                 <dt className="text-[11px] font-semibold uppercase tracking-wider">{f}</dt>
@@ -173,24 +173,40 @@ export function Summary(p: SectionProps) {
 export function Itinerary(p: SectionProps) {
   const { data, t, idx } = p
   const list = days(data)
-  const rail = layoutOf(p) === 'rail'
 
   return (
     <Band style={p.style} nextTone={p.nextTone}>
-      <SectionHeading t={t}>일정</SectionHeading>
-      <ol className={`mt-5 ${rail ? 'space-y-0 border-l-2 border-[var(--t-secondary)] pl-5' : 'space-y-6'}`}>
-        {list.map((d) => {
+      <div className="mb-8 flex items-end justify-between gap-4 border-b-2 border-current pb-5">
+        <div>
+          <p className="font-serif text-[15px] italic text-[var(--t-primary)]">닷새의 길</p>
+          <SectionHeading t={t}>여행 일정</SectionHeading>
+        </div>
+        <p className="hidden shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-60 sm:block">
+          Day 01 &mdash; {String(list.length).padStart(2, '0')}
+        </p>
+      </div>
+      <ol>
+        {list.map((d, i) => {
           const image = d.image_slot ? idx.bySlot.get(d.image_slot)?.[0] : undefined
           return (
-            <li key={d.day} className={rail ? 'relative pb-6' : 'grid gap-4 md:grid-cols-[1fr_15rem] md:items-start'}>
-              {rail && <span aria-hidden className="absolute -left-[1.4rem] top-1 size-3 rounded-full bg-[var(--t-primary)]" />}
-              <div className="min-w-0">
-                <span className="inline-block rounded-full bg-[var(--t-secondary)] px-3 py-0.5 text-xs font-semibold text-[var(--t-text)]">
-                  {d.day}일차
+            <li key={d.day}
+              className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-4 border-b border-[var(--t-primary)]/12 py-8 last:border-0 md:grid-cols-[5rem_1fr] md:gap-x-10">
+              <div className="relative">
+                <span className={`block font-serif text-4xl leading-none tabular-nums text-[var(--t-primary)] md:text-6xl ${headlineClass(t)}`}>
+                  {String(d.day).padStart(2, '0')}
                 </span>
-                <p className="mt-2 break-words text-[15px] leading-relaxed">{d.text}</p>
+                {i < list.length - 1 && (
+                  <span aria-hidden
+                    className="absolute left-3 top-12 -bottom-8 w-px bg-[var(--t-primary)]/20 md:left-4 md:top-16" />
+                )}
               </div>
-              {!rail && image && <Figure image={image} ratio="wide" sizes="(min-width: 768px) 240px, 100vw" />}
+              <div className={image ? 'grid gap-5 md:grid-cols-[1fr_15rem] md:items-start' : 'min-w-0'}>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-60">{d.day}일차</p>
+                  <p className="mt-2 break-keep text-[15px] leading-relaxed md:text-base">{d.text}</p>
+                </div>
+                {image && <Figure image={image} ratio="wide" sizes="(min-width: 768px) 240px, 100vw" />}
+              </div>
             </li>
           )
         })}
@@ -223,31 +239,18 @@ export function Flight(p: SectionProps) {
     ['공항', text(data, '공항')], ['항공사', text(data, '항공사')], ['편명', text(data, '편명')],
     ['출발시간', text(data, '출발시간')], ['도착시간', text(data, '도착시간')],
   ]
-  if (layoutOf(p) === 'cards') {
-    return (
-      <Band style={p.style} nextTone={p.nextTone}>
-        <SectionHeading t={t}>항공</SectionHeading>
-        <Fields items={cols} />
-      </Band>
-    )
-  }
+  // 표를 없앤다 — 편집물처럼 필드를 흘려 배치한다(가로 스크롤 없음)
   return (
     <Band style={p.style} nextTone={p.nextTone}>
       <SectionHeading t={t}>항공</SectionHeading>
-      <div className="mt-5 -mx-5 overflow-x-auto px-5 md:mx-0 md:px-0">
-        <table className="w-full min-w-[34rem] border-collapse text-left text-[15px]">
-          <thead>
-            <tr className="border-b-2 border-[var(--t-primary)]">
-              {cols.map(([k]) => (
-                <th key={k} scope="col" className="py-2 pr-4 text-xs font-semibold uppercase tracking-wider">{k}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>{cols.map(([k, v]) => <td key={k} className="py-3 pr-4 align-top"><Value v={v} /></td>)}</tr>
-          </tbody>
-        </table>
-      </div>
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-3 md:grid-cols-5">
+        {cols.map(([k, v]) => (
+          <div key={k} className="min-w-0">
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] opacity-60">{k}</dt>
+            <dd className="mt-1.5 break-words text-[15px] font-medium"><Value v={v} /></dd>
+          </div>
+        ))}
+      </dl>
     </Band>
   )
 }
@@ -256,13 +259,10 @@ export function Flight(p: SectionProps) {
 
 export function Meal(p: SectionProps) {
   const { data, t } = p
-  const body = <p className="break-words text-[15px] leading-relaxed"><Value v={text(data, '식사정보')} /></p>
   return (
     <Band style={p.style} nextTone={p.nextTone}>
       <SectionHeading t={t}>식사</SectionHeading>
-      {layoutOf(p) === 'panel'
-        ? <div className="mt-5 rounded-xl border border-[var(--t-primary)]/25 px-4 py-3">{body}</div>
-        : <div className="mt-5">{body}</div>}
+      <p className="mt-5 max-w-2xl break-keep text-lg leading-relaxed"><Value v={text(data, '식사정보')} /></p>
     </Band>
   )
 }
@@ -275,16 +275,15 @@ export function Price(p: SectionProps) {
   return (
     <Band style={p.style} nextTone={p.nextTone}>
       <SectionHeading t={t}>가격</SectionHeading>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
         {([['성인', text(data, '성인')], ['아동', text(data, '아동')]] as [string, string][]).map(([k, v]) => (
-          <div key={k} className="relative overflow-hidden rounded-xl border border-[var(--t-primary)]/25 bg-[var(--t-surface)]/50 px-4 py-3 shadow-sm transition duration-200 hover:shadow-md">
-            <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-[var(--t-primary)]" />
-            <p className="pl-2 text-xs font-semibold uppercase tracking-wider">{k}</p>
-            <p className="mt-1 break-words pl-2 text-xl font-bold"><Value v={v} /></p>
+          <div key={k} className="rounded-lg border border-[var(--t-primary)]/25 bg-[var(--t-surface)] p-6 transition duration-200 hover:shadow-lg hover:shadow-[var(--t-primary)]/10">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-60">{k}</p>
+            <p className={`mt-2 break-all font-serif text-3xl font-medium tabular-nums md:text-4xl ${headlineClass(t)}`}><Value v={v} /></p>
           </div>
         ))}
       </div>
-      {etc && <p className="mt-4 break-words text-sm leading-relaxed"><Value v={etc} /></p>}
+      {etc && <p className="mt-5 max-w-2xl break-keep text-[15px] leading-relaxed opacity-90"><Value v={etc} /></p>}
     </Band>
   )
 }
@@ -311,24 +310,35 @@ export function Shop(p: SectionProps) {
 export function Apply({ data, t, style, nextTone, form }: SectionProps & { form?: ReactNode }) {
   const 가격요약 = (data.가격요약 ?? {}) as Record<string, unknown>
   const 행사정보요약 = (data.행사정보요약 ?? {}) as Record<string, unknown>
+  const 성인 = text(가격요약, '성인')
+  const 아동 = text(가격요약, '아동')
+  const 아동노출 = 아동 && !PLACEHOLDER_VALUES.has(아동) && 아동 !== '해당 없음'
   return (
-    <Band style={style} nextTone={nextTone} className="border-t border-[var(--t-primary)]/20">
-      <SectionHeading t={t}>{text(data, '제목') || '신청'}</SectionHeading>
-      <p className="mt-4 break-words text-[15px] leading-relaxed"><Value v={text(data, '안내문구')} /></p>
-      <dl className="mt-5 grid gap-x-8 gap-y-3 rounded-xl bg-[var(--t-secondary)]/25 px-4 py-4 sm:grid-cols-2">
-        {([
-          ['행사명', text(행사정보요약, '행사명')],
-          ['여행기간', text(행사정보요약, '여행기간')],
-          ['성인 요금', text(가격요약, '성인')],
-          ['아동 요금', text(가격요약, '아동')],
-        ] as [string, string][]).map(([k, v]) => (
-          <div key={k} className="min-w-0">
-            <dt className="text-xs font-semibold uppercase tracking-wider">{k}</dt>
-            <dd className="mt-1 break-words text-[15px]"><Value v={v} /></dd>
+    <Band style={style} nextTone={nextTone}>
+      {/* 매거진식 예약 배너 — 감성 헤드라인으로 끌고, 세리프 요금으로 닫는다 */}
+      <div className="overflow-hidden rounded-2xl bg-[var(--t-primary)] text-white">
+        <div className="grid gap-8 p-7 md:grid-cols-[1.15fr_.85fr] md:items-center md:p-12">
+          <div className="min-w-0">
+            <p className="font-serif text-[15px] italic text-white/80">신청</p>
+            <h2 className={`mt-1 break-keep text-2xl font-extrabold tracking-tight md:text-4xl ${headlineClass(t)}`}>
+              {text(data, '제목') || '이 여행, 함께하시겠어요?'}
+            </h2>
+            <p className="mt-4 max-w-[34em] break-keep text-[15px] leading-relaxed text-white/90">
+              <Value v={text(data, '안내문구')} />
+            </p>
+            <dl className="mt-6 flex flex-wrap gap-x-8 gap-y-2 text-sm text-white/85">
+              <div className="min-w-0"><dt className="inline text-white/60">행사 </dt><dd className="inline"><Value v={text(행사정보요약, '행사명')} /></dd></div>
+              <div className="min-w-0"><dt className="inline text-white/60">기간 </dt><dd className="inline"><Value v={text(행사정보요약, '여행기간')} /></dd></div>
+            </dl>
           </div>
-        ))}
-      </dl>
-      {form && <div className="mt-6">{form}</div>}
+          <div className="rounded-xl bg-white/10 p-6 text-center md:text-right">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">1인 요금</p>
+            <p className="mt-2 break-all font-serif text-4xl font-medium tabular-nums md:text-5xl"><Value v={성인} /></p>
+            {아동노출 && <p className="mt-1 text-sm text-white/70">아동 <Value v={아동} /></p>}
+          </div>
+        </div>
+      </div>
+      {form && <div className="mt-8">{form}</div>}
     </Band>
   )
 }
