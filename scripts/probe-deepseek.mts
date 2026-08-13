@@ -5,7 +5,7 @@
  *
  * 재는 것 — 주 경로가 「진짜 쓸 수 있는가」의 조건 전부다:
  *   1. 인증이 되는가 (401이면 키 종류가 다르다)
- *   2. 40초 예산 안에 끝나는가 (§4.3 타임아웃)
+ *   2. 55초 예산 안에 끝나는가 (§4.3 타임아웃)
  *   3. `reasoning_effort`를 받아 주는가 (400이면 그 파라미터를 빼야 한다)
  *   4. **실제 파이프라인 스키마**를 만족하는 출력이 나오는가
  *
@@ -68,7 +68,7 @@ function report(r: AiResult<unknown>, summarize: (d: unknown) => string[]) {
     }
     return
   }
-  console.log(`  ✅ ${secs}초 ${r.elapsedMs < 40_000 ? '(40초 예산 내)' : '⚠ 40초 예산 초과'}`)
+  console.log(`  ✅ ${secs}초 ${r.elapsedMs < 55_000 ? '(55초 예산 내)' : '⚠ 55초 예산 초과'}`)
   for (const line of summarize(r.data)) console.log(`     ${line}`)
   console.log(`     토큰        입력 ${r.usage.inputTokens} / 출력 ${r.usage.outputTokens}`
     + ` / 사고 ${r.usage.thoughtTokens ?? '-'}`)
