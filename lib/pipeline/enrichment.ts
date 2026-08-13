@@ -88,6 +88,20 @@ export function hasEnrichTargets(cd: ConfirmedData): boolean {
 }
 
 /**
+ * 페이지 생성 시점의 **기본 설명**(Q2 안전장치). 그라운딩이 아직 안 돌았거나
+ * 완전히 실패해도 모든 장소에 사실 기반 1~2줄이 보이도록, `placesFor`의 전 장소에
+ * `floorSummary`를 깐다. 그라운딩이 성공하면 그 결과가 이 기본을 통째로 덮는다
+ * (enrich-structure 라우트가 `page_content.enrichment`를 교체). 출처는 웹 검색
+ * 전이므로 정직하게 비운다. 대상이 없으면 빈 places를 돌려준다.
+ */
+export function baselineEnrichment(cd: ConfirmedData): Enrichment {
+  const places: EnrichmentPlace[] = placesFor(cd).map((t) => ({
+    이름: t.이름, 요약: floorSummary(t), 태그: [], 출처: [],
+  }))
+  return { places, 생성_라벨: '기본 소개' }
+}
+
+/**
  * 확정 데이터의 종류로 「무엇인가」 한 줄을 만든다 — 그라운딩이 전혀 못 채운
  * 장소의 **바닥 설명**. 사실(위치·종류)만 쓰고 특정 후기·메뉴·가격을 지어내지
  * 않는다(§16.1). 그라운딩 요약이 있으면 그것이 이 바닥을 덮는다.

@@ -279,75 +279,92 @@ function RowsField({
     ? section.data[field] : []) as Record<string, string>[]
   const unit = ROW_UNIT[field] ?? '항목'
   const nameKey = ROW_NAME_KEY[field]
-  // 상점들 안에 식당·카페가 섞여 있으면 그 설명은 「식사」 섹션에서 편집한다(페이지와 같은 분리)
-  const hasDining = field === '상점들' && !!enrich && rows.some((r) => isDining(r.상점명 ?? '', enrich))
 
   const patch = (i: number, key: string, v: string) =>
     onChange(rows.map((r, n) => (n === i ? { ...r, [key]: v } : r)))
+
+  const isDiningRow = (row: Record<string, string>) =>
+    field === '상점들' && !!enrich && isDining(row.상점명 ?? '', enrich)
+
+  /** 카드 1장 — 원래 인덱스 `i`로 patch한다(그룹으로 나눠도 인덱스는 보존) */
+  const renderRow = (row: Record<string, string>, i: number) => {
+    // 카드에 보이는 웹 검색 설명(enrichment.요약) — 이름으로 찾아 인라인 편집시킨다.
+    // 식당·카페(dining)는 「식사」 섹션에서 편집하므로 여기서는 리테일만 인라인 설명을 연다.
+    const 이름 = nameKey ? row[nameKey] : undefined
+    const 설명편집 = !!(onSummaryChange && 이름 && enrichSummaries && 이름 in enrichSummaries && !isDiningRow(row))
+    const 설명 = 설명편집 ? (enrichSummaries![이름!] ?? '') : ''
+    return (
+      <div key={i} className="rounded-lg border border-neutral-200 p-3">
+        <p className="mb-2 text-sm font-semibold">{unit} {i + 1}</p>
+        <div className="space-y-3">
+          {Object.entries(row).map(([k, v]) => {
+            const str = typeof v === 'string' ? v : String(v ?? '')
+            const err = errors[`${section.id}.${field}.${i}.${k}`]
+            return (
+              <Field key={k} label={k} error={err}>
+                {k === '구분' ? (
+                  <select value={str} onChange={(e) => patch(i, k, e.target.value)} className={inputClass}>
+                    {SHOP_KINDS.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                ) : MULTILINE.has(k) || str.length > 60 ? (
+                  <textarea value={str} rows={3} onChange={(e) => patch(i, k, e.target.value)} className={inputClass} />
+                ) : (
+                  <input type="text" value={str} onChange={(e) => patch(i, k, e.target.value)} className={inputClass} />
+                )}
+              </Field>
+            )
+          })}
+
+          {/* 카드에 보이는 설명(웹 검색) — 담당자가 여기서 직접 고친다 */}
+          {설명편집 && (
+            <SummaryEditor label="설명 (카드에 보이는 소개)" 요약={설명} onChange={(v) => onSummaryChange!(이름!, v)} />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // 상점들은 페이지처럼 식사·맛집 / 제휴·추천 상점으로 나눠 편집기 구조를 페이지와 맞춘다.
+  // (한쪽이 0곳이면 나누지 않고 평평하게 — 데모처럼 전부 식당이면 아래 안내만 붙는다)
+  const indexed = rows.map((row, i) => [row, i] as const)
+  const dining = indexed.filter(([row]) => isDiningRow(row))
+  const retail = indexed.filter(([row]) => !isDiningRow(row))
+  const grouped = field === '상점들' && dining.length > 0 && retail.length > 0
 
   return (
     <div className="space-y-4">
       <p className="text-xs text-neutral-500">
         {unit} 개수는 입력한 값이 정합니다. 여기서는 각 {unit}의 내용만 고칩니다.
       </p>
-      {hasDining && (
-        <p className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
-          식당·카페의 설명은 <b>「식사」 섹션</b>에서 편집합니다.
-        </p>
-      )}
-      {rows.map((row, i) => {
-        // 카드에 보이는 웹 검색 설명(enrichment.요약) — 이름으로 찾아 인라인 편집시킨다.
-        // 식당·카페(dining)는 「식사」 섹션에서 편집하므로 여기서는 리테일만 인라인 설명을 연다.
-        const 이름 = nameKey ? row[nameKey] : undefined
-        const isDiningRow = field === '상점들' && !!enrich && isDining(이름 ?? '', enrich)
-        const 설명편집 = !!(onSummaryChange && 이름 && enrichSummaries && 이름 in enrichSummaries && !isDiningRow)
-        const 설명 = 설명편집 ? (enrichSummaries![이름!] ?? '') : ''
-        return (
-          <div key={i} className="rounded-lg border border-neutral-200 p-3">
-            <p className="mb-2 text-sm font-semibold">{unit} {i + 1}</p>
-            <div className="space-y-3">
-              {Object.entries(row).map(([k, v]) => {
-                const str = typeof v === 'string' ? v : String(v ?? '')
-                const err = errors[`${section.id}.${field}.${i}.${k}`]
-                return (
-                  <Field key={k} label={k} error={err}>
-                    {k === '구분' ? (
-                      <select
-                        value={str}
-                        onChange={(e) => patch(i, k, e.target.value)}
-                        className={inputClass}
-                      >
-                        {SHOP_KINDS.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    ) : MULTILINE.has(k) || str.length > 60 ? (
-                      <textarea
-                        value={str} rows={3}
-                        onChange={(e) => patch(i, k, e.target.value)}
-                        className={inputClass}
-                      />
-                    ) : (
-                      <input
-                        type="text" value={str}
-                        onChange={(e) => patch(i, k, e.target.value)}
-                        className={inputClass}
-                      />
-                    )}
-                  </Field>
-                )
-              })}
 
-              {/* 카드에 보이는 설명(웹 검색) — 담당자가 여기서 직접 고친다 */}
-              {설명편집 && (
-                <SummaryEditor
-                  label="설명 (카드에 보이는 소개)"
-                  요약={설명}
-                  onChange={(v) => onSummaryChange!(이름!, v)}
-                />
-              )}
-            </div>
+      {grouped ? (
+        <>
+          <div className="space-y-3">
+            <p className="text-sm font-semibold text-neutral-800">
+              식사·맛집 <span className="text-xs font-normal text-neutral-500">{dining.length}곳</span>
+            </p>
+            <p className="text-xs text-neutral-500">
+              페이지의 「식사」 섹션 카드입니다. 설명은 <b>「식사」 섹션</b>에서 편집합니다.
+            </p>
+            {dining.map(([row, i]) => renderRow(row, i))}
           </div>
-        )
-      })}
+          <div className="space-y-3 border-t border-neutral-200 pt-4">
+            <p className="text-sm font-semibold text-neutral-800">
+              제휴·추천 상점 <span className="text-xs font-normal text-neutral-500">{retail.length}곳</span>
+            </p>
+            {retail.map(([row, i]) => renderRow(row, i))}
+          </div>
+        </>
+      ) : (
+        <>
+          {dining.length > 0 && field === '상점들' && (
+            <p className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
+              식당·카페의 설명은 <b>「식사」 섹션</b>에서 편집합니다.
+            </p>
+          )}
+          {indexed.map(([row, i]) => renderRow(row, i))}
+        </>
+      )}
     </div>
   )
 }

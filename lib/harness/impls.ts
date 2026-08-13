@@ -6,6 +6,7 @@ import {
   assertFactsUnchanged, buildBrochure, checkBrochure, type BrochureContent,
 } from '@/lib/pipeline/brochure'
 import { buildPage, checkPage, type PageContent } from '@/lib/pipeline/page'
+import { baselineEnrichment, hasEnrichTargets } from '@/lib/pipeline/enrichment'
 import { checkConsistency } from '@/lib/pipeline/consistency'
 import { resolveThemeSpec } from '@/lib/pipeline/theme'
 import { gateInfo } from '@/lib/pipeline/vocabulary'
@@ -135,7 +136,7 @@ export const MECHANICAL: Record<string, SkillRunner> = {
 
   'web-content-structure-gen': (c) => {
     const cd = need(c.cd, 'web-content-structure-gen', 'confirmed_data')
-    c.page = buildPage({
+    const page = buildPage({
       cd,
       theme: need(c.theme, 'web-content-structure-gen', 'theme'),
       slots: new Set(c.materials.imageSlots.map((r) => r.slot)),
@@ -146,6 +147,14 @@ export const MECHANICAL: Record<string, SkillRunner> = {
       // 소개서 개요(generated)를 페이지 여행 개요로 승계 — 새 AI 호출 없이 재사용
       개요: overviewText(c.p.brochure_content),
     })
+    /*
+     * Q2 안전장치 — 생성 즉시 **모든 장소에 기본 설명**을 깐다. 그라운딩(웹 검색)이
+     * 아직 안 돌았거나 완전히 실패해도 카드가 빈 채로 게시되지 않는다. 그라운딩이
+     * 성공하면 enrich-structure가 이 enrichment를 실측 요약으로 통째로 교체한다.
+     * enrichment는 `checkPage`·검증 4축 밖의 부가 데이터라 계약에 영향이 없다.
+     */
+    if (hasEnrichTargets(cd)) page.enrichment = baselineEnrichment(cd)
+    c.page = page
   },
 
   'page-contract-check': (c) => {
