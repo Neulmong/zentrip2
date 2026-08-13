@@ -354,7 +354,7 @@ export function Editor(props: EditorProps) {
         </nav>
 
         {/* ── 중앙: 편집 패널 ───────────────────────────────── */}
-        <div className="min-w-0 flex-1 overflow-y-auto border-r border-neutral-200 p-5">
+        <div className="w-[400px] shrink-0 overflow-y-auto border-r border-neutral-200 p-5">
           {/* 장소 설명 편집 — 일정·숙박·상점 카드에 실제로 보이는 웹 검색 설명 */}
           {placesMode && (
             <div>
@@ -491,7 +491,7 @@ export function Editor(props: EditorProps) {
         </div>
 
         {/* ── 우: 실시간 미리보기 ───────────────────────────── */}
-        <div className="shrink-0 overflow-auto bg-neutral-100 p-4">
+        <div className="min-w-0 flex-1 overflow-auto bg-neutral-100 p-4">
           <PreviewFrame width={viewport} height={860} title={`미리보기 ${viewport}px`}>
             <PageRenderer
               content={{ ...content, sections: ordered }}
