@@ -108,6 +108,20 @@ function Value({ v }: { v: string }) {
   return <span className="whitespace-pre-line">{v}</span>
 }
 
+/**
+ * 금액을 읽기 좋게. 4자리 이상 숫자 뭉치에 천 단위 콤마를 넣는다(390000 → 390,000).
+ * 저장값은 그대로 두고 **표시만** 바꾼다(정규화가 뗀 콤마를 화면에서 되살릴 뿐).
+ */
+function won(v: string): string {
+  return v.replace(/\d{4,}/g, (n) => Number(n).toLocaleString('ko-KR'))
+}
+
+/** 금액 1줄 표시 — 콤마 + `whitespace-nowrap`으로 글자 단위 줄바꿈을 막는다. */
+function PriceValue({ v, className }: { v: string; className?: string }) {
+  if (!hasVal(v)) return null
+  return <span className={`whitespace-nowrap tabular-nums ${className ?? ''}`}>{won(v)}</span>
+}
+
 /** 빈·플레이스홀더 항목은 통째로 생략한다 — 빈 라벨만 남지 않게 */
 function Fields({ items, cols = true }: { items: [string, string][]; cols?: boolean }) {
   const shown = items.filter(([, v]) => hasVal(v))
@@ -244,9 +258,6 @@ export function Hero({ data, t, idx }: SectionProps) {
   const subcopy = text(data, 'subcopy')
   const 행사명 = text(data, '행사명')
   const 성인가격 = text(data, '성인가격')
-  // 값은 「390000원」처럼 원이 붙어 온다 — 히어로는 숫자만 크게, 원은 아래 줄로 나눈다
-  const 가격숫자 = 성인가격.replace(/\s*원\s*$/, '').trim()
-  const 금액형 = /\d/.test(가격숫자)
   const slot = text(data, 'image_slot')
   const image = slot ? idx.bySlot.get(slot)?.[0] : undefined
 
@@ -259,14 +270,11 @@ export function Hero({ data, t, idx }: SectionProps) {
       )}
       <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
 
-      {/* 요금 배지 — 진입 즉시 보이도록 상단 오른쪽에 고정. 숫자 크게 + '원' 아래 줄 */}
+      {/* 요금 배지 — 진입 즉시 보이도록 상단 오른쪽에 고정. 금액은 한 줄로 표시 */}
       {hasVal(성인가격) && (
-        <div className="absolute right-4 top-4 z-10 rounded-2xl bg-black/30 px-4 py-2.5 text-right leading-none text-white shadow-lg backdrop-blur-md md:right-7 md:top-7 md:px-5 md:py-3">
+        <div className="absolute right-4 top-4 z-10 rounded-2xl bg-black/30 px-4 py-2.5 text-right leading-tight text-white shadow-lg backdrop-blur-md md:right-7 md:top-7 md:px-5 md:py-3">
           <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-white/75 md:text-[10px]">1인 요금</p>
-          <p className={`mt-1.5 font-serif text-2xl font-medium tabular-nums md:text-3xl ${headlineClass(t)}`}>
-            {금액형 ? 가격숫자 : 성인가격}
-            {금액형 && <span className="block text-xs font-normal text-white/80 md:text-sm">원</span>}
-          </p>
+          <PriceValue v={성인가격} className={`mt-1 block font-serif text-xl font-medium md:text-2xl ${headlineClass(t)}`} />
         </div>
       )}
 
@@ -504,7 +512,7 @@ export function Price(p: SectionProps) {
         {([['성인', text(data, '성인')], ['아동', text(data, '아동')]] as [string, string][]).map(([k, v]) => (
           <div key={k} className="rounded-3xl border border-black/[0.05] bg-white p-6 shadow-[0_6px_28px_-16px_rgba(0,0,0,0.2)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_40px_-18px_rgba(0,0,0,0.26)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-60">{k}</p>
-            <p className={`mt-2 break-all font-serif text-3xl font-medium tabular-nums md:text-4xl ${headlineClass(t)}`}><Value v={v} /></p>
+            <PriceValue v={v} className={`mt-2 block font-serif text-3xl font-medium md:text-4xl ${headlineClass(t)}`} />
           </div>
         ))}
       </div>
@@ -561,8 +569,8 @@ export function Apply({ data, t, style, nextTone, form }: SectionProps & { form?
           </div>
           <div className="rounded-2xl bg-white/10 p-6 text-center md:text-right">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">1인 요금</p>
-            <p className="mt-2 break-all font-serif text-4xl font-medium tabular-nums md:text-5xl"><Value v={성인} /></p>
-            {아동노출 && <p className="mt-1 text-sm text-white/70">아동 <Value v={아동} /></p>}
+            <PriceValue v={성인} className="mt-2 block font-serif text-4xl font-medium md:text-5xl" />
+            {아동노출 && <p className="mt-1 text-sm text-white/70">아동 <PriceValue v={아동} /></p>}
           </div>
         </div>
       </div>
