@@ -199,6 +199,22 @@ export function parseFreeform(text: string): FreeformParse {
     if (m && (BULLET_RE.test(line) || isLabelWord(m[1]))) {
       블록.push({ 라벨: m[1].trim(), 본문: m[2] }); continue
     }
+    /*
+     * 조사로 이어진 인라인 문장 (2026-08-13 · 사용자 버그).
+     *
+     * `숙박은 부산호텔(부산 해운대로 111)`처럼 라벨 낱말 + 조사(은/는/이/가)로
+     * 시작하면, 조사 앞을 라벨로·뒤를 본문으로 가른다. 안 그러면 괄호 규칙이
+     * 「숙박은 부산호텔」을 통째로 이름으로 잡는다.
+     *
+     * **BARE_LABEL_RE보다 먼저 본다.** 「숙소는 서울호텔」은 20자 이하라 BARE가
+     * 통째로 라벨로 잡아버린다(`isLabelWord`가 `.includes("숙소")`로 참). 조사
+     * 분리를 앞세워야 이름을 살린다. 아는 낱말일 때만 적용해 평범한 문장
+     * (`여행은 즐겁다`)이 라벨로 먹히지 않게 한다.
+     */
+    const topic = /^\s*[-·*]?\s*([가-힣]{1,10})(?:은|는|이|가)\s+(\S.*)$/.exec(line)
+    if (topic && isLabelWord(topic[1])) {
+      블록.push({ 라벨: topic[1], 본문: topic[2] }); continue
+    }
     // 콜론 없는 라벨 — 불릿 유무와 무관하게 아는 낱말일 때만
     const bare = BARE_LABEL_RE.exec(line)
     if (bare && isLabelWord(bare[1])) {
