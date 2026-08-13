@@ -139,12 +139,15 @@ function buildBlock(
           headline: hHead || g.행사명,
           subcopy: hSub || g.여행기간,
           행사명: g.행사명,
+          // 히어로 제목 오른쪽 요금 표시(사실값 · §Task 재설계). 값 치환은 여기서 한다
+          성인가격: cd.가격.성인,
           image_slot: slotIf('hero'),
         },
         source: {
           headline: hHead ? 'generated' : '행사정보.행사명',
           subcopy: hSub ? 'generated' : '행사정보.여행기간',
           행사명: '행사정보.행사명',
+          성인가격: '가격.성인',
         },
       }
     }

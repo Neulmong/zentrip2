@@ -3,10 +3,10 @@ import type { ReactNode } from 'react'
 import type { BlockStyle, Tone } from '@/lib/pipeline/vocabulary'
 import type { EnrichmentPlace } from '@/lib/pipeline/enrichment'
 import { Band, headlineClass, SectionHeading, type RenderTheme } from './theme'
-import { Figure, SlotGallery } from './media'
+import { SlotGallery } from './media'
 import {
   days, PLACEHOLDER_VALUES, rows, slotNames, text,
-  type ImageIndex,
+  type ImageIndex, type PageImage,
 } from './types'
 
 /**
@@ -35,21 +35,36 @@ export interface SectionProps {
   enrich?: Map<string, EnrichmentPlace>
 }
 
-/** 위빙용 — 이름·요약·출처를 짧게. 실제 웹 검색 근거 표시 */
-function PlaceNote({ place }: { place: EnrichmentPlace }) {
+/**
+ * 카루셀 카드 — 인스타그램식 좌우 스와이프의 한 장(§Task 재설계).
+ *
+ * 상단 사진 영역 + 이름 + 요약 + 출처. **per-place 실사진 소스가 아직 없어**
+ * 지금은 테마 그라디언트 위에 이름을 얹은 「타이틀 카드」로 둔다(홀짝으로 방향을
+ * 바꿔 단조롭지 않게). `image`가 오면 그 자리에 실사진이 들어간다 — 렌더는 이미 준비.
+ */
+function PlaceCard({ place, i, image }: { place: EnrichmentPlace; i: number; image?: PageImage }) {
+  const flip = i % 2 === 1
   return (
-    <div className="rounded-2xl border border-black/[0.05] bg-white/85 p-4 shadow-[0_2px_16px_-10px_rgba(0,0,0,0.25)]">
-      <p className="break-keep text-sm font-semibold">{place.이름}</p>
-      <p className="mt-1 break-keep text-[13px] leading-relaxed opacity-90">{place.요약}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-55">출처</span>
-        {place.출처.slice(0, 2).map((src, k) => (
-          <a key={k} href={src.uri} target="_blank" rel="noopener noreferrer nofollow"
-            className="max-w-full truncate text-[11px] font-medium text-[var(--t-primary)] underline-offset-2 hover:underline"
-            title={src.title}>{src.title}</a>
-        ))}
+    <article className="flex w-[80%] max-w-[300px] shrink-0 snap-start flex-col overflow-hidden rounded-3xl border border-black/[0.05] bg-white shadow-[0_6px_28px_-14px_rgba(0,0,0,0.22)] sm:w-[300px]">
+      <div className={`relative flex aspect-[4/3] items-end overflow-hidden bg-gradient-to-br p-4 ${flip ? 'from-[var(--t-secondary)] to-[var(--t-primary)]' : 'from-[var(--t-primary)] to-[var(--t-secondary)]'}`}>
+        {image && <Image src={image.url} alt={image.alt} fill sizes="300px" className="object-cover" />}
+        {image && <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />}
+        <p className="relative break-keep font-serif text-lg font-semibold leading-tight text-white [text-shadow:0_1px_10px_rgb(0_0_0/0.45)]">{place.이름}</p>
       </div>
-    </div>
+      <div className="flex flex-1 flex-col p-4">
+        <p className="flex-1 break-keep text-[13px] leading-relaxed opacity-90">{place.요약}</p>
+        {place.출처.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-[var(--t-primary)]/12 pt-2.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-55">출처</span>
+            {place.출처.slice(0, 1).map((src, k) => (
+              <a key={k} href={src.uri} target="_blank" rel="noopener noreferrer nofollow"
+                className="max-w-full truncate text-[11px] font-medium text-[var(--t-primary)] hover:underline"
+                title={src.title}>{src.title}</a>
+            ))}
+          </div>
+        )}
+      </div>
+    </article>
   )
 }
 
@@ -165,6 +180,10 @@ export function Hero({ data, t, idx }: SectionProps) {
   const headline = text(data, 'headline')
   const subcopy = text(data, 'subcopy')
   const 행사명 = text(data, '행사명')
+  const 성인가격 = text(data, '성인가격')
+  // 값은 「390000원」처럼 원이 붙어 온다 — 히어로는 숫자만 크게, 원은 아래 줄로 나눈다
+  const 가격숫자 = 성인가격.replace(/\s*원\s*$/, '').trim()
+  const 금액형 = /\d/.test(가격숫자)
   const slot = text(data, 'image_slot')
   const image = slot ? idx.bySlot.get(slot)?.[0] : undefined
 
@@ -183,9 +202,21 @@ export function Hero({ data, t, idx }: SectionProps) {
             {행사명}
           </p>
         )}
-        <h1 className={`max-w-[15ch] break-keep text-[2.6rem] font-extrabold leading-[0.98] tracking-tight text-white [text-shadow:0_2px_28px_rgb(0_0_0/0.5)] md:text-6xl lg:text-7xl ${headlineClass(t)}`}>
-          {headline}
-        </h1>
+        {/* 제목 + (오른쪽) 요금 — 요금은 숫자 아래 줄바꿈으로 '원' */}
+        <div className="flex items-start justify-between gap-5 md:gap-10">
+          <h1 className={`max-w-[15ch] flex-1 break-keep text-[2.6rem] font-extrabold leading-[0.98] tracking-tight text-white [text-shadow:0_2px_28px_rgb(0_0_0/0.5)] md:text-6xl lg:text-7xl ${headlineClass(t)}`}>
+            {headline}
+          </h1>
+          {hasVal(성인가격) && (
+            <div className="shrink-0 text-right leading-none text-white [text-shadow:0_2px_18px_rgb(0_0_0/0.55)]">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/70">1인 요금</p>
+              <p className={`mt-2 break-all font-serif text-3xl font-medium tabular-nums md:text-5xl ${headlineClass(t)}`}>
+                {금액형 ? 가격숫자 : 성인가격}
+                {금액형 && <span className="block text-sm font-normal text-white/80 md:text-lg">원</span>}
+              </p>
+            </div>
+          )}
+        </div>
         {subcopy && (
           <p className="mt-6 max-w-2xl break-keep text-base leading-relaxed text-white/90 [text-shadow:0_1px_14px_rgb(0_0_0/0.55)] md:text-xl">
             {subcopy}
@@ -252,37 +283,31 @@ export function Itinerary(p: SectionProps) {
           Day 01 &mdash; {String(list.length).padStart(2, '0')}
         </p>
       </div>
-      <ol>
-        {list.map((d, i) => {
-          const image = d.image_slot ? idx.bySlot.get(d.image_slot)?.[0] : undefined
+      <ol className="space-y-10">
+        {list.map((d) => {
           const notes = notesFor(d.text)
           return (
-            <li key={d.day}
-              className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-4 border-b border-[var(--t-primary)]/12 py-8 last:border-0 md:grid-cols-[5rem_1fr] md:gap-x-10">
-              <div className="relative">
-                <span className={`block font-serif text-4xl leading-none tabular-nums text-[var(--t-primary)] md:text-6xl ${headlineClass(t)}`}>
+            <li key={d.day}>
+              {/* 일차 헤더 — 큰 세리프 숫자 + 그 날의 흐름 서술 */}
+              <div className="flex items-baseline gap-4">
+                <span className={`shrink-0 font-serif text-4xl leading-none tabular-nums text-[var(--t-primary)] md:text-5xl ${headlineClass(t)}`}>
                   {String(d.day).padStart(2, '0')}
                 </span>
-                {i < list.length - 1 && (
-                  <span aria-hidden
-                    className="absolute left-3 top-12 -bottom-8 w-px bg-[var(--t-primary)]/20 md:left-4 md:top-16" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className={image ? 'grid gap-5 md:grid-cols-[1fr_15rem] md:items-start' : ''}>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-60">{d.day}일차</p>
-                    <p className="mt-2 break-keep text-[15px] leading-relaxed md:text-base">{d.text}</p>
-                  </div>
-                  {image && <Figure image={image} ratio="wide" sizes="(min-width: 768px) 240px, 100vw" />}
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-60">{d.day}일차</p>
+                  <p className="mt-1 break-keep text-[15px] leading-relaxed md:text-base">{d.text}</p>
                 </div>
-                {/* 이 날 가는 장소의 실제 정보(웹 검색 근거) — 위빙 */}
-                {notes.length > 0 && (
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {notes.map((pl) => <PlaceNote key={pl.이름} place={pl} />)}
-                  </div>
-                )}
               </div>
+
+              {/* 그 날 방문지 — 좌우 스와이프 카루셀 (인스타그램식). 사진 + 요약 + 출처 */}
+              {notes.length > 0 && (
+                <div className="mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {notes.map((pl, k) => {
+                    const image = idx.bySlot.get(`place_${pl.이름}`)?.[0]
+                    return <PlaceCard key={pl.이름} place={pl} i={k} image={image} />
+                  })}
+                </div>
+              )}
             </li>
           )
         })}
