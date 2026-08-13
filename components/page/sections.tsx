@@ -1,6 +1,7 @@
 import Image from 'next/image'
 import type { ReactNode } from 'react'
 import type { BlockStyle, Tone } from '@/lib/pipeline/vocabulary'
+import type { EnrichmentPlace } from '@/lib/pipeline/enrichment'
 import { Band, headlineClass, SectionHeading, type RenderTheme } from './theme'
 import { Figure, SlotGallery } from './media'
 import {
@@ -30,66 +31,123 @@ export interface SectionProps {
   style?: BlockStyle
   /** 다음 블록의 tone — edge 장식 색 */
   nextTone?: Tone
+  /** 그라운딩 실측 정보 (이름 → 장소). 일정·숙박·상점에 실제 설명을 위빙한다 */
+  enrich?: Map<string, EnrichmentPlace>
+}
+
+/** 위빙용 — 이름·요약·출처를 짧게. 실제 웹 검색 근거 표시 */
+function PlaceNote({ place }: { place: EnrichmentPlace }) {
+  return (
+    <div className="rounded-lg border border-[var(--t-primary)]/20 bg-[var(--t-surface)] p-3.5">
+      <p className="break-keep text-sm font-semibold">{place.이름}</p>
+      <p className="mt-1 break-keep text-[13px] leading-relaxed opacity-90">{place.요약}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-55">출처</span>
+        {place.출처.slice(0, 2).map((src, k) => (
+          <a key={k} href={src.uri} target="_blank" rel="noopener noreferrer nofollow"
+            className="max-w-full truncate text-[11px] font-medium text-[var(--t-primary)] underline-offset-2 hover:underline"
+            title={src.title}>{src.title}</a>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 const layoutOf = (p: SectionProps) => p.style?.layout ?? ''
 
 /* ── 공용 조각 ───────────────────────────────────────────────── */
 
+/**
+ * 실제 값이 있는가 — 빈 값과 「추후 추가 예정」 플레이스홀더를 **없는 것으로 본다**.
+ * 고객 페이지에는 플레이스홀더를 아예 노출하지 않는다(빈 자리는 그라운딩이 채우거나
+ * 생략한다). 이 판정이 렌더 전반의 「채워졌나」 기준이다.
+ */
+function hasVal(v: string | undefined): v is string {
+  return !!v && !!v.trim() && !PLACEHOLDER_VALUES.has(v)
+}
+
 function Value({ v }: { v: string }) {
-  if (!v) return <span className="italic">-</span>
-  if (PLACEHOLDER_VALUES.has(v)) return <span className="italic">{v}</span>
+  if (!hasVal(v)) return null
   return <span className="whitespace-pre-line">{v}</span>
 }
 
+/** 빈·플레이스홀더 항목은 통째로 생략한다 — 빈 라벨만 남지 않게 */
 function Fields({ items, cols = true }: { items: [string, string][]; cols?: boolean }) {
+  const shown = items.filter(([, v]) => hasVal(v))
+  if (shown.length === 0) return null
   return (
     <dl className={`mt-5 grid gap-x-8 gap-y-4 ${cols ? 'sm:grid-cols-2' : ''}`}>
-      {items.map(([k, v]) => (
+      {shown.map(([k, v]) => (
         <div key={k} className="min-w-0">
           <dt className="text-xs font-semibold uppercase tracking-wider">{k}</dt>
-          <dd className="mt-1 break-words text-[15px] leading-relaxed"><Value v={v} /></dd>
+          <dd className="mt-1 break-words text-[15px] leading-relaxed">{v}</dd>
         </div>
       ))}
     </dl>
   )
 }
 
-/** 값 배열 1행 = 카드 1장. `cols`로 1·2·3열 변형 */
-function CardList({ rows: list, 제목필드, 필드, 배지필드, cols = 2 }: {
+/**
+ * 값 배열 1행 = 카드 1장. **그라운딩 실측 설명을 위빙한다.**
+ *
+ * 각 행의 이름을 `enrich`에서 찾아 실제 웹 검색 요약을 본문으로 싣는다(출처 표기).
+ * 짧은 사실 필드(위치·객실타입 등)는 **실제 값이 있을 때만** 칩으로 붙인다 —
+ * 「추후 추가 예정」은 렌더에서 아예 뺀다(`hasVal`). 요약도 사실 필드도 없으면
+ * 이름만 남지만, 자동 그라운딩이 요약을 채우므로 삭막해지지 않는다.
+ */
+function CardList({ rows: list, 제목필드, 필드, 배지필드, cols = 2, enrich }: {
   rows: Record<string, string>[]
   제목필드: string
   필드: readonly string[]
   배지필드?: string
   cols?: 1 | 2 | 3
+  enrich?: Map<string, EnrichmentPlace>
 }) {
-  if (list.length === 0) return <p className="mt-5 text-[15px] italic">등록된 항목이 없습니다.</p>
+  if (list.length === 0) return null
   const grid = cols === 1 ? '' : cols === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2'
 
   return (
-    <ul className={`mt-5 grid gap-4 ${grid}`}>
-      {list.map((row, i) => (
-        <li key={`${i}-${row[제목필드]}`} className="min-w-0 rounded-lg border border-[var(--t-primary)]/25 bg-[var(--t-surface)] p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-[var(--t-primary)]/10">
-          <div className="flex items-start gap-2">
-            <p className="min-w-0 flex-1 break-keep text-lg font-bold leading-snug tracking-tight">
-              <Value v={row[제목필드]} />
-            </p>
-            {배지필드 && row[배지필드] && (
-              <span className="shrink-0 rounded-full bg-[var(--t-secondary)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--t-text)]">
-                {row[배지필드]}
-              </span>
+    <ul className={`mt-6 grid gap-5 ${grid}`}>
+      {list.map((row, i) => {
+        const place = enrich?.get(row[제목필드])
+        const 사실필드 = 필드.filter((f) => hasVal(row[f]))
+        return (
+          <li key={`${i}-${row[제목필드]}`} className="flex min-w-0 flex-col rounded-lg border border-[var(--t-primary)]/25 bg-[var(--t-surface)] p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-[var(--t-primary)]/10">
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 break-keep text-lg font-bold leading-snug tracking-tight">{row[제목필드]}</p>
+              {배지필드 && row[배지필드] && (
+                <span className="shrink-0 rounded-full bg-[var(--t-secondary)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--t-text)]">
+                  {row[배지필드]}
+                </span>
+              )}
+            </div>
+
+            {/* 실제 웹 검색 요약 (자동 그라운딩) */}
+            {place?.요약 && <p className="mt-3 flex-1 break-keep text-sm leading-relaxed opacity-90">{place.요약}</p>}
+
+            {/* 짧은 사실 필드 — 실제 값만 (플레이스홀더 제외) */}
+            {사실필드.length > 0 && (
+              <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px]">
+                {사실필드.map((f) => (
+                  <div key={f} className="min-w-0"><dt className="inline opacity-55">{f} </dt><dd className="inline font-medium">{row[f]}</dd></div>
+                ))}
+              </dl>
             )}
-          </div>
-          <dl className="mt-4 space-y-3">
-            {필드.map((f) => (
-              <div key={f} className="min-w-0">
-                <dt className="text-[11px] font-semibold uppercase tracking-wider">{f}</dt>
-                <dd className="mt-0.5 break-words text-sm leading-relaxed"><Value v={row[f]} /></dd>
+
+            {/* 출처 표기 */}
+            {place && place.출처.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-1.5 border-t border-[var(--t-primary)]/15 pt-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-55">출처</span>
+                {place.출처.slice(0, 2).map((s, k) => (
+                  <a key={k} href={s.uri} target="_blank" rel="noopener noreferrer nofollow"
+                    className="max-w-full truncate text-[11px] font-medium text-[var(--t-primary)] hover:underline"
+                    title={s.title}>{s.title}</a>
+                ))}
               </div>
-            ))}
-          </dl>
-        </li>
-      ))}
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -171,8 +229,10 @@ export function Summary(p: SectionProps) {
 /* ── 3. itinerary (layout: stack·numbered·rail) ──────────────── */
 
 export function Itinerary(p: SectionProps) {
-  const { data, t, idx } = p
+  const { data, t, idx, enrich } = p
   const list = days(data)
+  const notesFor = (dayText: string): EnrichmentPlace[] =>
+    enrich ? [...enrich.values()].filter((pl) => dayText.includes(pl.이름)) : []
 
   return (
     <Band style={p.style} nextTone={p.nextTone}>
@@ -188,6 +248,7 @@ export function Itinerary(p: SectionProps) {
       <ol>
         {list.map((d, i) => {
           const image = d.image_slot ? idx.bySlot.get(d.image_slot)?.[0] : undefined
+          const notes = notesFor(d.text)
           return (
             <li key={d.day}
               className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-4 border-b border-[var(--t-primary)]/12 py-8 last:border-0 md:grid-cols-[5rem_1fr] md:gap-x-10">
@@ -200,12 +261,20 @@ export function Itinerary(p: SectionProps) {
                     className="absolute left-3 top-12 -bottom-8 w-px bg-[var(--t-primary)]/20 md:left-4 md:top-16" />
                 )}
               </div>
-              <div className={image ? 'grid gap-5 md:grid-cols-[1fr_15rem] md:items-start' : 'min-w-0'}>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-60">{d.day}일차</p>
-                  <p className="mt-2 break-keep text-[15px] leading-relaxed md:text-base">{d.text}</p>
+              <div className="min-w-0">
+                <div className={image ? 'grid gap-5 md:grid-cols-[1fr_15rem] md:items-start' : ''}>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-60">{d.day}일차</p>
+                    <p className="mt-2 break-keep text-[15px] leading-relaxed md:text-base">{d.text}</p>
+                  </div>
+                  {image && <Figure image={image} ratio="wide" sizes="(min-width: 768px) 240px, 100vw" />}
                 </div>
-                {image && <Figure image={image} ratio="wide" sizes="(min-width: 768px) 240px, 100vw" />}
+                {/* 이 날 가는 장소의 실제 정보(웹 검색 근거) — 위빙 */}
+                {notes.length > 0 && (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {notes.map((pl) => <PlaceNote key={pl.이름} place={pl} />)}
+                  </div>
+                )}
               </div>
             </li>
           )
@@ -225,7 +294,7 @@ export function Accommodation(p: SectionProps) {
     <Band style={p.style} nextTone={p.nextTone}>
       <SectionHeading t={t}>숙박</SectionHeading>
       <CardList rows={list} 제목필드="숙소명" 필드={['객실타입', '위치', '숙박일정']}
-        cols={layoutOf(p) === 'rows' ? 1 : 2} />
+        cols={layoutOf(p) === 'rows' ? 1 : 2} enrich={p.enrich} />
       <SlotGallery images={images} className="mt-6" />
     </Band>
   )
@@ -239,15 +308,17 @@ export function Flight(p: SectionProps) {
     ['공항', text(data, '공항')], ['항공사', text(data, '항공사')], ['편명', text(data, '편명')],
     ['출발시간', text(data, '출발시간')], ['도착시간', text(data, '도착시간')],
   ]
-  // 표를 없앤다 — 편집물처럼 필드를 흘려 배치한다(가로 스크롤 없음)
+  // 표를 없앤다 — 편집물처럼 필드를 흘려 배치. 실제 값이 있는 것만, 없으면 섹션 생략
+  const shown = cols.filter(([, v]) => hasVal(v))
+  if (shown.length === 0) return null
   return (
     <Band style={p.style} nextTone={p.nextTone}>
       <SectionHeading t={t}>항공</SectionHeading>
       <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-3 md:grid-cols-5">
-        {cols.map(([k, v]) => (
+        {shown.map(([k, v]) => (
           <div key={k} className="min-w-0">
             <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] opacity-60">{k}</dt>
-            <dd className="mt-1.5 break-words text-[15px] font-medium"><Value v={v} /></dd>
+            <dd className="mt-1.5 break-words text-[15px] font-medium">{v}</dd>
           </div>
         ))}
       </dl>
@@ -283,7 +354,7 @@ export function Price(p: SectionProps) {
           </div>
         ))}
       </div>
-      {etc && <p className="mt-5 max-w-2xl break-keep text-[15px] leading-relaxed opacity-90"><Value v={etc} /></p>}
+      {hasVal(etc) && <p className="mt-5 max-w-2xl break-keep text-[15px] leading-relaxed opacity-90">{etc}</p>}
     </Band>
   )
 }
@@ -298,8 +369,8 @@ export function Shop(p: SectionProps) {
   return (
     <Band style={p.style} nextTone={p.nextTone}>
       <SectionHeading t={t}>제휴·추천 상점</SectionHeading>
-      <CardList rows={list} 제목필드="상점명" 배지필드="구분" 필드={['위치', '상점정보']}
-        cols={layout === 'rows' ? 1 : layout === 'grid' ? 3 : 2} />
+      <CardList rows={list} 제목필드="상점명" 배지필드="구분" 필드={['위치']}
+        cols={layout === 'rows' ? 1 : layout === 'grid' ? 3 : 2} enrich={p.enrich} />
       <SlotGallery images={images} className="mt-6" />
     </Band>
   )

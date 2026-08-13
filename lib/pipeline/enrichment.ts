@@ -48,22 +48,38 @@ export const ENRICH_TAGS_MAX = 4
 export interface EnrichTarget {
   이름: string
   위치: string
-  종류: '숙소' | '상점'
+  종류: '숙소' | '상점' | '여행지'
 }
 
+/** 검색 대상 상한 — 그라운딩 지연이 55초 예산 안에 들도록 (실측 15곳 ≈ 30초) */
+export const ENRICH_TARGETS_MAX = 22
+
 /**
- * 확정 데이터에서 검색할 장소 목록을 뽑는다. 숙소·상점 이름과 위치만 — 검색에
- * 필요한 최소값이다. 사람이 입력한 값이므로 이 목록 자체가 실존 기준이다.
+ * 확정 데이터에서 검색할 장소 목록을 뽑는다. 숙소·상점 + **일정의 여행지 포인트**.
+ *
+ * 여행지 포인트는 일차별 `핵심표현`(AI가 신고한 장소·시설 명사)에서 온다 — 사람이
+ * 준 일정 원문 안의 값이므로 실존 기준을 유지한다. 숙소·상점과 이름이 겹치면
+ * 버리고(이미 대상), 활동어가 섞여도 검색이 「정보 없음」으로 걸러 낸다. 총 개수는
+ * 상한으로 자른다(지연 보호).
  */
 export function placesFor(cd: ConfirmedData): EnrichTarget[] {
   const out: EnrichTarget[] = []
-  for (const s of cd.숙박) {
-    if (s.숙소명?.trim()) out.push({ 이름: s.숙소명.trim(), 위치: s.위치 ?? '', 종류: '숙소' })
+  const seen = new Set<string>()
+  const add = (이름: string, 위치: string, 종류: EnrichTarget['종류']) => {
+    const key = 이름.trim()
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    out.push({ 이름: key, 위치: 위치 ?? '', 종류 })
   }
-  for (const s of cd.상점) {
-    if (s.상점명?.trim()) out.push({ 이름: s.상점명.trim(), 위치: s.위치 ?? '', 종류: '상점' })
+
+  for (const s of cd.숙박) if (s.숙소명?.trim()) add(s.숙소명, s.위치 ?? '', '숙소')
+  for (const s of cd.상점) if (s.상점명?.trim()) add(s.상점명, s.위치 ?? '', '상점')
+  // 일정의 여행지 포인트 (핵심표현) — 숙소·상점과 겹치는 것은 add가 걸러 낸다
+  for (const d of cd.행사정보.일정) {
+    for (const 표현 of d.핵심표현 ?? []) add(표현, '', '여행지')
   }
-  return out
+
+  return out.slice(0, ENRICH_TARGETS_MAX)
 }
 
 /** 검색 대상이 하나도 없으면 보강할 것이 없다 */

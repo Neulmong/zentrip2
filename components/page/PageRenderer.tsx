@@ -1,8 +1,7 @@
-import { Fragment, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { PageContent, PageSection } from '@/lib/pipeline/page'
 import type { BlockStyle, Tone } from '@/lib/pipeline/vocabulary'
 import { Background, renderTheme, themeVars } from './theme'
-import { EnrichmentSection } from './enrichment'
 import { indexImages, type PageImage } from './types'
 import {
   Accommodation, Apply, Flight, Hero, Itinerary, Meal, Price, Shop, Summary,
@@ -44,6 +43,9 @@ export function PageRenderer({
   const t = renderTheme(content.theme)
   const idx = indexImages(images)
 
+  // 그라운딩 실측 정보(이름 → 장소) — 일정·숙박·상점 렌더러가 실제 설명을 위빙한다
+  const enrich = new Map((content.enrichment?.places ?? []).map((p) => [p.이름, p]))
+
   const visible: PageSection[] = content.sections
     .filter((s) => s.visible !== false)
     .sort((a, b) => a.order - b.order)
@@ -59,26 +61,14 @@ export function PageRenderer({
       {visible.map((s, i) => {
         // edge 장식이 칠할 색 — 다음 블록의 tone (명령서 4-③)
         const nextTone: Tone | undefined = (visible[i + 1]?.style as BlockStyle | undefined)?.tone
-        const props: SectionProps = { data: s.data, t, idx, style: s.style, nextTone }
+        const props: SectionProps = { data: s.data, t, idx, style: s.style, nextTone, enrich }
 
         // id 앵커 — cta의 "신청하기"가 #sec_apply로 스크롤한다
         const anchor = s.type === 'apply' ? 'sec_apply' : undefined
 
+        // 그라운딩 정보는 이제 일정·숙박·상점에 **위빙**된다(별도 섹션 없음)
         if (s.type === 'apply') {
-          /*
-           * place-enrichment(Task 2)는 apply **바로 앞**에 그린다 — 사실 섹션들
-           * 뒤, 신청 CTA 앞이 현지 정보의 자연스러운 자리다. sections 밖의 부가
-           * 데이터라 여기서만 주입한다(§7 · 계약 밖).
-           */
-          const applyTone = (s.style as BlockStyle | undefined)?.tone
-          return (
-            <Fragment key={s.id}>
-              {content.enrichment && (
-                <EnrichmentSection enrichment={content.enrichment} t={t} nextTone={applyTone} />
-              )}
-              <div id={anchor}><Apply {...props} form={applyForm} /></div>
-            </Fragment>
-          )
+          return <div key={s.id} id={anchor}><Apply {...props} form={applyForm} /></div>
         }
 
         const Component = RENDERERS[s.type]

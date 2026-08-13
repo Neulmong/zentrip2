@@ -61,15 +61,23 @@ export function ProductActions(p: ActionsProps) {
     }
     setGenPhases(phases)
     const outcome = await runPipeline(p.id, phases, onProgress)
-    setProgress(null)
-    setGenPhases(null)
 
-    if (outcome.kind === 'error') { setError(outcome.message); return }
+    if (outcome.kind === 'error') { setProgress(null); setGenPhases(null); setError(outcome.message); return }
     if (outcome.kind === 'input_error') {
       // 입력 문제 — 값이 유지되는 폼으로 보낸다(§15.1)
+      setProgress(null); setGenPhases(null)
       router.push(`/new?product_id=${p.id}`)
       return
     }
+
+    /*
+     * 페이지를 새로 만들었으면(라우트 ⑤ 포함) **그라운딩을 자동 실행**해 장소
+     * 정보를 채운다 — 빈 자리에 「추후 추가 예정」 대신 실제 검색 정보가 들어간다.
+     * 실패해도 페이지는 유지되므로 조용히 넘어간다(선택 보강).
+     */
+    if (phases.some((ph) => ph.num === 5)) await doEnrich()
+
+    setProgress(null); setGenPhases(null); setEnrichMsg(null)
     // done · refetch 모두 서버에서 현재 상태를 다시 읽는다
     router.refresh()
   }
@@ -111,52 +119,58 @@ export function ProductActions(p: ActionsProps) {
    * 이어 부른다(§7 · Option A): ① 그라운딩 검색 → 텍스트·출처, ② 그 결과를 구조화해
    * `page_content.enrichment`에 병합. 실패해도 기존 페이지는 그대로다.
    */
+  /**
+   * 그라운딩 2호출 코어 (검색 → 구조화). 자동(생성 직후)·수동(버튼) 양쪽이 쓴다.
+   * **조회 시점을 새로 읽는다** — 방금 생성으로 `updated_at`이 바뀌었을 수 있어
+   * `p.updated_at`(초기 로드값)을 그대로 쓰면 구조화가 409 stale이 된다(§16.1.1).
+   */
+  async function doEnrich(): Promise<'ok' | 'empty' | 'error'> {
+    const H = { 'content-type': 'application/json' }
+    // 그라운딩은 가끔 검색 없이 빈 응답을 낸다(출처 0건 · 실측). 재검색으로 해소된다 —
+    // 「무조건 채운다」를 지키려면 빈 응답에 한 번 더 시도한다.
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        setProgress('장소를 웹에서 검색하는 중…')
+        setEnrichMsg('장소를 웹에서 검색하는 중…')
+        const r1 = await fetch(`/api/products/${p.id}/enrich-search`, { method: 'POST', headers: H, body: '{}' })
+        const b1 = await r1.json().catch(() => ({}))
+        if (!r1.ok) { if (attempt === 1) return 'error'; continue }
+        // 출처가 비면 그라운딩이 검색을 안 한 것 — 재검색
+        if ((b1.sources ?? []).length === 0) continue
+
+        setProgress('검색 결과를 정리해 페이지에 반영하는 중…')
+        setEnrichMsg('검색 결과를 정리해 페이지에 반영하는 중…')
+        let updatedAt = p.updated_at
+        try {
+          const g = await fetch(`/api/products/${p.id}`)
+          if (g.ok) { const gb = await g.json().catch(() => ({})); if (typeof gb.updated_at === 'string') updatedAt = gb.updated_at }
+        } catch { /* 읽지 못해도 진행 — 서버 조건부 갱신이 최종 방어선 */ }
+
+        const r2 = await fetch(`/api/products/${p.id}/enrich-structure`, {
+          method: 'POST', headers: H,
+          body: JSON.stringify({ grounded_text: b1.grounded_text, sources: b1.sources, updated_at: updatedAt }),
+        })
+        const b2 = await r2.json().catch(() => ({}))
+        if (!r2.ok) return 'error'
+        return (b2.enrichment?.places ?? []).length > 0 ? 'ok' : 'empty'
+      }
+      return 'empty'
+    } catch {
+      return 'error'
+    }
+  }
+
+  /** [웹 리뷰 보강] 버튼 — 수동 실행. 자동(생성 직후)과 같은 코어를 쓴다. */
   async function enrich() {
     setBusy(true)
     setError(null)
-    setEnrichMsg('숙소·상점을 웹에서 검색하는 중…')
-    const H = { 'content-type': 'application/json' }
-    try {
-      // ① 그라운딩 검색
-      const r1 = await fetch(`/api/products/${p.id}/enrich-search`, { method: 'POST', headers: H, body: '{}' })
-      const b1 = await r1.json().catch(() => ({}))
-      if (!r1.ok) {
-        setError(r1.status === 409
-          ? '검색이 일시적으로 실패했습니다. 잠시 후 다시 시도해 주세요.'
-          : (b1.field_errors?._ ?? b1._ ?? '검색에 실패했습니다.'))
-        return
-      }
-
-      // ② 구조화 + 저장 (조회 시점을 함께 보낸다 — §16.1.1)
-      setEnrichMsg('검색 결과를 정리해 페이지에 반영하는 중…')
-      const r2 = await fetch(`/api/products/${p.id}/enrich-structure`, {
-        method: 'POST', headers: H,
-        body: JSON.stringify({ grounded_text: b1.grounded_text, sources: b1.sources, updated_at: p.updated_at }),
-      })
-      const b2 = await r2.json().catch(() => ({}))
-      if (!r2.ok) {
-        if (r2.status === 409 && b2.reason === 'stale') {
-          setError('다른 곳에서 이 상품이 변경됐습니다. 새로고침 후 다시 시도해 주세요.')
-        } else if (r2.status === 409) {
-          setError('정리가 일시적으로 실패했습니다. 잠시 후 다시 시도해 주세요.')
-        } else {
-          setError(b2._ ?? b2.field_errors?._ ?? '정리에 실패했습니다.')
-        }
-        return
-      }
-
-      const found = (b2.enrichment?.places ?? []).length
-      if (found === 0) {
-        setError('웹 검색에서 출처가 확인되는 정보를 찾지 못했습니다. 장소명이 정확한지 확인해 주세요.')
-        return
-      }
-      router.refresh()
-    } catch {
-      setError('네트워크 오류가 발생했습니다. 다시 시도해 주세요.')
-    } finally {
-      setBusy(false)
-      setEnrichMsg(null)
-    }
+    const res = await doEnrich()
+    setEnrichMsg(null)
+    setProgress(null)
+    setBusy(false)
+    if (res === 'error') { setError('웹 리뷰 보강에 실패했습니다. 잠시 후 다시 시도해 주세요.'); return }
+    if (res === 'empty') { setError('웹 검색에서 출처가 확인되는 정보를 찾지 못했습니다. 장소명이 정확한지 확인해 주세요.'); return }
+    router.refresh()
   }
 
   /**
