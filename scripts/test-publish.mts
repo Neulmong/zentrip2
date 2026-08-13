@@ -137,7 +137,7 @@ check('published_at 기록 (§12.2 2항)', !!body.published_at)
 
 const publicRes = await fetch(`${BASE}/p/${SLUG}`)  // ← 쿠키 없음
 const html = await publicRes.text()
-check('비로그인 200 (§20 2:20)', publicRes.status === 200, publicRes.status)
+check('비로그인 200 (§20 공개 접속)', publicRes.status === 200, publicRes.status)
 check(`즉시 공개 — 게시부터 ${Date.now() - t0}ms`, Date.now() - t0 < 5000)
 check('행사명이 렌더링된다', html.includes(FIXTURE_PAGE.sections[0].data.headline as string))
 check('신청 폼 5개 필드 (§13.1)',

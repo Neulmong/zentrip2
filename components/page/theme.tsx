@@ -182,7 +182,7 @@ export function Band({ children, style, nextTone, bleed, className = '' }: BandP
   const inner = `mx-auto w-full ${WIDTH_CLASS[width]} px-5 md:px-8 ${align === 'center' ? 'text-center' : ''}`
 
   return (
-    <section className={`relative w-full ${toneClass(tone)} ${PAD_CLASS[pad]} ${className}`}>
+    <section className={`zt-reveal relative w-full ${toneClass(tone)} ${PAD_CLASS[pad]} ${className}`}>
       <div className={bleed ? 'w-full' : inner}>{children}</div>
       <EdgeShape edge={edge} nextTone={nextTone} />
     </section>

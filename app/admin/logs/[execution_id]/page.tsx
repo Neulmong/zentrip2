@@ -10,7 +10,7 @@ import { VERDICT_LABEL, type LogCategory, type LogStep, type Verdict } from '@/l
 /**
  * §14.3 — 실행 로그 뷰. `/admin/logs/{execution_id}` **단일 화면**이다.
  *
- * §20 3분 시연의 마지막 컷이 이 화면이다. 「무엇이 어떤 판정으로 지나갔는가」가
+ * §20 관통의 마지막 단계가 이 화면이다. 「무엇이 어떤 판정으로 지나갔는가」가
  * 한 화면에서 읽혀야 하므로 단계별로 화면을 나누지 않는다.
  *
  * ## 탭을 클라이언트 상태로 두지 않았다

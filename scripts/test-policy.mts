@@ -17,7 +17,7 @@ import {
 import {
   validateFormInput, buildFormInput, tripDays, hasDayMarker, combineTripPeriod, coerceFormInput,
 } from '../lib/form-validation'
-import { parseFreeform } from '../lib/pipeline/freeform'
+import { parseFreeform, assembleDraft } from '../lib/pipeline/freeform'
 import {
   describeStatus, screenPath, verificationBadge, editBadge,
   publishGate, publishProcedure, PUBLISHABLE_STATUSES, deleteGate,
@@ -45,8 +45,7 @@ import {
   DECOMPOSE_SCHEMA, COMPOSE_SCHEMA, VALIDATION_SCHEMA,
 } from '../lib/pipeline/ai-contracts'
 import { MAX_BACKOFF_MS, backoff } from '../lib/client/run-pipeline'
-import { quotaSummary } from '../lib/ai/gemini'
-import { createDeepseekProvider } from '../lib/ai/deepseek'
+import { quotaSummary, createGeminiProvider } from '../lib/ai/gemini'
 import { GoogleGenAI } from '@google/genai'
 import { readFileSync } from 'node:fs'
 
@@ -875,8 +874,8 @@ check('게시 중 + 신청 있음은 게시 중단 안내가 먼저다 (풀어�
 /* ════════════════════════════════════════════════════════════════
  * U15 — AI 출력 스키마 강제 (§4.3 · lib/ai/schema.ts)
  *
- * Gemini는 `responseSchema`로 제공자가 강제하지만, **예비 경로(DeepSeek)는
- * `json_schema` strict 모드가 없어** 이 검증기가 유일한 관문이다.
+ * Gemini는 `responseSchema`로 제공자가 강제하지만, 제공자 강제만 믿지 않고
+ * 받은 JSON을 이 검증기로 한 번 더 대조하는 방어층을 둔다.
  * 여기가 조용히 통과시키면 구조가 깨진 값이 파이프라인에 그대로 들어간다.
  * ════════════════════════════════════════════════════════════════ */
 section('U15 — AI 출력 스키마 강제 (§4.3)')
@@ -1129,56 +1128,37 @@ section('U19 — 여행주제 · 기획메모 (§6.1·§7.4)')
 }
 
 /* ════════════════════════════════════════════════════════════════
- * U20 — 주 공급자·모델 관문 (§4.3 · lib/ai/deepseek.ts · lib/ai/index.ts)
+ * U20 — 공급자·모델 관문 (§4.3 · lib/ai/gemini.ts · lib/ai/index.ts)
  *
- * spec 2.6에서 주 공급자가 DeepSeek으로, 모델이 `deepseek-v4-flash` **하나로**
- * 확정됐다. 확정을 문서에만 적어두면 급할 때 환경 변수 한 줄로 뒤집힌다 —
- * 「일단 pro로 올려보자」가 가능한 순간 그것은 확정이 아니다.
- * 그래서 provider가 호출 **전에** 던지는지를 여기서 센다.
+ * 공급자는 Gemini 하나다. 기본 모델은 `gemini-3.5-flash-lite`이고, 라우트는
+ * `lib/ai`의 provider 중립 인터페이스만 부른다. 요청 1건은 SDK 자동 재시도
+ * 없이 `AbortSignal.timeout(AI_TIMEOUT_MS)`으로 예산 안에서 끊긴다(§4.2).
  * ════════════════════════════════════════════════════════════════ */
-section('U20 — 주 공급자·모델 관문 (§4.3)')
+section('U20 — 공급자·모델 관문 (§4.3)')
 
 const AI_INDEX_SOURCE = readFileSync(new URL('../lib/ai/index.ts', import.meta.url), 'utf8')
-const DEEPSEEK_SOURCE = readFileSync(new URL('../lib/ai/deepseek.ts', import.meta.url), 'utf8')
 
-const threw = (fn: () => unknown): string | null => {
-  try { fn(); return null } catch (e) { return (e as Error).message }
-}
+check('기본 모델은 gemini-3.5-flash-lite다',
+  createGeminiProvider('key-test').model === 'gemini-3.5-flash-lite',
+  createGeminiProvider('key-test').model)
+check('공급자 이름이 gemini다', createGeminiProvider('key-test').name === 'gemini')
+check('AI_MODEL로 다른 flash 계열을 지정할 수 있다',
+  createGeminiProvider('key-test', 'gemini-2.5-flash').model === 'gemini-2.5-flash')
 
-check('기본 모델은 deepseek-v4-flash다',
-  createDeepseekProvider('sk-test').model === 'deepseek-v4-flash',
-  createDeepseekProvider('sk-test').model)
-check('공급자 이름이 deepseek다', createDeepseekProvider('sk-test').name === 'deepseek')
-
-check('deepseek-v4-pro는 생성 시점에 거부된다',
-  threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-pro')) !== null)
-check('거부 사유가 pro를 지목한다 (로그만 보고 원인을 안다)',
-  /pro/i.test(threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-pro')) ?? ''),
-  threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-pro')))
-check('대소문자를 섞어도 못 뚫는다',
-  threw(() => createDeepseekProvider('sk-test', 'DeepSeek-V4-PRO')) !== null)
-check('flash가 아닌 값도 거부된다',
-  threw(() => createDeepseekProvider('sk-test', 'deepseek-chat')) !== null)
-check('flash 계열은 통과한다 (503 대비 탈출구는 남아 있다)',
-  threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-flash-lite')) === null,
-  threw(() => createDeepseekProvider('sk-test', 'deepseek-v4-flash-lite')))
-
-check('AI_PROVIDER가 비면 deepseek으로 간다 (기본값이 주 경로다)',
-  /AI_PROVIDER\s*\?\?\s*'deepseek'/.test(AI_INDEX_SOURCE),
-  'lib/ai/index.ts의 기본값이 deepseek이 아니다')
-check('예비 경로는 gemini를 명시할 때만 선택된다',
-  /===\s*'gemini'\s*\?\s*'gemini'\s*:\s*'deepseek'/.test(AI_INDEX_SOURCE))
-check('주 경로도 SDK 자동 재시도를 끈다 (§4.2 — 25초 예산)',
-  /maxRetries:\s*0/.test(DEEPSEEK_SOURCE))
-check('주 경로 타임아웃이 공용 상수를 쓴다 (25초가 한 곳에서 온다)',
-  /timeout:\s*AI_TIMEOUT_MS/.test(DEEPSEEK_SOURCE))
+check('공급자 기본값이 gemini 하나로 고정돼 있다',
+  /gemini:\$\{model/.test(AI_INDEX_SOURCE),
+  'lib/ai/index.ts가 gemini 단일 공급자로 배선돼 있지 않다')
+check('GEMINI_API_KEY가 없으면 발급 안내와 함께 던진다',
+  /GEMINI_API_KEY/.test(AI_INDEX_SOURCE) && /aistudio\.google\.com/.test(AI_INDEX_SOURCE))
+check('타임아웃이 공용 상수를 쓴다 (한 곳에서 온다 · SDK 자동 재시도는 U17이 검사)',
+  /AbortSignal\.timeout\(AI_TIMEOUT_MS\)/.test(GEMINI_SOURCE))
 
 /* ── 하네스 체인에 새로 들어간 검사 2종 ─────────────────────── */
 
 /*
  * `tonal-manner-apply`(보호값 검증)와 `memo-leak-check`는 매니페스트가 체인에
  * 선언했지만 라우트 코드에는 없던 검사다. 체인에 넣는 순간 **정상 산출물을
- * 반려할 위험**이 생긴다 — 그러면 데모가 첫 요청에서 죽는다.
+ * 반려할 위험**이 생긴다 — 그러면 파이프라인이 첫 요청에서 죽는다.
  *
  * 그래서 두 방향을 다 고정한다: 정상 산출물에 0건, 조작에는 1건 이상.
  */
@@ -1435,6 +1415,54 @@ section('U21 — 2.7에서 났던 결함 (§7.4·§7.5)')
   const 누출 = parseFreeform('여행일정: 4박5일 (11.04~11.08)')
   check('대시 없는 일정 라벨에서도 기간 표현이 새지 않는다',
     !누출.장소후보.some((c) => /박\s*\d*\s*일/.test(c.이름)), 누출.장소후보.map((c) => c.이름))
+
+  /*
+   * ③-b2 **연도 없는 날짜는 생성 연도로 보완한다** (2026-08-13 · 사용자 요청).
+   *
+   * 이전 판본은 연도 없는 `11.04~11.08`을 `날짜: null`로 두고 사람에게 물었다.
+   * 이제 `baseYear`(요청 연도)를 붙여 채운다(§7.5). `baseYear`를 주지 않으면 종전대로
+   * `null`이다 — 그 호환이 위 기존 테스트들이 그대로 통과하는 근거다.
+   */
+  const 연도보완 = parseFreeform('여행일정: 4박5일 (11.04~11.08)', 2026)
+  check('연도 없는 날짜에 생성 연도를 붙인다',
+    연도보완.날짜?.시작 === '2026-11-04' && 연도보완.날짜?.종료 === '2026-11-08',
+    연도보완.날짜)
+  const 연도없음 = parseFreeform('여행일정: 4박5일 (11.04~11.08)')
+  check('baseYear 없이 부르면 종전대로 날짜를 비운다 (하위 호환)',
+    연도없음.날짜 === null, 연도없음.날짜)
+  const 연말넘김 = parseFreeform('여행일정: 12.30~01.02', 2026)
+  check('연말을 넘는 여행은 종료에만 +1년을 붙인다',
+    연말넘김.날짜?.시작 === '2026-12-30' && 연말넘김.날짜?.종료 === '2027-01-02',
+    연말넘김.날짜)
+  const 명시연도 = parseFreeform('여행일정: 2026-11-04~11-08', 2030)
+  check('메모에 연도가 있으면 baseYear를 무시하고 그 연도를 쓴다',
+    명시연도.날짜?.시작 === '2026-11-04', 명시연도.날짜)
+
+  /*
+   * ③-b3 **`-행사:` 라벨의 날짜가 행사기간을 채운다** (2026-08-13 · 사용자 2차 보고).
+   *
+   * 전에는 `assembleDraft`가 행사기간을 `''`로 하드코딩해, 행사 날짜를 적어도 빈 채로 왔다.
+   * 이제 `행사` 블록의 날짜를 `행사날짜`로 읽어 여행기간과 별개로 채운다(§6.2.1).
+   */
+  const 행사 = parseFreeform('-행사: 제주올레걷기축제 (11.05~11.07)', 2026)
+  check('`행사` 라벨 블록의 날짜를 행사날짜로 읽는다',
+    행사.행사날짜?.시작 === '2026-11-05' && 행사.행사날짜?.종료 === '2026-11-07', 행사.행사날짜)
+  check('행사 블록이 없으면 행사날짜는 null이다 (선택 필드)',
+    parseFreeform('-숙박: 롯데호텔 제주 (중문)', 2026).행사날짜 === null)
+  const 둘다 = parseFreeform('-여행일정: 4박5일 (11.04~11.08)\n-행사: 축제 (11.05~11.07)', 2026)
+  check('여행기간은 전체 텍스트 날짜, 행사기간은 행사 블록 날짜 — 섞이지 않는다',
+    둘다.날짜?.시작 === '2026-11-04' && 둘다.행사날짜?.시작 === '2026-11-05',
+    { 여행: 둘다.날짜, 행사: 둘다.행사날짜 })
+  const 초안 = assembleDraft(
+    { 행사명: '제주올레걷기축제', 여행지: '제주', 여행기간_시작: '2026-11-05', 여행기간_종료: '2026-11-07',
+      여행스타일: '자연', 식사정보: '', 일정: [], 숙박: [], 상점: [],
+      항공편: { 공항: '', 항공사: '', 편명: '', 출발시간: '', 도착시간: '' } },
+    { 장소후보: [], 필드: { 여행주제: '', 타겟층: '', 기획메모: '' }, 일정원문: '',
+      행사날짜: { 시작: '2026-11-05', 종료: '2026-11-07' } },
+  )
+  check('assembleDraft가 행사날짜를 행사기간 2필드로 옮긴다',
+    초안.행사정보.행사기간_시작 === '2026-11-05' && 초안.행사정보.행사기간_종료 === '2026-11-07',
+    { 시작: 초안.행사정보.행사기간_시작, 종료: 초안.행사정보.행사기간_종료 })
 
   /*
    * ③-c **사람이 쓴 일정을 보존한다** (2026-08-13 · 사용자 버그).

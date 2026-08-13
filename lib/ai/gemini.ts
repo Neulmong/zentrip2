@@ -1,42 +1,38 @@
 import { GoogleGenAI, FinishReason, ThinkingLevel } from '@google/genai'
 import { AI_MAX_TOKENS, AI_TIMEOUT_MS } from '../types'
-import type { AiErrorType, AiProvider, AiRequest, AiResult, AiUsage } from './contract'
+import type {
+  AiErrorType, AiProvider, AiRequest, AiResult, AiUsage, GroundingSource,
+} from './contract'
 
 /**
- * Gemini 구현 — **DeepSeek(주 공급자)의 예비 경로** (§4.3).
+ * Gemini 구현 — **주 공급자** (§4.3).
  *
- * 주 경로가 과부하·인증·잔액으로 막혔을 때 `AI_PROVIDER=gemini` 한 줄로
- * 갈아탄다. 쿼터가 완전히 분리되므로 데모 당일 단일 실패점이 사라진다.
- * 다만 무료 티어는 **모델당 하루 20회**라 대본 3회분밖에 못 버틴다 —
- * 상시 경로로 쓸 수 없어 예비로 내린 것이 이 파일의 현재 위치다.
+ * 기본 모델은 `gemini-3.5-flash-lite`다. 라우트는 `lib/ai`의 provider 중립
+ * 인터페이스만 부르므로 모델을 바꿔도 파이프라인 라우트는 손대지 않는다.
+ * 이 경로가 과부하·인증·한도로 막히면 `AI_MODEL`로 다른 flash 계열 모델로
+ * 갈아탄다.
+ *
+ * ⚠ 무료 티어는 **모델당 하루 20회**(`GenerateRequestsPerDayPerProjectPerModel`)
+ * 라 429의 `retryDelay`를 기다려도 일일 쿼터는 회복되지 않는다. 상시 사용은
+ * 결제 계정(종량제) 키를 전제로 한다.
  *
  * 무료 티어는 **flash 계열만** 대상이다. pro 계열은 유료다.
- * 컨텍스트 캐싱은 유료 전용이라 쓰지 않는다 — 비용이 0이라 실질 손해는 없고
- * 지연만 조금 는다.
  */
 
 /**
- * 실측(2026-08-11, page_content 9섹션 스키마 강제) 근거로 고른 값이다.
- *
- *   gemini-3.5-flash  9.8초  (사고 1,425)  ← 채택
- *   gemini-3.6-flash 20.3초  (사고 3,933)
- *
- * 3.6은 25초 예산에 4.7초밖에 남기지 않고, §5.5의 `processing_delayed`
- * 임계값(20초)을 매 생성마다 넘겨 이상 플래그가 상시 뜬다.
- * 품질 차이는 이 작업에서 관측되지 않았다.
- *
- * 한도·과부하로 막히면 `AI_MODEL` 환경 변수로 갈아끼운다.
+ * 기본 모델. 한도·과부하로 막히면 `AI_MODEL` 환경 변수로 갈아끼운다.
  */
-const DEFAULT_MODEL = 'gemini-3.5-flash'
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite'
 
 /** spec §4.3의 effort 대응. 생성은 medium, 검증·초안은 low. */
 const THINKING: Record<AiRequest['effort'], ThinkingLevel> = {
   generate: ThinkingLevel.MEDIUM,
   validate: ThinkingLevel.LOW,
   /*
-   * 주 경로(DeepSeek)는 초안에서 사고를 **끈다**(`thinking: disabled`) — 발산하기
-   * 때문이다. Gemini의 `ThinkingLevel`에는 끄는 값이 없어 `LOW`가 최선이다.
-   * 예비 경로로 전환했을 때 초안이 느리거나 잘리면 그 원인이 여기다.
+   * 초안(§7.5)은 사고를 끄는 것이 이상적이다 — 장소 배분은 제약 만족 문제라
+   * 사고 연쇄가 발산하기 때문이다(contract.ts `Effort` 표 참조). 다만 Gemini의
+   * `ThinkingLevel`에는 끄는 값이 없어 `LOW`가 최선이다. 초안이 느리거나
+   * 잘리면 그 원인이 여기다.
    */
   plan: ThinkingLevel.LOW,
 }
@@ -105,6 +101,24 @@ function readUsage(u: unknown): AiUsage {
 }
 
 /**
+ * `groundingMetadata`에서 인용 출처를 뽑는다 (Task 2 — place-enrichment).
+ *
+ * `groundingChunks[].web`이 `{title, uri}`를 담는다(`probe-grounding.mts` 실측 형태).
+ * uri가 없는 청크는 인용으로 쓸 수 없으므로 버린다 — 출처 없는 값은 §8.8 위반이다.
+ */
+function readSources(cand: unknown): GroundingSource[] {
+  const chunks = (cand as {
+    groundingMetadata?: { groundingChunks?: Array<{ web?: { title?: string; uri?: string } }> }
+  })?.groundingMetadata?.groundingChunks ?? []
+  const out: GroundingSource[] = []
+  for (const c of chunks) {
+    const uri = c.web?.uri
+    if (uri) out.push({ title: c.web?.title ?? uri, uri })
+  }
+  return out
+}
+
+/**
  * ⚠ **`httpOptions.retryOptions`를 넘기지 마라** (§4.2 · A-14).
  *
  * `@google/genai`는 `retryOptions`가 **없으면 재시도하지 않는다**
@@ -137,12 +151,20 @@ export function createGeminiProvider(apiKey: string, model = DEFAULT_MODEL): AiP
         elapsedMs: Date.now() - startedAt, model, retryAfterMs,
       })
 
-      let res
-      try {
-        res = await ai.models.generateContent({
-          model,
-          contents: [{ role: 'user', parts: [{ text: req.user }] }],
-          config: {
+      /*
+       * 그라운딩과 스키마는 병용 불가다(probe-grounding.mts 실측). `grounding`이면
+       * 검색 도구만 걸고 JSON 강제를 뺀다 — 출력은 자유 텍스트이고 출처가 함께 온다.
+       * 아니면 기존 경로: 출력을 JSON 스키마로 강제한다(§4.3).
+       */
+      const config = req.grounding
+        ? {
+            systemInstruction: req.system,
+            tools: [{ googleSearch: {} }],
+            maxOutputTokens: AI_MAX_TOKENS,
+            thinkingConfig: { thinkingLevel: THINKING[req.effort] },
+            abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
+          }
+        : {
             systemInstruction: req.system,
             // 출력 강제. 프롬프트로 "JSON만 출력"이라 지시하지 않는다(§4.3).
             responseMimeType: 'application/json',
@@ -152,7 +174,14 @@ export function createGeminiProvider(apiKey: string, model = DEFAULT_MODEL): AiP
             // 재시도는 클라이언트가 같은 API를 재호출한다(§4.2).
             // SDK가 자동 재시도하면 요청 예산(AI_TIMEOUT_MS)을 넘긴다.
             abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
-          },
+          }
+
+      let res
+      try {
+        res = await ai.models.generateContent({
+          model,
+          contents: [{ role: 'user', parts: [{ text: req.user }] }],
+          config,
         })
       } catch (e) {
         const { type, detail, retryAfterMs } = classify(e)
@@ -176,6 +205,19 @@ export function createGeminiProvider(apiKey: string, model = DEFAULT_MODEL): AiP
 
       const text = res.text
       if (!text) return fail('schema_invalid', '본문이 비어 있습니다.', finishReason, usage)
+
+      /*
+       * 그라운딩 호출은 JSON이 아니라 자유 텍스트를 낸다. 파싱하지 않고 문자열을
+       * 그대로 `data`로 돌려주고 인용 출처를 함께 싣는다. 구조화는 뒤 호출이 맡는다.
+       */
+      if (req.grounding) {
+        return {
+          ok: true, data: text as unknown as T, usage,
+          sources: readSources(res.candidates?.[0]),
+          finishReason: finishReason ?? FinishReason.STOP,
+          elapsedMs: Date.now() - startedAt, model,
+        }
+      }
 
       let data: T
       try {

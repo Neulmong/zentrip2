@@ -23,7 +23,8 @@
  * 제약 만족 문제라 사고 연쇄가 발산한다 — `medium`·`low`·`minimal`·파라미터 없음
  * 네 경우 모두 `max_tokens` 8000을 전부 추론에 쓰고 본문이 **0자**로 나왔다
  * (63~74초). 사고를 끄면 **2.9초에 416토큰**으로 정확한 배분이 나온다.
- * 자세한 표는 `lib/ai/deepseek.ts`의 `EFFORT`에 있다.
+ * Gemini에는 사고를 끄는 `ThinkingLevel`이 없어 `plan`은 `LOW`로 매핑한다 —
+ * 대응 표는 `lib/ai/gemini.ts`의 `THINKING`에 있다.
  *
  * 이름을 `validate`와 나눈 이유: 근거가 이름에 남아야 한다. 같은 값으로 적어 두면
  * 「검증도 아닌데 왜 validate인가」를 다음 사람이 다시 조사하게 되고, `generate`로
@@ -45,6 +46,26 @@ export interface AiRequest {
   effort: Effort
   /** 로그·플래그에 남길 단계 이름 */
   label: string
+  /**
+   * Google Search 그라운딩(웹 검색)을 켠다 (Task 2 — place-enrichment 1단계).
+   *
+   * ⚠️ **`responseSchema`와 병용 불가.** 2026-08-13 `probe-grounding.mts` 실측:
+   * 둘을 함께 걸면 JSON은 나오지만 `groundingMetadata`가 **비어** 나온다(출처 0건 =
+   * 검색이 꺼진다). 그래서 `grounding: true`이면 provider가 `schema`를 **무시**하고
+   * responseMimeType/responseSchema를 걸지 않는다 — 출력은 **자유 텍스트**이고
+   * (`data`가 그 문자열), 인용 출처가 `sources`로 함께 온다.
+   *
+   * 절대원칙 3(JSON 강제)은 이 호출에는 적용되지 않는다. 구조화는 **뒤이은 별도
+   * 호출**(그라운딩 없이 `responseSchema`)이 맡고, 그 호출이 이 `sources`를
+   * `source`로 실어 나른다(Option A · 2호출). 근거는 `docs/planner-pivot-design.md` §5.
+   */
+  grounding?: boolean
+}
+
+/** 그라운딩 인용 출처 (§8.8 확장 — 값→출처 URL). */
+export interface GroundingSource {
+  title: string
+  uri: string
 }
 
 export interface AiUsage {
@@ -74,6 +95,11 @@ export type AiResult<T> =
       usage: AiUsage
       elapsedMs: number
       model: string
+      /**
+       * 그라운딩 인용 출처 (`grounding: true`일 때만 채워진다). 없으면 `undefined`.
+       * 구조화 호출이 이 URL을 `source`로 승계한다(Option A).
+       */
+      sources?: GroundingSource[]
     }
   | {
       ok: false

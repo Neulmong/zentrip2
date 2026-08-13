@@ -37,8 +37,15 @@ export async function POST(req: NextRequest) {
   const 종료 = typeof body.여행기간_종료 === 'string' ? body.여행기간_종료 : ''
   const hint = 시작 && 종료 ? { 시작, 종료 } : undefined
 
+  /*
+   * 연도 없는 여행 날짜(`11.05~11.08`)의 보완 기준(§7.5). 이 라우트는 상품 행을 만들지
+   * 않아 `created_at`이 없으므로, 「생성 시점」은 이 요청의 연도다. 초안 값이고 사람이
+   * 폼에서 바꿀 수 있으므로 타임존까지 따지지 않는다 — 연도만 쓴다.
+   */
+  const baseYear = new Date().getFullYear()
+
   try {
-    const outcome = await runPlanDraft({ text: body.text, hint })
+    const outcome = await runPlanDraft({ text: body.text, baseYear, hint })
 
     if (outcome.kind === 'input_error') {
       return badRequest({ [outcome.field]: outcome.reason })

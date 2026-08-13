@@ -33,8 +33,10 @@ export interface PlaceCandidate {
 
 export interface FreeformParse {
   블록: { 라벨: string; 본문: string }[]
-  /** 연도를 읽을 수 있었을 때만 채운다. 추정하지 않는다 */
+  /** 여행기간. 전체 텍스트에서 읽는다. 연도 없으면 생성 연도로 보완(§7.5) */
   날짜: { 시작: string; 종료: string } | null
+  /** 행사기간. `행사` 라벨 블록의 날짜만 읽는다 — 여행기간과 별개(§6.2.1) */
+  행사날짜: { 시작: string; 종료: string } | null
   일수: number | null
   장소후보: PlaceCandidate[]
   URL: string[]
@@ -166,7 +168,7 @@ function splitPlaceLine(line: string): { 이름: string; 주소: string } | null
   return { 이름: clean.slice(0, sp).trim(), 주소: clean.slice(sp + 1).trim() }
 }
 
-/** `11.04~11.08` 처럼 연도가 없는 표기. 연도를 만들지 않는 근거는 SKILL.md */
+/** `11.04~11.08` 처럼 연도가 없는 표기. 생성 연도로 보완하는 근거는 SKILL.md */
 const MD_RANGE = /(\d{1,2})[.\/](\d{1,2})\s*[~-]\s*(\d{1,2})[.\/](\d{1,2})/
 const YMD_RANGE =
   /(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})\s*[~-]\s*(?:(\d{4})[-.\/])?(\d{1,2})[-.\/](\d{1,2})/
@@ -183,11 +185,36 @@ function daysBetween(start: string, end: string): number | null {
 }
 
 /**
+ * 텍스트에서 날짜 범위 하나를 읽는다(§7.5). 연도가 있으면 그대로, 없으면 `baseYear`
+ * (요청 시점의 연도)로 보완하고 종료가 시작보다 이르면 종료에 +1년(연말 넘김).
+ * 못 읽으면 `null`.
+ *
+ * **여행기간(전체 텍스트)과 행사기간(`행사` 블록)이 같은 규칙을 쓰게 하는 단일 출처다.**
+ * `baseYear`가 없으면(테스트 등) 연도 없는 값은 보완하지 않고 `null`을 낸다.
+ */
+function readDateRange(text: string, baseYear?: number): { 시작: string; 종료: string } | null {
+  const ymd = YMD_RANGE.exec(text)
+  if (ymd) {
+    const 시작 = `${ymd[1]}-${pad(ymd[2])}-${pad(ymd[3])}`
+    // 종료의 연도가 생략되면 시작의 연도를 쓴다 — 「2026.11.04~11.08」
+    return { 시작, 종료: `${ymd[4] ?? ymd[1]}-${pad(ymd[5])}-${pad(ymd[6])}` }
+  }
+  const md = MD_RANGE.exec(text)
+  if (md && baseYear != null) {
+    const 시작 = `${baseYear}-${pad(md[1])}-${pad(md[2])}`
+    let 종료 = `${baseYear}-${pad(md[3])}-${pad(md[4])}`
+    if (종료 < 시작) 종료 = `${baseYear + 1}-${pad(md[3])}-${pad(md[4])}`
+    return { 시작, 종료 }
+  }
+  return null
+}
+
+/**
  * 스킬 `freeform-parse` — 메모에서 기계로 알아볼 수 있는 것만 뽑는다.
  *
  * 실패하지 않는다. 아무것도 못 찾으면 빈 배열·`null`을 반환한다.
  */
-export function parseFreeform(text: string): FreeformParse {
+export function parseFreeform(text: string, baseYear?: number): FreeformParse {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
 
   /* ── 라벨 블록 ─────────────────────────────────────────────── */
@@ -226,22 +253,22 @@ export function parseFreeform(text: string): FreeformParse {
   if (블록[0].라벨 === '' && normalizeSpace(블록[0].본문) === '') 블록.shift()
   for (const b of 블록) b.본문 = b.본문.trim()
 
-  /* ── 날짜 ──────────────────────────────────────────────────── */
-  let 날짜: { 시작: string; 종료: string } | null = null
-  const ymd = YMD_RANGE.exec(text)
-  if (ymd) {
-    const 시작 = `${ymd[1]}-${pad(ymd[2])}-${pad(ymd[3])}`
-    // 종료의 연도가 생략되면 시작의 연도를 쓴다 — 「2026.11.04~11.08」
-    날짜 = { 시작, 종료: `${ymd[4] ?? ymd[1]}-${pad(ymd[5])}-${pad(ymd[6])}` }
-  }
-  /*
-   * 연도 없는 `11.04~11.08`은 **날짜로 인정하지 않는다.** 연도를 고르는 것은
-   * 추정이고, 여행기간은 일차 수와 이미지 슬롯 수를 결정하는 값이다(§6.2.1).
-   * 대신 화면이 사람에게 날짜를 고르게 한다.
-   */
-  const 연도미정 = 날짜 === null && MD_RANGE.test(text)
+  /* ── 여행기간 날짜 (전체 텍스트) ───────────────────────────────
+   * 연도 없는 `11.04~11.08`은 생성 연도로 보완한다(§7.5). `baseYear`가 없으면
+   * `날짜: null`이 되고, `checkDraft`가 `notes.날짜미정`(= `!날짜`)으로 화면에
+   * 「사람이 고르라」를 띄운다. baseYear가 있으면 채워지므로 그 배너는 뜨지 않는다.
+   * ──────────────────────────────────────────────────────────── */
+  const 날짜 = readDateRange(text, baseYear)
 
   const 일수 = 날짜 ? daysBetween(날짜.시작, 날짜.종료) : null
+
+  /* ── 행사기간 날짜 (`행사` 라벨 블록) — 2026-08-13 ────────────────
+   * `-행사: 제주올레걷기축제 (11.05~11.07)`의 날짜는 여행기간이 아니라 행사 자체
+   * 기간이다(§6.2.1). **`행사` 블록의 본문에서만** 읽는다 — 전체 텍스트에서 읽으면
+   * 여행기간과 구분되지 않는다. 블록이 없거나 날짜가 없으면 `null`(선택 필드).
+   * ──────────────────────────────────────────────────────────── */
+  const 행사블록 = 블록.find((b) => /행사/.test(b.라벨))
+  const 행사날짜 = 행사블록 ? readDateRange(행사블록.본문, baseYear) : null
 
   /* ── 장소 후보 ─────────────────────────────────────────────── */
   const 장소후보: PlaceCandidate[] = []
@@ -331,7 +358,8 @@ export function parseFreeform(text: string): FreeformParse {
 
   return {
     블록,
-    날짜: 연도미정 ? null : 날짜,
+    날짜,
+    행사날짜,
     일수,
     장소후보,
     URL: [...new Set(text.match(URL_RE) ?? [])],
@@ -384,7 +412,7 @@ const 가격경로 = ['가격.성인', '가격.아동', '가격.기타'] as cons
  * 「숙소명을 2자 이상」이라 말하는데 사람은 무엇을 넣어야 할지 알 수 없다.
  */
 export function assembleDraft(
-  plan: PlanResult, parsed: Pick<FreeformParse, '장소후보' | '필드' | '일정원문'>,
+  plan: PlanResult, parsed: Pick<FreeformParse, '장소후보' | '필드' | '일정원문' | '행사날짜'>,
 ): FormInput {
   const 장소후보 = parsed.장소후보
   const at = (i: unknown): PlaceCandidate | undefined =>
@@ -437,9 +465,10 @@ export function assembleDraft(
     행사정보: {
       행사명: plan.행사명 ?? '',
       여행지: plan.여행지 ?? '',
-      // 행사 기간은 초안에서 채우지 않는다 — 메모의 행사 날짜는 연도가 없는 경우가
-      // 많아 추정하지 않는다(§7.5). 사람이 폼에서 넣는다. 선택 필드라 빈 값이 정상이다.
-      행사기간_시작: '', 행사기간_종료: '',
+      // 행사 기간은 `행사` 라벨 블록의 날짜로 채운다(§7.5 · 2026-08-13). 연도 없는
+      // 표기는 `parseFreeform`이 생성 연도로 보완해 이미 ISO다. 없으면 빈 값(선택 필드).
+      // AI를 거치지 않는다 — `PlanResult`에 행사기간이 없으므로 여기서 기계로 옮긴다.
+      행사기간_시작: parsed.행사날짜?.시작 ?? '', 행사기간_종료: parsed.행사날짜?.종료 ?? '',
       여행기간_시작: plan.여행기간_시작 ?? '',
       여행기간_종료: plan.여행기간_종료 ?? '',
       일정원문,
@@ -471,7 +500,7 @@ export function assembleDraft(
  */
 export function checkDraft(
   draft: FormInput, text: string, 장소후보: readonly PlaceCandidate[],
-  parsed?: Pick<FreeformParse, '날짜'>,
+  parsed?: Pick<FreeformParse, '날짜' | '행사날짜'>,
 ): DraftResult {
   const 원문 = normalizeSpace(text)
 
@@ -501,6 +530,8 @@ export function checkDraft(
   for (const [필드, 읽은값] of [
     ['여행기간_시작', parsed?.날짜?.시작],
     ['여행기간_종료', parsed?.날짜?.종료],
+    ['행사기간_시작', parsed?.행사날짜?.시작],
+    ['행사기간_종료', parsed?.행사날짜?.종료],
   ] as const) {
     const v = normalizeSpace(g[필드])
     origin[`행사정보.${필드}`] = v === ''

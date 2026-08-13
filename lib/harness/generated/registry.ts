@@ -10,7 +10,7 @@
  * 이 파일을 고쳐도 다음 빌드에서 덮어써진다 (규약 R4·R5).
  *
  * 줄바꿈은 LF로 정규화돼 있다 — 프롬프트 바이트가 플랫폼에 따라 흔들리면
- * DeepSeek 컨텍스트 캐시 적중이 깨진다.
+ * 실측 재현 조건이 달라지고 Gemini 컨텍스트 캐시(유료 티어) 적중이 깨진다.
  */
 
 export type SkillKind = 'ai' | 'mechanical' | 'spec'
@@ -66,7 +66,7 @@ export const PROMPT_HASHES = {
  *
  * 변형키가 있는 이유: `fact-check`는 대상(brochure/page)에 따라 지시가 다르다.
  *
- * 시스템 프롬프트와 달리 이것은 **캐시 프리픽스가 아니다** — DeepSeek 컨텍스트
+ * 시스템 프롬프트와 달리 이것은 **캐시 프리픽스가 아니다** — Gemini 컨텍스트
  * 캐시는 최장 공통 접두를 잡는데 system이 앞에 오므로, user 쪽 변경은 system
  * 프리픽스 적중을 깨지 않는다.
  */

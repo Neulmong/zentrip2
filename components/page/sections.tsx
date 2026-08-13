@@ -69,7 +69,7 @@ function CardList({ rows: list, 제목필드, 필드, 배지필드, cols = 2 }: 
   return (
     <ul className={`mt-5 grid gap-4 ${grid}`}>
       {list.map((row, i) => (
-        <li key={`${i}-${row[제목필드]}`} className="min-w-0 rounded-xl border border-[var(--t-primary)] p-4">
+        <li key={`${i}-${row[제목필드]}`} className="min-w-0 rounded-xl border border-[var(--t-primary)]/60 bg-[var(--t-surface)]/50 p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[var(--t-primary)] hover:shadow-md">
           <div className="flex items-start gap-2">
             <p className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-snug">
               <Value v={row[제목필드]} />
@@ -106,7 +106,7 @@ export function Hero({ data, t, idx, style }: SectionProps) {
   // minimal: 이미지 없이 테마 그라디언트 + 큰 제목 (분위기 전환)
   if (layout === 'minimal' || !image) {
     return (
-      <section className={`relative w-full overflow-hidden ${image ? '' : ''} ${RATIO.hero}`}>
+      <section className={`zt-reveal relative w-full overflow-hidden ${RATIO.hero}`}>
         {image ? (
           <Image src={image.url} alt={image.alt} fill sizes="100vw" priority className="object-cover" />
         ) : (
@@ -124,13 +124,13 @@ export function Hero({ data, t, idx, style }: SectionProps) {
   }
 
   return (
-    <section className={`relative w-full overflow-hidden ${RATIO.hero}`}>
+    <section className={`zt-reveal relative w-full overflow-hidden ${RATIO.hero}`}>
       <Image src={image.url} alt={image.alt} fill sizes="100vw" priority className="object-cover" />
       <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/35 to-black/10" />
       <div className={`absolute inset-x-0 ${layout === 'split' ? 'inset-y-0 flex items-center' : 'bottom-0'}`}>
         <div className="mx-auto max-w-3xl px-5 pb-7 md:px-8 md:pb-10">
-          <h1 className={`text-2xl leading-tight text-white md:text-4xl ${headlineClass(t)}`}>{headline}</h1>
-          {subcopy && <p className="mt-2 text-sm text-white/90 md:text-base">{subcopy}</p>}
+          <h1 className={`text-2xl leading-tight text-white [text-shadow:0_2px_18px_rgb(0_0_0/0.45)] md:text-4xl ${headlineClass(t)}`}>{headline}</h1>
+          {subcopy && <p className="mt-2 max-w-2xl text-sm text-white/90 [text-shadow:0_1px_10px_rgb(0_0_0/0.5)] md:text-base">{subcopy}</p>}
         </div>
       </div>
     </section>
@@ -268,9 +268,10 @@ export function Price(p: SectionProps) {
       <SectionHeading t={t}>가격</SectionHeading>
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         {([['성인', text(data, '성인')], ['아동', text(data, '아동')]] as [string, string][]).map(([k, v]) => (
-          <div key={k} className="rounded-xl border border-[var(--t-primary)]/25 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wider">{k}</p>
-            <p className="mt-1 break-words text-lg font-semibold"><Value v={v} /></p>
+          <div key={k} className="relative overflow-hidden rounded-xl border border-[var(--t-primary)]/25 bg-[var(--t-surface)]/50 px-4 py-3 shadow-sm transition duration-200 hover:shadow-md">
+            <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-[var(--t-primary)]" />
+            <p className="pl-2 text-xs font-semibold uppercase tracking-wider">{k}</p>
+            <p className="mt-1 break-words pl-2 text-xl font-bold"><Value v={v} /></p>
           </div>
         ))}
       </div>

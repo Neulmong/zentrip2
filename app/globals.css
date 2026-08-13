@@ -41,3 +41,27 @@ select,
 button {
   color-scheme: light;
 }
+
+/**
+ * 상품 페이지 진입 리빌 (Task 3 — 시각 폴리시).
+ *
+ * 공개 페이지는 서버 컴포넌트뿐이라 클라이언트 JS(IntersectionObserver 등)를
+ * 쓸 수 없다(§4 서버 전용). 그래서 스크롤 트리거 대신 **CSS-only 로드 리빌**로
+ * 각 섹션이 부드럽게 떠오르게 한다. 값·구조·대비는 그대로다 — 투명도는 애니메이션
+ * 종료 시 1로 고정되고(`both`), 모션 최소화 선호 시 애니메이션 자체를 끈다.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes zt-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .zt-reveal {
+    animation: zt-reveal 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}

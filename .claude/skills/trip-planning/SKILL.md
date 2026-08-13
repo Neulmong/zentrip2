@@ -13,9 +13,10 @@ description: 추출된 장소·숙소·행사 일정을 근거로 일차별 동�
 `manifest.json`이 유일한 출처다. 요약: `planner-agent` · `plan-draft` 체인 **2번** ·
 **AI 1회**(`effort: plan` → 추론 `low` · `PLAN_SCHEMA`).
 
-`effort: plan`은 **사고를 끈다**(`thinking: disabled`). 실측으로 정해졌다 — 어느 추론
-값을 줘도 `max_tokens` 8000을 전부 추론에 쓰고 본문이 0자로 나온다(63~74초). 끄면
-2.9초에 완전한 출력이 나온다. 표는 spec §4.3 · 근거는 `lib/ai/deepseek.ts`.
+`effort: plan`은 **사고를 최소로 낮춘다**(`thinkingLevel: LOW` — Gemini엔 사고를
+끄는 값이 없어 최선). 실측으로 정해졌다 — 사고를 높이면 `max_tokens` 8000을 전부
+추론에 쓰고 본문이 0자로 나온다(63~74초). 낮추면 2.9초에 완전한 출력이 나온다.
+표는 spec §4.3 · 근거는 `lib/ai/gemini.ts`.
 **이 값을 `generate`로 되돌리면 이 라우트가 항상 409를 낸다.**
 
 앞에 `freeform-parse`(1)가 재료를 뽑고, 뒤에 `draft-assemble`(3)·`draft-form-check`(4)가 온다.

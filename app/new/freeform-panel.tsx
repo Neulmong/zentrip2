@@ -41,7 +41,9 @@ export function FreeformPanel({
   notes: DraftNotes | null
   onFill: (text: string) => Promise<void>
 }) {
-  const [open, setOpen] = useState(false)
+  // 기본으로 펼쳐 둔다 — 빈 폼을 처음부터 손으로 채우는 대신, 메모를 붙여넣어
+  // 폼을 채우는 경로가 「첫 화면」이 되게 한다(Task 1 — 입력 수고 최소화).
+  const [open, setOpen] = useState(true)
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
 

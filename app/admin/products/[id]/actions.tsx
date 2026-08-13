@@ -9,6 +9,7 @@ import {
   describeStatus, publishProcedure, type ActionButton, type StatusInput,
 } from '@/lib/status-view'
 import { PublishDialog } from '@/components/admin/PublishDialog'
+import { GenerationProgress } from '@/components/GenerationProgress'
 import type { ValidationItem } from '@/lib/types'
 
 /**
@@ -35,6 +36,8 @@ export function ProductActions(p: ActionsProps) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
+  /** 파이프라인이 도는 동안만 채워진다 — 스켈레톤 오버레이가 이 값으로 뜬다 */
+  const [genPhases, setGenPhases] = useState<Phase[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   /** 열려 있으면 그 모드의 게시 확인 모달을 띄운다(§11.5) */
   const [dialog, setDialog] = useState<'override' | 'acknowledge' | null>(null)
@@ -51,8 +54,10 @@ export function ProductActions(p: ActionsProps) {
       setError('재개할 단계를 찾지 못했습니다. 화면을 새로고침해 주세요.')
       return
     }
+    setGenPhases(phases)
     const outcome = await runPipeline(p.id, phases, onProgress)
     setProgress(null)
+    setGenPhases(null)
 
     if (outcome.kind === 'error') { setError(outcome.message); return }
     if (outcome.kind === 'input_error') {
@@ -202,6 +207,15 @@ export function ProductActions(p: ActionsProps) {
 
   return (
     <div className="mt-8 border-t border-neutral-200 pt-6">
+      {genPhases && (
+        <GenerationProgress
+          phases={genPhases}
+          progress={progress}
+          variant="page"
+          title="상품 페이지를 생성하고 있습니다"
+        />
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         {buttons.map((b, i) => (
           <button

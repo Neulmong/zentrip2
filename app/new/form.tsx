@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { TRAVEL_STYLES, CHILD_NOT_OFFERED, tripDays } from '@/lib/form-validation'
 import { TRIP_DAYS_MAX, type FormInput } from '@/lib/types'
-import { runPipeline, phasesFrom, BROCHURE_PHASES } from '@/lib/client/run-pipeline'
+import { runPipeline, phasesFrom, BROCHURE_PHASES, type Phase } from '@/lib/client/run-pipeline'
+import { GenerationProgress } from '@/components/GenerationProgress'
 import { slotLabel } from '@/lib/images'
 import { FreeformPanel, type DraftNotes } from './freeform-panel'
 import { emptyRow, RowGroup, SHOP_SPEC, STAY_SPEC, type Row, type RowSpec } from './rows'
@@ -215,6 +216,45 @@ const inputClass =
   'w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none '
   + 'focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900'
 
+/** 타겟층 빠른 선택지 — 흔한 동행자 구성. 값은 사람이 고른 실제 문자열이 된다 */
+const TARGET_PRESETS = [
+  '20대 친구', '30~40대 부부', '가족 (아이 동반)', '시니어 부부', '나홀로 여행', '동호회·단체',
+] as const
+
+/**
+ * 값을 채우는 칩 줄 (Task 1 — 선택형 UI). AI가 값을 만드는 것이 아니라 **사람이
+ * 클릭으로 고르는** 보조 입력이다 — 사실값은 여전히 사람이 정하고 자유 수정된다.
+ * 현재 값과 같은 칩이면 눌러서 해제한다.
+ */
+function ChipRow({
+  presets, value, onPick,
+}: {
+  presets: readonly string[]
+  value: string
+  onPick: (v: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {presets.map((p) => {
+        const active = value.trim() === p
+        return (
+          <button
+            key={p} type="button"
+            onClick={() => onPick(active ? '' : p)}
+            aria-pressed={active}
+            className={`rounded-full border px-2.5 py-1 text-xs transition ${
+              active
+                ? 'border-neutral-900 bg-neutral-900 text-white'
+                : 'border-neutral-300 text-neutral-600 hover:border-neutral-500 hover:bg-neutral-50'}`}
+          >
+            {p}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function Group({ title, required, children }: {
   title: string; required?: boolean; children: React.ReactNode
 }) {
@@ -259,6 +299,8 @@ export function ProductForm({
   const [busy, setBusy] = useState(false)
   const [drafting, setDrafting] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
+  /** 소개서 파이프라인이 도는 동안만 채워진다 — 스켈레톤 오버레이가 뜬다 */
+  const [genPhases, setGenPhases] = useState<Phase[] | null>(null)
   const [origin, setOrigin] = useState<Record<string, string>>({})
   const [notes, setNotes] = useState<DraftNotes | null>(null)
   const [childNotOffered, setChildNotOffered] = useState(
@@ -277,6 +319,7 @@ export function ProductForm({
   function stop(msg: Errors) {
     setErrors(msg)
     setProgress(null)
+    setGenPhases(null)
     setBusy(false)
     focusFirstError(msg)
   }
@@ -376,9 +419,11 @@ export function ProductForm({
      * 재제출의 시작점도 ②지만, 서버가 준 값을 그대로 쓴다 — 클라이언트가 추측하지 않는다.
      */
     const phases = body.restart_from ? phasesFrom(body.restart_from) : BROCHURE_PHASES
+    setGenPhases(phases)
     const outcome = await runPipeline(id, phases, (label, attempt) => {
       setProgress(attempt > 0 ? `${label} (재시도 ${attempt}회)` : label)
     })
+    setGenPhases(null)
 
     if (outcome.kind === 'input_error') {
       // 입력 문제 — 폼 값을 유지한 채 사유를 표시한다(§14.1 · §15.1)
@@ -406,6 +451,15 @@ export function ProductForm({
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
+      {genPhases && (
+        <GenerationProgress
+          phases={genPhases}
+          progress={progress}
+          variant="document"
+          title="소개서를 작성하고 있습니다"
+        />
+      )}
+
       <header className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">
           {resubmit ? '입력 수정 후 재제출' : '새 상품 등록'}
@@ -589,10 +643,15 @@ export function ProductForm({
 
         <Group title="추가 정보">
           <div className="grid grid-cols-2 gap-3">
-            <Field name="타겟층" label="타겟층" origin={org('타겟층')}>
+            <Field name="타겟층" label="타겟층" origin={org('타겟층')}
+              hint="자주 쓰는 구성을 눌러 채우거나 직접 입력합니다">
               <input id="타겟층" name="타겟층" className={inputClass} maxLength={100}
                 value={values.타겟층} onChange={(e) => set('타겟층', e.target.value)}
                 placeholder="30~40대 부부" />
+              <div className="mt-2">
+                <ChipRow presets={TARGET_PRESETS} value={values.타겟층}
+                  onPick={(v) => set('타겟층', v)} />
+              </div>
             </Field>
             <Field name="여행스타일" label="여행스타일" origin={org('여행스타일')}
               hint="페이지 색상 테마만 결정합니다. 문구는 바뀌지 않습니다">

@@ -135,7 +135,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             {p.form_input?.행사정보?.행사명 ?? '(행사명 없음)'}
           </h1>
           <div className="flex shrink-0 gap-4 text-sm text-neutral-500">
-            {/* §20 마지막 컷이 로그 화면이다. 상세에서 한 번에 넘어갈 수 있어야 한다 */}
+            {/* §20 마지막 단계가 로그 화면이다. 상세에서 한 번에 넘어갈 수 있어야 한다 */}
             <Link href={`/admin/logs/${p.execution_id}`} className="hover:text-neutral-900">
               실행 로그
             </Link>
@@ -161,7 +161,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      {/* 검증 4축 — §20 1:15의 배지 */}
+      {/* 검증 4축 — §20의 배지 */}
       <section className="mt-8">
         <h2 className="mb-3 text-sm font-semibold">검증 4축</h2>
         <div className="grid grid-cols-4 gap-2">

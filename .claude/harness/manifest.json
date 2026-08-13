@@ -194,7 +194,7 @@
       "kind": "ai",
       "ai": 1,
       "effort": "plan",
-      "effort_note": "`plan`은 **사고를 끈다**(`thinking: disabled`). 실측으로 정해졌다 — medium·low·minimal·파라미터 없음 네 경우 모두 max_tokens 8000을 전부 추론에 쓰고 본문이 0자로 나왔다(63~74초 · 2026-08-12). 끄면 2.9초에 완전한 출력이 나온다. `generate`로 되돌리면 이 라우트가 항상 409를 낸다. 표는 spec §4.3.",
+      "effort_note": "`plan`은 **사고를 최소로 낮춘다**(`thinkingLevel: LOW` — Gemini엔 사고를 끄는 값이 없어 최선). 실측으로 정해졌다 — 사고를 높이면 max_tokens 8000을 전부 추론에 쓰고 본문이 0자로 나왔다(63~74초 · 2026-08-12). LOW로 낮추면 2.9초에 완전한 출력이 나온다. `generate`로 되돌리면 이 라우트가 항상 409를 낸다. 표는 spec §4.3.",
       "schema": "PLAN_SCHEMA",
       "prompt_sections": ["프롬프트"],
       "does": "추출된 장소·행사 일정을 근거로 일차별 동선을 배분하고 폼 초안을 쓴다",
@@ -434,7 +434,7 @@
   "invariants": {
     "ai_per_route_max": 1,
     "ai_per_script_total": 6,
-    "ai_per_script_total_note": "라우트 예산의 총합이다. **§20 대본 경로는 여전히 5회다** — 6번째는 `plan-draft`(§7.5)이고 대본에 없다. 자연어 초안을 쓰면 그 요청 1회가 추가된다.",
+    "ai_per_script_total_note": "라우트 예산의 총합이다. **§20 관통 경로는 여전히 5회다** — 6번째는 `plan-draft`(§7.5)이고 §20 경로에 없다. 자연어 초안을 쓰면 그 요청 1회가 추가된다.",
     "spec_skills_never_in_chain": true,
     "prompts_only_in_skill_md": true,
     "user_instructions_only_in_skill_md": true

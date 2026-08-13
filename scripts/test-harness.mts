@@ -2,7 +2,7 @@
  * 🔒 하네스 규약 위반 검사 (CLAUDE.md R1~R7).
  *
  * 이 스크립트는 **규약을 지키는지**만 본다. 파이프라인이 옳은 값을 만드는지는
- * `test:policy`·`test:demo`의 몫이다.
+ * `test:policy`·`test:real`의 몫이다.
  *
  * 두 계층을 나눠 판정한다:
  *   · 문서 계층 — `.claude/harness/manifest.json` + SKILL.md·에이전트 문서의 정합성
@@ -114,7 +114,7 @@ for (const [rk, r] of Object.entries(m.routes)) {
   check(`${rk}: 예산이 상한(${m.invariants.ai_per_route_max})을 넘지 않는다`,
     r.ai_budget <= m.invariants.ai_per_route_max, r.ai_budget)
 }
-check(`대본 1회 AI 총합(${total}) = 선언값(${m.invariants.ai_per_script_total})`,
+check(`관통 1회 AI 총합(${total}) = 선언값(${m.invariants.ai_per_script_total})`,
   total === m.invariants.ai_per_script_total, total)
 
 const aiSkillsPerRoute = Object.entries(m.routes).map(([rk, r]) =>
@@ -230,7 +230,7 @@ if (existsSync(AI_SKILLS_SRC)) {
  * 동결할 수 없기 때문이다. 하지만 그 앞뒤에 붙는 **지시 문장**은 프롬프트이므로
  * `USER_PROMPTS`(코드젠 산출물)에서 꺼내 쓴다.
  *
- * 시스템 프롬프트와 달리 user 쪽은 **캐시 프리픽스가 아니다** — DeepSeek 컨텍스트
+ * 시스템 프롬프트와 달리 user 쪽은 **캐시 프리픽스가 아니다** — Gemini 컨텍스트
  * 캐시는 최장 공통 접두를 잡는데 system이 앞에 오므로, user 변경은 system 프리픽스
  * 적중을 깨지 않는다. 이것이 이 이전을 안전하게 만든 근거다.
  */

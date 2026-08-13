@@ -25,8 +25,9 @@ import type { HarnessContext } from './context'
  *
  * 가변 입력(확정 데이터·폼 입력·생성물)을 문자열로 엮는 코드다. 시스템
  * 프롬프트와 달리 요청마다 달라지므로 문서로 동결할 수 없다. 단 조립 끝에
- * 붙는 **지시문**은 사실상 프롬프트이며, SKILL.md로 옮기는 것이 남은 숙제다
- * (`npm run test:harness`가 ⏳로 보고한다).
+ * 붙는 **지시문**은 사실상 프롬프트이므로 SKILL.md로 옮겨 `userPromptOf(스킬명)`이
+ * 꺼내온다 — 시스템 프롬프트와 같은 경로다(규약 R4). `test:harness`가 이 파일과
+ * `draft.ts`에서 지시문이 `userPromptOf()`로 들어오는지 검사한다.
  *
  * ## 실패는 던지지 않는다
  *

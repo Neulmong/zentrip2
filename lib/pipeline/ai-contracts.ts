@@ -292,7 +292,7 @@ export const COMPOSE_SCHEMA = {
         근거: { type: Type.STRING },
       },
       // 필수 없음 — 결측·무효 필드는 `resolveThemeSpec`이 필드별로 폴백한다.
-      // 강제하면 DeepSeek이 하나만 빠뜨려도 schema_invalid → 재시도 소진이 된다.
+      // 강제하면 모델이 하나만 빠뜨려도 schema_invalid → 재시도 소진이 된다.
       required: [],
     },
     blocks: { type: Type.ARRAY, items: 블록 },

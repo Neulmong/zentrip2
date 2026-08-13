@@ -41,7 +41,9 @@ const ROUTE = 'plan-draft' as const
 /** 자료 버스. `HarnessContext`와 달리 상품 행이 없다 */
 interface DraftContext {
   text: string
-  /** 사람이 지정한 여행기간 — 텍스트에서 연도를 못 읽었을 때만 온다 */
+  /** 연도 없는 날짜 보완 기준 — 요청 시점의 연도(§7.5). 상품 행이 없어 `created_at`이 없다 */
+  baseYear?: number
+  /** 사람이 지정한 여행기간 — 직접 고르면 그 값이 이긴다(연도 보완보다 우선) */
   hint?: { 시작: string; 종료: string }
   parsed?: FreeformParse
   plan?: PlanResult
@@ -67,7 +69,7 @@ type Runner = (c: DraftContext) => Promise<void>
 const SKILLS: Record<string, Runner> = {
   /** 1번 — 메모에서 기계로 알아볼 수 있는 것만 뽑는다 */
   'freeform-parse': async (c) => {
-    c.parsed = parseFreeform(c.text)
+    c.parsed = parseFreeform(c.text, c.baseYear)
   },
 
   /**
@@ -167,6 +169,7 @@ const SKILLS: Record<string, Runner> = {
      */
     c.result = checkDraft(c.draft, c.text, c.parsed.장소후보, {
       날짜: c.hint ?? c.parsed.날짜,
+      행사날짜: c.parsed.행사날짜,
     })
   },
 }
@@ -188,6 +191,7 @@ const SKILLS: Record<string, Runner> = {
  */
 export async function runPlanDraft(input: {
   text: string
+  baseYear?: number
   hint?: { 시작: string; 종료: string }
 }): Promise<DraftOutcome> {
   const text = (input.text ?? '').trim()
@@ -209,7 +213,7 @@ export async function runPlanDraft(input: {
   agentOf(ROUTE)
   const spec = manifestRouteSpec(ROUTE)
 
-  const c: DraftContext = { text, hint: input.hint, aiCalls: 0, aiLog: {} }
+  const c: DraftContext = { text, baseYear: input.baseYear, hint: input.hint, aiCalls: 0, aiLog: {} }
 
   for (const s of spec.skills) {
     const sk = skillSpec(s.name)
