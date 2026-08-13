@@ -16,7 +16,7 @@ import { checkBrochure } from '../lib/pipeline/brochure'
 import { checkPage, LENGTH_LIMITS_GENERATE } from '../lib/pipeline/page'
 import { checkEvidence, checkNouns, checkDayCount } from '../lib/pipeline/axis0'
 import { contentHash } from '../lib/validation'
-import { tripDays } from '../lib/form-validation'
+import { coerceFormInput, tripDays } from '../lib/form-validation'
 import { PLACEHOLDER } from '../lib/pipeline/normalize'
 import { BLOCK_PREFIX } from '../lib/edit-contract'
 
@@ -53,7 +53,9 @@ for (const p of complete) {
   const label = p.slug ?? p.id.slice(0, 8)
   console.log(`\n${'═'.repeat(52)}\n${label}\n${'═'.repeat(52)}`)
 
-  const fi = p.form_input as Record<string, Record<string, string>>
+  // 옛 form_input(2.6 · 단일 객체 숙박·상점)도 파이프라인처럼 배열로 올려 본다 —
+  // 안 그러면 `fi.숙박.entries()`가 옛 상품에서 터진다(파이프라인은 coerce를 거친다).
+  const fi = coerceFormInput(p.form_input) as Record<string, Record<string, string>>
   const cd = p.confirmed_data as never
   const cdAny = p.confirmed_data as Record<string, Record<string, unknown>>
   const br = p.brochure_content as { sections: { id: string; data: Record<string, unknown>; source?: Record<string, string> }[] }

@@ -45,8 +45,8 @@ export interface ExistingImage {
 
 /** 스칼라 폼 필드 — 배열(`숙박`·`상점`)은 `rows.tsx`가 담당한다 */
 const SCALARS = [
-  '행사명', '여행지', '여행기간_시작', '여행기간_종료', '일정원문',
-  '타겟층', '여행스타일', '여행주제', '기획메모',
+  '행사명', '여행지', '행사기간_시작', '행사기간_종료', '여행기간_시작', '여행기간_종료',
+  '일정원문', '타겟층', '여행스타일', '여행주제', '기획메모',
   '가격_성인', '가격_아동', '가격_기타', '식사정보',
   '항공편_공항', '항공편_항공사', '항공편_편명', '항공편_출발시간', '항공편_도착시간',
 ] as const
@@ -58,6 +58,7 @@ const SCALARS = [
  */
 const PATH: Record<string, string> = {
   행사명: '행사정보.행사명', 여행지: '행사정보.여행지',
+  행사기간_시작: '행사정보.행사기간_시작', 행사기간_종료: '행사정보.행사기간_종료',
   여행기간_시작: '행사정보.여행기간_시작', 여행기간_종료: '행사정보.여행기간_종료',
   일정원문: '행사정보.일정원문', 타겟층: '행사정보.타겟층',
   여행스타일: '행사정보.여행스타일', 여행주제: '행사정보.여행주제',
@@ -125,6 +126,8 @@ function toValues(fi: FormInput): Values {
   return {
     행사명: fi.행사정보.행사명,
     여행지: fi.행사정보.여행지,
+    행사기간_시작: fi.행사정보.행사기간_시작,
+    행사기간_종료: fi.행사정보.행사기간_종료,
     여행기간_시작: fi.행사정보.여행기간_시작,
     여행기간_종료: fi.행사정보.여행기간_종료,
     일정원문: fi.행사정보.일정원문,
@@ -451,6 +454,32 @@ export function ProductForm({
               value={values.여행지} onChange={(e) => set('여행지', e.target.value)}
               placeholder="제주" />
           </Field>
+          {/*
+            행사 기간은 **선택** — 축제·행사 자체의 날짜다. 실제 여행 날짜(아래 「여행
+            기간」)와 다를 수 있다. 비우면 페이지에 나오지 않는다. 한쪽만 채우면 400.
+          */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field name="행사기간_시작" label="행사 시작일 (선택)" error={err('행사기간_시작')}
+              origin={org('행사기간_시작')}>
+              <input id="행사기간_시작" name="행사기간_시작" type="date" className={inputClass}
+                value={values.행사기간_시작}
+                onChange={(e) => set('행사기간_시작', e.target.value)} />
+            </Field>
+            <Field name="행사기간_종료" label="행사 종료일 (선택)" error={err('행사기간_종료')}
+              origin={org('행사기간_종료')}
+              hint="행사·축제 자체의 기간. 여행 날짜와 다르면 여기에, 같거나 없으면 비웁니다">
+              <input id="행사기간_종료" name="행사기간_종료" type="date" className={inputClass}
+                value={values.행사기간_종료}
+                onChange={(e) => set('행사기간_종료', e.target.value)} />
+            </Field>
+          </div>
+        </Group>
+
+        {/*
+          여행 기간 — 실제로 여행 가는 날짜다. **이 값이 일차 수·이미지 슬롯·일정을
+          결정한다**(§6.2.1). 행사 기간과 분리해 별도 그룹으로 둔다.
+        */}
+        <Group title="여행 기간" required>
           <div className="grid grid-cols-2 gap-3">
             <Field name="여행기간_시작" label="시작일" error={err('여행기간_시작')}
               origin={org('여행기간_시작')}>

@@ -83,6 +83,10 @@ function SectionCard({ s }: { s: BrochureSection }) {
             return <ValueRows key={k} rows={v as Record<string, unknown>[]} />
           }
 
+          // 빈 값(선택인 행사기간이 미입력일 때)은 검토 화면에서도 뺀다 — 렌더러가
+          // 공개 페이지에서 빼는 것과 같은 규칙이다. 값 있는 선택 필드는 그대로 보인다.
+          if (typeof v === 'string' && v.trim() === '') return null
+
           return (
             <Row key={k} label={k === 'text' ? '행사명' : k}>
               {String(v)}

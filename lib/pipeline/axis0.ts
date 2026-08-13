@@ -111,6 +111,19 @@ export function checkNormalization(fi: FormInput, cd: ConfirmedData): Validation
       'confirmed_data.행사정보.여행기간'))
   }
 
+  // 행사 기간 (선택 · 2026-08-13) — 둘 다 있으면 결합 규칙, 없으면 빈 문자열이어야
+  // 한다. 여행기간과 같은 「1:1 대응 예외」이나 선택이므로 미입력이 정상이다.
+  const evS = fi.행사정보.행사기간_시작 ?? ''
+  const evE = fi.행사정보.행사기간_종료 ?? ''
+  const 행사want = normalizeSpace(evS) !== '' && normalizeSpace(evE) !== ''
+    ? combineTripPeriod(normalizeDate(evS), normalizeDate(evE))
+    : ''
+  if (cd.행사정보.행사기간 !== 행사want) {
+    out.push(item('결합 규칙', '행사정보.행사기간', 행사want, cd.행사정보.행사기간,
+      '행사기간은 «{시작} ~ {종료}» 형식으로 결합하며, 미입력이면 빈 문자열입니다.',
+      'confirmed_data.행사정보.행사기간'))
+  }
+
   return out
 }
 

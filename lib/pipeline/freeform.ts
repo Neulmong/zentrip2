@@ -10,7 +10,7 @@
  * 두 파일로 나누면 그 목록의 형태가 두 곳에서 정의되고, 어긋나는 순간
  * 누락 검사가 조용히 아무것도 못 잡는다.
  */
-import { validateFormInput, type FieldErrors } from '../form-validation'
+import { hasDayMarker, validateFormInput, type FieldErrors } from '../form-validation'
 import { normalizeSpace } from './normalize'
 import type { FormInput, Shop, Stay } from '../types'
 import type { PlanResult } from './ai-contracts'
@@ -46,6 +46,15 @@ export interface FreeformParse {
    * 가장 긴 문자열이라 AI에게 옮기게 하면 예산의 큰 몫을 그것이 차지한다.
    */
   필드: { 여행주제: string; 타겟층: string; 기획메모: string }
+  /**
+   * 기획자가 **직접 쓴 일차별 일정** (2026-08-13 · 사용자 버그).
+   *
+   * `일정` 라벨 블록의 본문에 일차 구분(§6.3의 6종)이 있으면 그것을 그대로 담는다.
+   * 있으면 `assembleDraft`가 후보를 재배분하지 않고 **이 문장을 일정원문으로 쓴다** —
+   * 사람이 이미 짠 일정이 AI 배분보다 정확하기 때문이다(§9 설계). 일차 마커가 없으면
+   * (`4박5일`처럼 기간만 적힌 경우) 담지 않는다 — 그때는 후보로 조립한다.
+   */
+  일정원문: string
 }
 
 /* ── 라벨 → 서술 필드 (확정 목록) ─────────────────────────────────
@@ -291,6 +300,19 @@ export function parseFreeform(text: string): FreeformParse {
     if (b) 필드[name] = b.본문.trim()
   }
 
+  /* ── 사람이 직접 쓴 일정 ────────────────────────────────────────
+   * `일정`/`스케줄` 라벨 블록에 일차 마커가 있으면 그 본문을 그대로 쓴다.
+   * `여행일정: 4박5일`처럼 마커 없이 기간만 적힌 블록은 거른다(hasDayMarker).
+   * ──────────────────────────────────────────────────────────── */
+  const 일정블록 = 블록.find((b) => {
+    if (!/일정|스케줄/.test(b.라벨)) return false
+    // 기간 표현(`4박5일`)을 먼저 뺀다 — `hasDayMarker`가 그 안의 「5일」을 일차
+    // 마커로 오인한다. 뺀 뒤에도 마커가 남으면 진짜 일차별 일정이다.
+    const 기간뺀본문 = b.본문.replace(/\d+\s*박\s*\d*\s*일?/g, '')
+    return hasDayMarker(기간뺀본문)
+  })
+  const 일정원문 = 일정블록 ? 일정블록.본문.trim() : ''
+
   return {
     블록,
     날짜: 연도미정 ? null : 날짜,
@@ -298,6 +320,7 @@ export function parseFreeform(text: string): FreeformParse {
     장소후보,
     URL: [...new Set(text.match(URL_RE) ?? [])],
     필드,
+    일정원문,
   }
 }
 
@@ -345,7 +368,7 @@ const 가격경로 = ['가격.성인', '가격.아동', '가격.기타'] as cons
  * 「숙소명을 2자 이상」이라 말하는데 사람은 무엇을 넣어야 할지 알 수 없다.
  */
 export function assembleDraft(
-  plan: PlanResult, parsed: Pick<FreeformParse, '장소후보' | '필드'>,
+  plan: PlanResult, parsed: Pick<FreeformParse, '장소후보' | '필드' | '일정원문'>,
 ): FormInput {
   const 장소후보 = parsed.장소후보
   const at = (i: unknown): PlaceCandidate | undefined =>
@@ -387,14 +410,23 @@ export function assembleDraft(
     // 장소가 없는 일차도 줄을 남긴다 — 일차 수가 여행기간과 맞아야 한다(§6.3)
     일정줄.push(`${day?.day ?? 일정줄.length + 1}일: ${이름들.join(', ') || '자유 일정'}`)
   }
+  /*
+   * 기획자가 일정을 **직접 썼으면** 그것을 쓴다(2026-08-13). AI 배분(`일정줄`)은
+   * 후보를 나열할 뿐이라, 사람이 「오전 공항 도착, 오후 올레 7코스」처럼 적어 둔
+   * 서술을 버리고 「1일: 자유 일정」으로 덮어썼다. 사람이 쓴 일정이 더 정확하다(§9).
+   */
+  const 일정원문 = parsed.일정원문.trim() || 일정줄.join('\n')
 
   return {
     행사정보: {
       행사명: plan.행사명 ?? '',
       여행지: plan.여행지 ?? '',
+      // 행사 기간은 초안에서 채우지 않는다 — 메모의 행사 날짜는 연도가 없는 경우가
+      // 많아 추정하지 않는다(§7.5). 사람이 폼에서 넣는다. 선택 필드라 빈 값이 정상이다.
+      행사기간_시작: '', 행사기간_종료: '',
       여행기간_시작: plan.여행기간_시작 ?? '',
       여행기간_종료: plan.여행기간_종료 ?? '',
-      일정원문: 일정줄.join('\n'),
+      일정원문,
       // 서술 3종은 메모의 블록 본문을 그대로 옮긴다. AI를 거치지 않는다
       타겟층: parsed.필드.타겟층,
       여행스타일: plan.여행스타일 ?? '',

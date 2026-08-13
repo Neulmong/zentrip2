@@ -62,7 +62,14 @@ export interface DayEntry {
 
 export interface ConfirmedData {
   행사정보: {
-    행사명: string; 여행지: string; 여행기간: string
+    행사명: string; 여행지: string
+    /**
+     * 행사 자체 기간 (선택). `form_input`의 2필드를 결합한 `시작 ~ 종료`이며,
+     * **둘 다 비면 빈 문자열**이다 — 그때는 페이지에 나오지 않는다. `여행기간`과
+     * 달리 여행 일수를 정하지 않는다.
+     */
+    행사기간: string
+    여행기간: string
     일정원문: string; 일정: DayEntry[]
     여행스타일: string; 타겟층: string
     /** 값 필드 — 화면에 표시되므로 미입력 시 `추후 추가 예정`으로 채운다 */
@@ -201,6 +208,32 @@ export function normalizeFields(
     정규화값: 여행기간, 적용규칙: '결합',
   })
 
+  /*
+   * 행사 기간 (선택 · 2026-08-13) — 둘 다 채워졌을 때만 정규화·결합한다. 하나라도
+   * 비면 빈 문자열이고, 그때는 페이지에 나오지 않는다. 관문(§7.1)이 「한쪽만 채움」을
+   * 이미 막으므로 여기서는 둘 다 있거나 둘 다 없는 두 경우만 온다.
+   */
+  // 옛 form_input(2026-08-13 이전)에는 이 필드가 없다 — 읽기 시점에 빈 값으로 본다.
+  const evStartRaw = fi.행사정보.행사기간_시작 ?? ''
+  const evEndRaw = fi.행사정보.행사기간_종료 ?? ''
+  let 행사기간 = ''
+  if (normalizeSpace(evStartRaw) !== '' && normalizeSpace(evEndRaw) !== '') {
+    const evStart = normalizeDate(evStartRaw)
+    const evEnd = normalizeDate(evEndRaw)
+    if (evStart !== evStartRaw) {
+      changes.push({ 경로: '행사정보.행사기간_시작', 원본값: evStartRaw, 정규화값: evStart, 적용규칙: '날짜' })
+    }
+    if (evEnd !== evEndRaw) {
+      changes.push({ 경로: '행사정보.행사기간_종료', 원본값: evEndRaw, 정규화값: evEnd, 적용규칙: '날짜' })
+    }
+    행사기간 = combineTripPeriod(evStart, evEnd)
+    changes.push({
+      경로: '행사정보.행사기간',
+      원본값: `${evStartRaw} + ${evEndRaw}`,
+      정규화값: 행사기간, 적용규칙: '결합',
+    })
+  }
+
   const money = (v: string, path: string) => {
     const out = normalizeMoney(v)
     if (out !== v) changes.push({ 경로: path, 원본값: v, 정규화값: out, 적용규칙: '금액' })
@@ -213,6 +246,7 @@ export function normalizeFields(
       행사정보: {
         행사명: space(fi.행사정보.행사명, changes, '행사정보.행사명'),
         여행지: space(fi.행사정보.여행지, changes, '행사정보.여행지'),
+        행사기간,
         여행기간,
         // 자유 서술 필드 — 공백 규칙만 적용한다(§6.2)
         일정원문: space(fi.행사정보.일정원문, changes, '행사정보.일정원문'),

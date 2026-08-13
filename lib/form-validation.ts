@@ -205,6 +205,28 @@ export function validateFormInput(input: unknown): FieldErrors {
     }
   }
 
+  // 행사 기간 (선택 · 2026-08-13) — 둘 다 비면 통과, 한쪽만 채우면 짝을 요구,
+  // 둘 다면 날짜 형식·순서를 검사한다. 여행기간과 같은 규칙이되 상한은 두지 않는다
+  // (행사 자체 기간이며 여행 일수를 정하지 않는다).
+  const es = get(input, '행사정보.행사기간_시작')
+  const ee = get(input, '행사정보.행사기간_종료')
+  const esStr = typeof es === 'string' ? es.trim() : ''
+  const eeStr = typeof ee === 'string' ? ee.trim() : ''
+  if (esStr !== '' || eeStr !== '') {
+    if (!DATE_RE.test(esStr)) {
+      errors['행사정보.행사기간_시작'] = '행사 시작일을 선택하거나 두 칸을 모두 비워 주세요.'
+    }
+    if (!DATE_RE.test(eeStr)) {
+      errors['행사정보.행사기간_종료'] = '행사 종료일을 선택하거나 두 칸을 모두 비워 주세요.'
+    }
+    if (DATE_RE.test(esStr) && DATE_RE.test(eeStr)) {
+      const d = tripDays(esStr, eeStr)
+      if (d === null || d < TRIP_DAYS_MIN) {
+        errors['행사정보.행사기간_종료'] = '행사 종료일은 시작일과 같거나 이후여야 합니다.'
+      }
+    }
+  }
+
   // 일정 원문 — 일차 구분 표기 필수 (§7.1). 없으면 임의 배분할 수 없다(§6.3).
   const itinerary = get(input, '행사정보.일정원문')
   if (typeof itinerary === 'string' && itinerary.trim().length >= 20
@@ -358,6 +380,8 @@ export function buildFormInput(raw: Record<string, string>): FormInput {
     행사정보: {
       행사명: s('행사명'),
       여행지: s('여행지'),
+      행사기간_시작: s('행사기간_시작'),
+      행사기간_종료: s('행사기간_종료'),
       여행기간_시작: s('여행기간_시작'),
       여행기간_종료: s('여행기간_종료'),
       일정원문: s('일정원문'),

@@ -170,11 +170,15 @@ export function Hero({ data, t, idx }: SectionProps) {
 /* ── 2. summary ──────────────────────────────────────────────── */
 
 export function Summary({ data, t }: SectionProps) {
+  // 행사 기간은 선택 — 값이 있을 때만 보인다. 데이터 모델에는 항상 있지만(검증
+  // 균일성) 빈 값이면 화면에서 뺀다 — 행사가 없는 상품에 빈 「행사 기간」이 뜨지 않게.
+  const 행사기간 = text(data, '행사기간')
   return (
     <Band>
       <SectionHeading t={t}>여행 개요</SectionHeading>
       <Fields items={[
         ['여행기간', text(data, '여행기간')],
+        ...(행사기간 ? [['행사 기간', 행사기간] as [string, string]] : []),
         ['여행지', text(data, '여행지')],
         ['여행주제', text(data, '여행주제')],
         ['타겟층', text(data, '타겟층')],
