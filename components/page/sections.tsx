@@ -132,60 +132,101 @@ function Fields({ items, cols = true }: { items: [string, string][]; cols?: bool
  * 「추후 추가 예정」은 렌더에서 아예 뺀다(`hasVal`). 요약도 사실 필드도 없으면
  * 이름만 남지만, 자동 그라운딩이 요약을 채우므로 삭막해지지 않는다.
  */
-function CardList({ rows: list, 제목필드, 필드, 배지필드, cols = 2, enrich }: {
+function CardList({ rows: list, 제목필드, 필드, 배지필드, cols = 2, enrich, collapsible = false, initial = 2, collapseId = 'more' }: {
   rows: Record<string, string>[]
   제목필드: string
   필드: readonly string[]
   배지필드?: string
   cols?: 1 | 2 | 3
   enrich?: Map<string, EnrichmentPlace>
+  /** 기본 `initial`개만 보이고 나머지는 화살표로 펼친다 (CSS만 · JS 불필요) */
+  collapsible?: boolean
+  initial?: number
+  /** 펼침 토글 체크박스의 id 접미사 — 한 페이지 안에서 유일해야 한다 */
+  collapseId?: string
 }) {
   if (list.length === 0) return null
   const grid = cols === 1 ? '' : cols === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2'
 
+  /** 카드 1장 — 앞줄과 펼침 영역이 같은 마크업을 쓰도록 분리한다 */
+  const card = (row: Record<string, string>, i: number) => {
+    const place = enrich?.get(row[제목필드])
+    const 사실필드 = 필드.filter((f) => hasVal(row[f]))
+    return (
+      <li key={`${i}-${row[제목필드]}`} className="flex min-w-0 flex-col rounded-3xl border border-black/[0.05] bg-white p-6 shadow-[0_6px_28px_-14px_rgba(0,0,0,0.22)] transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_20px_44px_-18px_rgba(0,0,0,0.28)]">
+        <div className="flex items-start gap-2">
+          <p className="min-w-0 flex-1 break-keep text-lg font-bold leading-snug tracking-tight">{row[제목필드]}</p>
+          {배지필드 && row[배지필드] && (
+            <span className="shrink-0 rounded-full bg-[var(--t-secondary)] px-3 py-1 text-[11px] font-semibold text-[var(--t-text)]">
+              {row[배지필드]}
+            </span>
+          )}
+        </div>
+
+        {/* 실제 웹 검색 요약 (자동 그라운딩) */}
+        {place?.요약 && <p className="mt-3 flex-1 break-keep text-sm leading-relaxed opacity-90">{place.요약}</p>}
+
+        {/* 짧은 사실 필드 — 실제 값만 (플레이스홀더 제외) */}
+        {사실필드.length > 0 && (
+          <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px]">
+            {사실필드.map((f) => (
+              <div key={f} className="min-w-0"><dt className="inline opacity-55">{f} </dt><dd className="inline font-medium">{row[f]}</dd></div>
+            ))}
+          </dl>
+        )}
+
+        {/* 출처 표기 */}
+        {place && place.출처.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-1.5 border-t border-[var(--t-primary)]/15 pt-3">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-55">출처</span>
+            {place.출처.slice(0, 2).map((s, k) => (
+              <a key={k} href={s.uri} target="_blank" rel="noopener noreferrer nofollow"
+                className="max-w-full truncate text-[11px] font-medium text-[var(--t-primary)] hover:underline"
+                title={s.title}>{s.title}</a>
+            ))}
+          </div>
+        )}
+      </li>
+    )
+  }
+
+  // 접기 비활성이거나 펼칠 게 없으면 전부 한 그리드에 그린다
+  if (!collapsible || list.length <= initial) {
+    return <ul className={`mt-6 grid gap-5 ${grid}`}>{list.map(card)}</ul>
+  }
+
+  // 기본 initial개 + 나머지는 감춘다. **체크박스+라벨(CSS만)** — <details>와 달리
+  // 토글을 목록 '아래'에 둘 수 있어, 펼치면 「접기」가 목록 맨 아래로 내려간다.
+  const rest = list.slice(initial)
+  const cid = `zt-more-${collapseId}`
+  // base에 display 클래스를 두지 않는다 — 라벨별 inline-flex/hidden과 충돌하면 둘 다 보인다
+  const toggle = 'w-fit cursor-pointer items-center gap-2 rounded-full border border-black/10'
+    + ' bg-white px-5 py-2.5 text-sm font-semibold shadow-[0_4px_20px_-12px_rgba(0,0,0,0.25)] transition hover:bg-neutral-50'
   return (
-    <ul className={`mt-6 grid gap-5 ${grid}`}>
-      {list.map((row, i) => {
-        const place = enrich?.get(row[제목필드])
-        const 사실필드 = 필드.filter((f) => hasVal(row[f]))
-        return (
-          <li key={`${i}-${row[제목필드]}`} className="flex min-w-0 flex-col rounded-3xl border border-black/[0.05] bg-white p-6 shadow-[0_6px_28px_-14px_rgba(0,0,0,0.22)] transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_20px_44px_-18px_rgba(0,0,0,0.28)]">
-            <div className="flex items-start gap-2">
-              <p className="min-w-0 flex-1 break-keep text-lg font-bold leading-snug tracking-tight">{row[제목필드]}</p>
-              {배지필드 && row[배지필드] && (
-                <span className="shrink-0 rounded-full bg-[var(--t-secondary)] px-3 py-1 text-[11px] font-semibold text-[var(--t-text)]">
-                  {row[배지필드]}
-                </span>
-              )}
-            </div>
-
-            {/* 실제 웹 검색 요약 (자동 그라운딩) */}
-            {place?.요약 && <p className="mt-3 flex-1 break-keep text-sm leading-relaxed opacity-90">{place.요약}</p>}
-
-            {/* 짧은 사실 필드 — 실제 값만 (플레이스홀더 제외) */}
-            {사실필드.length > 0 && (
-              <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px]">
-                {사실필드.map((f) => (
-                  <div key={f} className="min-w-0"><dt className="inline opacity-55">{f} </dt><dd className="inline font-medium">{row[f]}</dd></div>
-                ))}
-              </dl>
-            )}
-
-            {/* 출처 표기 */}
-            {place && place.출처.length > 0 && (
-              <div className="mt-4 flex flex-wrap items-center gap-1.5 border-t border-[var(--t-primary)]/15 pt-3">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-55">출처</span>
-                {place.출처.slice(0, 2).map((s, k) => (
-                  <a key={k} href={s.uri} target="_blank" rel="noopener noreferrer nofollow"
-                    className="max-w-full truncate text-[11px] font-medium text-[var(--t-primary)] hover:underline"
-                    title={s.title}>{s.title}</a>
-                ))}
-              </div>
-            )}
-          </li>
-        )
-      })}
-    </ul>
+    <div className="mt-6">
+      {/* sr-only 체크박스 — 라벨이 토글한다. 하이드레이션 불필요(정적 HTML/CSS) */}
+      <input id={cid} type="checkbox" className="peer sr-only" />
+      <ul className={`grid gap-5 ${grid}`}>{list.slice(0, initial).map(card)}</ul>
+      {/* 감춰진 나머지 — 체크되면 펼쳐진다 */}
+      <ul className={`mt-5 hidden gap-5 peer-checked:grid ${grid}`}>
+        {rest.map((row, k) => card(row, k + initial))}
+      </ul>
+      {/* 토글 — rest '뒤'에 두어 펼치면 목록 아래로 내려간다.
+          ⚠️ peer-checked는 **형제**에만 닿는다. 라벨을 div로 감싸면 라벨이 체크박스의
+          자손이 되어 토글이 안 걸린다 → 컨테이너 div(체크박스의 직접 형제)에 토글을 건다. */}
+      <div className="mt-6 flex justify-center peer-checked:hidden">
+        <label htmlFor={cid} className={`${toggle} inline-flex`}>
+          {rest.length}곳 더보기
+          <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+        </label>
+      </div>
+      <div className="mt-6 hidden justify-center peer-checked:flex">
+        <label htmlFor={cid} className={`${toggle} inline-flex`}>
+          접기
+          <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+        </label>
+      </div>
+    </div>
   )
 }
 
@@ -399,7 +440,7 @@ export function Accommodation(p: SectionProps) {
     <Band style={p.style} nextTone={p.nextTone}>
       <SectionHeading t={t}>숙박</SectionHeading>
       <CardList rows={list} 제목필드="숙소명" 필드={['객실타입', '위치', '숙박일정']}
-        cols={layoutOf(p) === 'rows' ? 1 : 2} enrich={p.enrich} />
+        cols={layoutOf(p) === 'rows' ? 1 : 2} enrich={p.enrich} collapsible collapseId="stay" />
       <SlotGallery images={images} className="mt-6" />
     </Band>
   )
@@ -445,8 +486,8 @@ export function Meal(p: SectionProps) {
       {hasVal(식사정보) && (
         <p className="mt-5 max-w-2xl break-keep text-lg leading-relaxed">{식사정보}</p>
       )}
-      {/* 일정에 포함된 식당·카페 — 그라운딩 실측 설명 위빙 */}
-      <CardList rows={dining} 제목필드="상점명" 배지필드="구분" 필드={['위치']} cols={2} enrich={p.enrich} />
+      {/* 일정에 포함된 식당·카페 — 그라운딩 실측 설명 위빙. 기본 2개 + 화살표로 펼침 */}
+      <CardList rows={dining} 제목필드="상점명" 배지필드="구분" 필드={['위치']} cols={2} enrich={p.enrich} collapsible collapseId="dining" />
     </Band>
   )
 }

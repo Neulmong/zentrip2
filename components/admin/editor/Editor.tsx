@@ -79,12 +79,24 @@ export function Editor(props: EditorProps) {
   const current = ordered.find((s) => s.id === selected) ?? ordered[0]
 
   // 장소 설명(enrichment.요약) 편집 — 일정·숙박·상점 카드에 실제로 보이는 설명이다
-  const places = content.enrichment?.places ?? []
+  const places = useMemo(() => content.enrichment?.places ?? [], [content.enrichment])
   const placesMode = selected === '__places__'
   const setSummary = (이름: string, 요약: string) =>
     setContent((c) => (c.enrichment
       ? { ...c, enrichment: { ...c.enrichment, places: c.enrichment.places.map((p) => (p.이름 === 이름 ? { ...p, 요약 } : p)) } }
       : c))
+  // 이름 → 요약. 섹션 편집 패널이 숙박·상점 행 옆에 설명을 인라인으로 띄우는 데 쓴다
+  const summaryByName = useMemo(
+    () => Object.fromEntries(places.map((p) => [p.이름, p.요약])) as Record<string, string>,
+    [places],
+  )
+  // 이름 → 장소. 식당·카페 판별(isDining)에 태그·요약이 필요하다
+  const enrichMap = useMemo(() => new Map(places.map((p) => [p.이름, p])), [places])
+  // shop의 상점들 — 식사 섹션이 식당·카페 설명을 여기서 골라 편집한다
+  const shopRows = useMemo(() => {
+    const shop = content.sections.find((s) => s.type === 'shop')
+    return (Array.isArray(shop?.data.상점들) ? shop.data.상점들 : []) as Record<string, string>[]
+  }, [content.sections])
 
   /** 미리보기는 대체 텍스트도 즉시 반영한다 — 접근성 확인이 저장 뒤로 밀리지 않게. */
   const previewImages = useMemo(
@@ -411,6 +423,10 @@ export function Editor(props: EditorProps) {
                 images={props.images}
                 errors={errors}
                 onChange={(data) => replace(current.id, { data })}
+                enrichSummaries={summaryByName}
+                onSummaryChange={setSummary}
+                enrich={enrichMap}
+                shopRows={shopRows}
               />
             </>
           )}

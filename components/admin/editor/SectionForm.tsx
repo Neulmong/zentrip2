@@ -3,6 +3,8 @@
 import type { PageSection } from '@/lib/pipeline/page'
 import type { PageImage } from '@/components/page/types'
 import { BLOCK_SPEC, LENGTH_LIMITS_SAVE, type BlockType } from '@/lib/edit-contract'
+import { ENRICH_SUMMARY_MAX, type EnrichmentPlace } from '@/lib/pipeline/enrichment'
+import { isDining } from '@/components/page/sections'
 import { SHOP_KINDS } from '@/lib/types'
 
 /**
@@ -23,6 +25,14 @@ export interface SectionFormProps {
   images: PageImage[]
   errors: Record<string, string>
   onChange: (data: Record<string, unknown>) => void
+  /** 이름 → 웹 검색 설명(enrichment.요약). 숙박·상점 행 옆에 인라인으로 편집시킨다 */
+  enrichSummaries?: Record<string, string>
+  /** 설명 편집 콜백 — enrichment.요약을 이름 단위로 바꾼다 */
+  onSummaryChange?: (이름: string, 요약: string) => void
+  /** 그라운딩 장소 맵 — 식당·카페 판별(`isDining`)에 쓴다 */
+  enrich?: Map<string, EnrichmentPlace>
+  /** shop 섹션의 `상점들` — 식사 섹션이 식당·카페 설명을 여기서 골라 편집한다 */
+  shopRows?: Record<string, string>[]
 }
 
 /** 사실정보 요약 — `apply`에서만 나오며 편집 불가다(§10.2). */
@@ -41,13 +51,14 @@ function limitOf(section: PageSection, key: string): number | null {
   return null
 }
 
-export function SectionForm({ section, images, errors, onChange }: SectionFormProps) {
+export function SectionForm({ section, images, errors, onChange, enrichSummaries, onSummaryChange, enrich, shopRows }: SectionFormProps) {
   const set = (key: string, value: unknown) => onChange({ ...section.data, [key]: value })
 
   const slots = [...new Set(images.map((i) => i.slot))].sort()
   const optional = new Set(
     (BLOCK_SPEC[section.type as BlockType]?.optional) ?? [],
   )
+  const isItinerary = section.type === 'itinerary' || section.type === 'timeline'
 
   return (
     <div className="space-y-5">
@@ -68,6 +79,7 @@ export function SectionForm({ section, images, errors, onChange }: SectionFormPr
             <RowsField
               key={key} field={key} section={section} errors={errors}
               onChange={(rows) => set(key, rows)}
+              enrichSummaries={enrichSummaries} onSummaryChange={onSummaryChange} enrich={enrich}
             />
           )
         }
@@ -162,6 +174,21 @@ export function SectionForm({ section, images, errors, onChange }: SectionFormPr
           </Field>
         )
       })}
+
+      {/* 일정 카드 장소 설명 — 일차 서술(DaysField)과 별개로 카드 소개를 편집한다 */}
+      {isItinerary && enrichSummaries && onSummaryChange && (
+        <ItineraryPlacesEditor
+          section={section} enrichSummaries={enrichSummaries} onSummaryChange={onSummaryChange}
+        />
+      )}
+
+      {/* 식사 섹션 — 식당·카페 카드 설명은 shop의 상점들에서 오므로 여기서 골라 편집시킨다 */}
+      {section.type === 'meal' && shopRows && enrichSummaries && onSummaryChange && (
+        <DiningDescriptions
+          shopRows={shopRows} enrich={enrich}
+          enrichSummaries={enrichSummaries} onSummaryChange={onSummaryChange}
+        />
+      )}
     </div>
   )
 }
@@ -234,18 +261,26 @@ function DaysField({
  * ────────────────────────────────────────────────────────────────── */
 
 const ROW_UNIT: Record<string, string> = { 숙소들: '숙소', 상점들: '상점' }
+/** 그 행의 이름 필드 — enrichment 설명을 이 값으로 찾는다 */
+const ROW_NAME_KEY: Record<string, string> = { 숙소들: '숙소명', 상점들: '상점명' }
 
 function RowsField({
-  field, section, errors, onChange,
+  field, section, errors, onChange, enrichSummaries, onSummaryChange, enrich,
 }: {
   field: string
   section: PageSection
   errors: Record<string, string>
   onChange: (rows: Record<string, string>[]) => void
+  enrichSummaries?: Record<string, string>
+  onSummaryChange?: (이름: string, 요약: string) => void
+  enrich?: Map<string, EnrichmentPlace>
 }) {
   const rows = (Array.isArray(section.data[field])
     ? section.data[field] : []) as Record<string, string>[]
   const unit = ROW_UNIT[field] ?? '항목'
+  const nameKey = ROW_NAME_KEY[field]
+  // 상점들 안에 식당·카페가 섞여 있으면 그 설명은 「식사」 섹션에서 편집한다(페이지와 같은 분리)
+  const hasDining = field === '상점들' && !!enrich && rows.some((r) => isDining(r.상점명 ?? '', enrich))
 
   const patch = (i: number, key: string, v: string) =>
     onChange(rows.map((r, n) => (n === i ? { ...r, [key]: v } : r)))
@@ -255,42 +290,142 @@ function RowsField({
       <p className="text-xs text-neutral-500">
         {unit} 개수는 입력한 값이 정합니다. 여기서는 각 {unit}의 내용만 고칩니다.
       </p>
-      {rows.map((row, i) => (
-        <div key={i} className="rounded-lg border border-neutral-200 p-3">
-          <p className="mb-2 text-sm font-semibold">{unit} {i + 1}</p>
-          <div className="space-y-3">
-            {Object.entries(row).map(([k, v]) => {
-              const str = typeof v === 'string' ? v : String(v ?? '')
-              const err = errors[`${section.id}.${field}.${i}.${k}`]
-              return (
-                <Field key={k} label={k} error={err}>
-                  {k === '구분' ? (
-                    <select
-                      value={str}
-                      onChange={(e) => patch(i, k, e.target.value)}
-                      className={inputClass}
-                    >
-                      {SHOP_KINDS.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  ) : MULTILINE.has(k) || str.length > 60 ? (
-                    <textarea
-                      value={str} rows={3}
-                      onChange={(e) => patch(i, k, e.target.value)}
-                      className={inputClass}
-                    />
-                  ) : (
-                    <input
-                      type="text" value={str}
-                      onChange={(e) => patch(i, k, e.target.value)}
-                      className={inputClass}
-                    />
-                  )}
-                </Field>
-              )
-            })}
+      {hasDining && (
+        <p className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
+          식당·카페의 설명은 <b>「식사」 섹션</b>에서 편집합니다.
+        </p>
+      )}
+      {rows.map((row, i) => {
+        // 카드에 보이는 웹 검색 설명(enrichment.요약) — 이름으로 찾아 인라인 편집시킨다.
+        // 식당·카페(dining)는 「식사」 섹션에서 편집하므로 여기서는 리테일만 인라인 설명을 연다.
+        const 이름 = nameKey ? row[nameKey] : undefined
+        const isDiningRow = field === '상점들' && !!enrich && isDining(이름 ?? '', enrich)
+        const 설명편집 = !!(onSummaryChange && 이름 && enrichSummaries && 이름 in enrichSummaries && !isDiningRow)
+        const 설명 = 설명편집 ? (enrichSummaries![이름!] ?? '') : ''
+        return (
+          <div key={i} className="rounded-lg border border-neutral-200 p-3">
+            <p className="mb-2 text-sm font-semibold">{unit} {i + 1}</p>
+            <div className="space-y-3">
+              {Object.entries(row).map(([k, v]) => {
+                const str = typeof v === 'string' ? v : String(v ?? '')
+                const err = errors[`${section.id}.${field}.${i}.${k}`]
+                return (
+                  <Field key={k} label={k} error={err}>
+                    {k === '구분' ? (
+                      <select
+                        value={str}
+                        onChange={(e) => patch(i, k, e.target.value)}
+                        className={inputClass}
+                      >
+                        {SHOP_KINDS.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    ) : MULTILINE.has(k) || str.length > 60 ? (
+                      <textarea
+                        value={str} rows={3}
+                        onChange={(e) => patch(i, k, e.target.value)}
+                        className={inputClass}
+                      />
+                    ) : (
+                      <input
+                        type="text" value={str}
+                        onChange={(e) => patch(i, k, e.target.value)}
+                        className={inputClass}
+                      />
+                    )}
+                  </Field>
+                )
+              })}
+
+              {/* 카드에 보이는 설명(웹 검색) — 담당자가 여기서 직접 고친다 */}
+              {설명편집 && (
+                <SummaryEditor
+                  label="설명 (카드에 보이는 소개)"
+                  요약={설명}
+                  onChange={(v) => onSummaryChange!(이름!, v)}
+                />
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
+    </div>
+  )
+}
+
+/* ── 설명(enrichment.요약) 편집 ─────────────────────────────────────
+ * 카드에 보이는 「소개」는 `page_content.enrichment.요약`이다. 숙박·상점 행과
+ * 일정 장소 카드 어디에 보이든 **같은 위젯**으로 편집시킨다 — 「설명 칸이 있는
+ * 모든 곳에서 편집 가능」(사용자 규칙)을 한 컴포넌트로 보증한다.
+ * ────────────────────────────────────────────────────────────────── */
+
+function SummaryEditor({ label, 요약, onChange }: {
+  label: string
+  요약: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <Field label={label} counter={`${요약.length} / ${ENRICH_SUMMARY_MAX}`} over={요약.length > ENRICH_SUMMARY_MAX}>
+      <textarea value={요약} rows={4} onChange={(e) => onChange(e.target.value)} className={inputClass} />
+    </Field>
+  )
+}
+
+/**
+ * 일정 섹션의 장소 설명 — 카루셀 카드에 보이는 여행지·장소 소개를 인라인 편집한다.
+ * 일차 서술(`days.text`)은 `DaysField`가, 그 아래 장소 카드 설명은 여기가 맡는다.
+ */
+function ItineraryPlacesEditor({ section, enrichSummaries, onSummaryChange }: {
+  section: PageSection
+  enrichSummaries: Record<string, string>
+  onSummaryChange: (이름: string, 요약: string) => void
+}) {
+  const days = (Array.isArray(section.data.days) ? section.data.days : []) as { text?: string }[]
+  const texts = days.map((d) => (typeof d.text === 'string' ? d.text : ''))
+  // 일정 서술에 등장하는 장소 = 카드에 보이는 장소(렌더러와 같은 규칙: text.includes(이름))
+  const names = Object.keys(enrichSummaries).filter((n) => texts.some((t) => t.includes(n)))
+  if (names.length === 0) return null
+  return (
+    <div className="border-t border-neutral-200 pt-5">
+      <p className="text-sm font-semibold">일정 장소 설명</p>
+      <p className="mb-3 mt-1 text-xs text-neutral-500">
+        일정 카드에 보이는 장소 소개입니다. 여기서 바로 고칠 수 있습니다.
+      </p>
+      <div className="space-y-4">
+        {names.map((n) => (
+          <SummaryEditor key={n} label={n} 요약={enrichSummaries[n] ?? ''} onChange={(v) => onSummaryChange(n, v)} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 식사 섹션의 식당·카페 설명 — 데이터는 shop의 `상점들`에 있지만 페이지는 식당·카페를
+ * 「식사」 섹션에 그린다. 그 분리(`isDining`)를 편집기에도 반영해, 담당자가 식사
+ * 편집란에서 식당·카페 소개를 고치게 한다(설명은 이름 단위 enrichment라 어디서 고쳐도 같다).
+ */
+function DiningDescriptions({ shopRows, enrich, enrichSummaries, onSummaryChange }: {
+  shopRows: Record<string, string>[]
+  enrich?: Map<string, EnrichmentPlace>
+  enrichSummaries: Record<string, string>
+  onSummaryChange: (이름: string, 요약: string) => void
+}) {
+  const names = shopRows
+    .filter((r) => isDining(r.상점명 ?? '', enrich))
+    .map((r) => r.상점명)
+    .filter((n) => n && n in enrichSummaries)
+  if (names.length === 0) return null
+  return (
+    <div className="border-t border-neutral-200 pt-5">
+      <p className="text-sm font-semibold">식당·카페 설명</p>
+      <p className="mb-3 mt-1 text-xs text-neutral-500">
+        일정의 식당·카페 카드에 보이는 소개입니다. 여기서 바로 고칠 수 있습니다.
+      </p>
+      <div className="space-y-4">
+        {names.map((n) => (
+          <SummaryEditor key={n} label={n} 요약={enrichSummaries[n] ?? ''} onChange={(v) => onSummaryChange(n, v)} />
+        ))}
+      </div>
     </div>
   )
 }

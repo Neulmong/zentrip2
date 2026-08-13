@@ -88,11 +88,31 @@ export function hasEnrichTargets(cd: ConfirmedData): boolean {
 }
 
 /**
- * 구조화 결과 + 검색 출처 → `Enrichment`. **실존 대조가 여기서 일어난다.**
+ * 확정 데이터의 종류로 「무엇인가」 한 줄을 만든다 — 그라운딩이 전혀 못 채운
+ * 장소의 **바닥 설명**. 사실(위치·종류)만 쓰고 특정 후기·메뉴·가격을 지어내지
+ * 않는다(§16.1). 그라운딩 요약이 있으면 그것이 이 바닥을 덮는다.
+ */
+function floorSummary(t: EnrichTarget): string {
+  const 종류말 = t.종류 === '숙소' ? '숙소' : t.종류 === '상점' ? '상점' : '여행지'
+  const 위치말 = t.위치.trim() ? `${t.위치.trim()}에 자리한 ` : ''
+  return `${위치말}${t.이름}은(는) 이번 여행 일정에 포함된 ${종류말}입니다. `
+    + `현지의 분위기를 함께 느끼실 수 있는 곳으로, 방문 시 일정에 맞춰 안내드립니다.`
+}
+
+/**
+ * 구조화 결과 + 검색 출처 → `Enrichment`. **모든 대상 장소에 설명을 보장한다.**
  *
- * 각 장소의 `출처번호`가 실제 `sources`를 가리켜야 남긴다 — 하나도 못 가리키면
- * 그 장소는 근거 없는 서술이므로 버린다(§8.8). 번호가 범위를 벗어나면 무시한다.
- * 요약·태그는 상한으로 자르고, 사람이 입력한 실제 장소 이름과 매칭되는 것만 남긴다.
+ * 「무조건 1~2줄 설명」(Q2 · 사용자 결정)을 코드로 강제하는 지점이다. 규칙:
+ *
+ *   1. 그라운딩 요약이 있으면 그대로 싣는다. 요약은 실제 검색 텍스트 기반이다.
+ *   2. AI가 `출처번호`를 못 달아도 요약을 **버리지 않는다** — 이 검색 배치의 실제
+ *      전역 출처(최대 2건)를 대신 붙인다. 요약은 같은 검색에서 나온 것이므로
+ *      「웹 검색 기반」 표기는 정직하다. (2.8까지는 여기서 버려 카드가 비었다.)
+ *   3. AI가 통째로 빠뜨린 장소도 사실 기반 바닥 설명으로 채운다(`floorSummary`).
+ *      바닥은 후기가 아니므로 출처를 붙이지 않는다 — 그 자체로 정직하다.
+ *
+ * 사람이 입력하지 않은 장소는 여전히 만들지 않는다(§16.1). 출력 순서는 `targets`
+ * 순서를 따라 일정·숙박·상점 흐름과 어긋나지 않게 한다.
  */
 export function assembleEnrichment(
   struct: EnrichmentStructureResult,
@@ -100,12 +120,25 @@ export function assembleEnrichment(
   targets: EnrichTarget[],
 ): Enrichment {
   const 실제이름 = new Set(targets.map((t) => t.이름))
-  const places: EnrichmentPlace[] = []
+
+  // 이 검색 배치의 전역 출처(중복 제거) — 인용을 못 단 요약의 근거로 대체한다
+  const 전역출처: EnrichmentSource[] = []
+  {
+    const seen = new Set<string>()
+    for (const s of sources) {
+      if (!s?.uri || seen.has(s.uri)) continue
+      seen.add(s.uri)
+      전역출처.push({ title: s.title || s.uri, uri: s.uri })
+      if (전역출처.length >= 2) break
+    }
+  }
+
+  const byName = new Map<string, EnrichmentPlace>()
 
   for (const raw of struct.places ?? []) {
     const 이름 = (raw.이름 ?? '').trim()
-    // 사람이 입력하지 않은 장소는 만들지 않는다 (§16.1)
-    if (!실제이름.has(이름)) continue
+    // 사람이 입력하지 않은 장소는 만들지 않는다 (§16.1). 중복 이름은 첫 것만
+    if (!실제이름.has(이름) || byName.has(이름)) continue
 
     const 요약 = (raw.요약 ?? '').trim().slice(0, ENRICH_SUMMARY_MAX)
     if (!요약) continue
@@ -119,16 +152,24 @@ export function assembleEnrichment(
       seen.add(src.uri)
       출처.push({ title: src.title || src.uri, uri: src.uri })
     }
-    // 출처 없는 서술은 버린다 — 실존 대조 실패
-    if (출처.length === 0) continue
 
     const 태그 = (raw.태그 ?? [])
       .map((t) => String(t).trim())
       .filter(Boolean)
       .slice(0, ENRICH_TAGS_MAX)
 
-    places.push({ 이름, 요약, 태그, 출처 })
+    // 인용을 못 달았으면 전역 출처로 대체한다 — 실측 설명을 버리지 않는다
+    byName.set(이름, { 이름, 요약, 태그, 출처: 출처.length > 0 ? 출처 : 전역출처 })
   }
+
+  // 바닥 보장 — 그라운딩이 통째로 빠뜨린 장소도 빈 카드로 두지 않는다
+  for (const t of targets) {
+    if (byName.has(t.이름)) continue
+    byName.set(t.이름, { 이름: t.이름, 요약: floorSummary(t), 태그: [], 출처: [] })
+  }
+
+  // targets 순서를 유지한다 (일정·숙박·상점 흐름과 일치)
+  const places = targets.map((t) => byName.get(t.이름)).filter((p): p is EnrichmentPlace => !!p)
 
   return { places, 생성_라벨: '웹 검색 기반 · 출처 표기' }
 }
