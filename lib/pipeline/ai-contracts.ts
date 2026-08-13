@@ -347,6 +347,64 @@ export interface ComposeResult {
 }
 
 /* ════════════════════════════════════════════════════════════════
+ * Task 2 — place-enrichment (그라운딩 웹 리뷰 · Option A · 2호출)
+ *
+ * 상태 기계 밖 선택 라우트 2개. `docs/planner-pivot-design.md` §7.
+ *
+ *   enrich-search    : googleSearch 그라운딩으로 장소 정보를 **검색**한다.
+ *                      responseSchema와 병용 불가라 출력은 자유 텍스트이고
+ *                      출처 URL이 groundingMetadata로 온다(probe-grounding 실측).
+ *   enrich-structure : 검색 텍스트를 **구조화**한다(그라운딩 없이 responseSchema).
+ *                      각 장소 서술에 출처 번호를 달아 실존 대조가 가능하게 한다.
+ * ════════════════════════════════════════════════════════════════ */
+
+/**
+ * `grounded-place-search`의 스키마 — **그라운딩 호출에서는 무시된다.**
+ *
+ * `AiRequest.grounding: true`이면 provider가 `responseSchema`를 걸지 않는다(병용
+ * 불가). 그럼에도 스키마를 두는 것은 코드젠이 `kind: ai` 스킬에 `schema`를
+ * 요구하기 때문이다(build-harness.mts). 이 호출의 실질 출력은 자유 텍스트 +
+ * `sources`이고, 그것을 `enrichment-structure`가 받아 구조화한다.
+ */
+export const GROUNDED_SEARCH_SCHEMA = {
+  type: Type.OBJECT,
+  properties: { text: { type: Type.STRING } },
+  required: [],
+}
+
+/**
+ * `enrichment-structure`의 출력. 검색 텍스트를 장소별로 접는다.
+ *
+ * `출처번호`는 user 메시지로 준 **출처 목록의 인덱스**다. 이 번호가 실제 출처를
+ * 가리키지 못하면 그 장소는 조립 단계에서 **버려진다**(실존 대조 — 출처 없는
+ * 값은 §8.8 위반). 사실 자체(주소·가격 등)를 여기서 새로 쓰지 않는다 — 검색
+ * 텍스트 안의 내용을 요약할 뿐이다.
+ */
+export const ENRICHMENT_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    places: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          이름: { type: Type.STRING },
+          요약: { type: Type.STRING },
+          태그: { type: Type.ARRAY, items: { type: Type.STRING } },
+          출처번호: { type: Type.ARRAY, items: { type: Type.INTEGER } },
+        },
+        required: ['이름', '요약', '태그', '출처번호'],
+      },
+    },
+  },
+  required: ['places'],
+}
+
+export interface EnrichmentStructureResult {
+  places: { 이름: string; 요약: string; 태그: string[]; 출처번호: number[] }[]
+}
+
+/* ════════════════════════════════════════════════════════════════
  * Step 07 — 3차 정합성 (§11.1)
  * ════════════════════════════════════════════════════════════════ */
 

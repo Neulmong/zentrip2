@@ -28,17 +28,20 @@ export type ManifestRoute = keyof typeof ROUTES
  * | `content` | 편집은 사람이 한다. AI·카운터가 없고 담당 에이전트도 없다 |
  * | `slug` | 사람이 입력한 값의 형식 판정. AI·카운터 없음 |
  * | `plan-draft` | 상품 행이 **아직 없다.** 조건부 갱신·카운터·로그의 대상이 없다(§7.5) |
+ * | `enrich-search`·`enrich-structure` | 상태 기계 밖 선택 보강(Task 2 §7). 상태 전이·카운터·단계 로그 없음 — `lib/harness/enrichment.ts`가 체인을 돌린다 |
  *
  * 매니페스트가 `driven_by: "route"`로 선언하고, `routeSpec`이 런타임에 막는다.
  * 이 합집합을 손으로 적는 이유는 **오타를 컴파일에서 잡기 위해서다** —
  * 매니페스트에서 파생시키면 `RouteKey`가 넓어져 그 이점이 사라진다.
  *
- * `plan-draft`는 `runStep` 밖에 있지만 **체인은 돈다**(`lib/harness/draft.ts`).
+ * `plan-draft`·`enrich-*`는 `runStep` 밖에 있지만 **체인은 돈다**(`draft.ts`·`enrichment.ts`).
  * 그래서 아래 조회·예산 함수는 `ManifestRoute`를 받는다 — `HarnessRoute`로
  * 좁혀 두면 그 라우트가 AI 예산 대조(R3)를 못 받는다.
  */
 export type HarnessRoute =
-  Exclude<ManifestRoute, 'products' | 'form-input' | 'content' | 'slug' | 'plan-draft'>
+  Exclude<ManifestRoute,
+    'products' | 'form-input' | 'content' | 'slug' | 'plan-draft'
+    | 'enrich-search' | 'enrich-structure'>
 
 /*
  * 코드젠이 `as const satisfies`로 굽기 때문에 각 항목의 타입은 **리터럴**이다.

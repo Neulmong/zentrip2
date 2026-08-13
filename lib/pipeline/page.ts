@@ -16,6 +16,7 @@
 import type { ConfirmedData } from './normalize'
 import type { ResolvedTheme } from './theme'
 import type { ComposeBlock } from './ai-contracts'
+import type { Enrichment } from './enrichment'
 import { requiredPaths } from './paths'
 import {
   VOCABULARY, isBlockType, resolveLayout,
@@ -40,6 +41,12 @@ export interface PageContent {
   /** 2.8은 계산된 테마 객체, 레거시는 문자열 키 (렌더러가 둘 다 읽는다) */
   theme: ResolvedTheme | string
   sections: PageSection[]
+  /**
+   * Task 2 — place-enrichment (선택). 그라운딩 웹 검색으로 얻은 실제 장소 정보 +
+   * 출처. `checkPage`는 `sections`만 순회하므로 이 키를 건드리지 않는다 — 계약
+   * 밖의 부가 데이터다. 렌더러가 있으면 그린다.
+   */
+  enrichment?: Enrichment
 }
 
 export interface PageInputs {

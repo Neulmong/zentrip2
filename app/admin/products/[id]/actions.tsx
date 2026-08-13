@@ -30,6 +30,8 @@ export interface ActionsProps extends StatusInput {
   updated_at: string
   /** §11.5 책임 게시 모달이 **전부** 열람시켜야 하는 실패 항목 */
   failed_items: ValidationItem[]
+  /** Task 2 — 페이지가 있으면 웹 리뷰 보강 버튼을 그린다 */
+  canEnrich?: boolean
 }
 
 export function ProductActions(p: ActionsProps) {
@@ -41,9 +43,12 @@ export function ProductActions(p: ActionsProps) {
   const [error, setError] = useState<string | null>(null)
   /** 열려 있으면 그 모드의 게시 확인 모달을 띄운다(§11.5) */
   const [dialog, setDialog] = useState<'override' | 'acknowledge' | null>(null)
+  /** Task 2 — 웹 리뷰 보강 진행 표시 */
+  const [enrichMsg, setEnrichMsg] = useState<string | null>(null)
 
   const buttons = describeStatus(p).buttons
-  if (buttons.length === 0) return null
+  // 상태 버튼이 없어도 보강 버튼이 있으면 그린다
+  if (buttons.length === 0 && !p.canEnrich) return null
 
   const onProgress = (label: string, attempt: number) =>
     setProgress(attempt > 0 ? `${label} (재시도 ${attempt}회)` : label)
@@ -97,6 +102,61 @@ export function ProductActions(p: ActionsProps) {
       return
     }
     await run(phasesFrom(body.restart_from))
+  }
+
+  /**
+   * Task 2 — 웹 리뷰 보강 (place-enrichment). **AI 2회**(검색 → 구조화).
+   *
+   * 상태 기계 밖 선택 동작이라 `run()`(파이프라인)과 분리한다. 두 요청을 클라이언트가
+   * 이어 부른다(§7 · Option A): ① 그라운딩 검색 → 텍스트·출처, ② 그 결과를 구조화해
+   * `page_content.enrichment`에 병합. 실패해도 기존 페이지는 그대로다.
+   */
+  async function enrich() {
+    setBusy(true)
+    setError(null)
+    setEnrichMsg('숙소·상점을 웹에서 검색하는 중…')
+    const H = { 'content-type': 'application/json' }
+    try {
+      // ① 그라운딩 검색
+      const r1 = await fetch(`/api/products/${p.id}/enrich-search`, { method: 'POST', headers: H, body: '{}' })
+      const b1 = await r1.json().catch(() => ({}))
+      if (!r1.ok) {
+        setError(r1.status === 409
+          ? '검색이 일시적으로 실패했습니다. 잠시 후 다시 시도해 주세요.'
+          : (b1.field_errors?._ ?? b1._ ?? '검색에 실패했습니다.'))
+        return
+      }
+
+      // ② 구조화 + 저장 (조회 시점을 함께 보낸다 — §16.1.1)
+      setEnrichMsg('검색 결과를 정리해 페이지에 반영하는 중…')
+      const r2 = await fetch(`/api/products/${p.id}/enrich-structure`, {
+        method: 'POST', headers: H,
+        body: JSON.stringify({ grounded_text: b1.grounded_text, sources: b1.sources, updated_at: p.updated_at }),
+      })
+      const b2 = await r2.json().catch(() => ({}))
+      if (!r2.ok) {
+        if (r2.status === 409 && b2.reason === 'stale') {
+          setError('다른 곳에서 이 상품이 변경됐습니다. 새로고침 후 다시 시도해 주세요.')
+        } else if (r2.status === 409) {
+          setError('정리가 일시적으로 실패했습니다. 잠시 후 다시 시도해 주세요.')
+        } else {
+          setError(b2._ ?? b2.field_errors?._ ?? '정리에 실패했습니다.')
+        }
+        return
+      }
+
+      const found = (b2.enrichment?.places ?? []).length
+      if (found === 0) {
+        setError('웹 검색에서 출처가 확인되는 정보를 찾지 못했습니다. 장소명이 정확한지 확인해 주세요.')
+        return
+      }
+      router.refresh()
+    } catch {
+      setError('네트워크 오류가 발생했습니다. 다시 시도해 주세요.')
+    } finally {
+      setBusy(false)
+      setEnrichMsg(null)
+    }
   }
 
   /**
@@ -236,6 +296,24 @@ export function ProductActions(p: ActionsProps) {
         ))}
         {progress && <span className="text-sm text-neutral-600">{progress}</span>}
       </div>
+
+      {/* Task 2 — 웹 리뷰 보강. 상태 버튼과 별개 규정이라 별도 줄에 둔다 */}
+      {p.canEnrich && (
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-4">
+          <button
+            onClick={enrich}
+            disabled={busy}
+            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm transition
+                       hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            웹 리뷰 보강
+          </button>
+          <span className="text-xs text-neutral-500">
+            숙소·상점을 웹에서 검색해 <strong>실제 정보·출처</strong>를 페이지에 추가합니다 (AI 2회).
+          </span>
+          {enrichMsg && <span className="text-sm text-neutral-600">{enrichMsg}</span>}
+        </div>
+      )}
 
       {/* 잠긴 버튼은 왜 잠겼는지 함께 알린다 — 막힌 길이 아님을 알려야 한다(§15.1) */}
       {!busy && buttons.filter((b) => b.disabled && b.disabledReason).map((b) => (

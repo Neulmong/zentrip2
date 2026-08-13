@@ -130,18 +130,17 @@
 - `AiResult.sources?: GroundingSource[]` · `GroundingSource {title, uri}`.
 - 게이트 초록 유지(tsc·lint·harness 185/0·policy 316/0). **이 계층이 나머지 전부의 토대다.**
 
-### 7.1 남은 단계 (스테이지드 — 각 단계 게이트 초록 유지)
+### 7.1 스테이지드 — **대부분 구현됨 (2026-08-13)**
 
-| # | 단계 | 파일 | 규모 |
-|---|---|---|---|
-| A | **spec §8.8 확장** — `source`에 웹 출처 유형 추가(값→URL). place-enrichment는 선택·비관통 명시 | `spec.md` | 소 |
-| B | **새 라우트 2개** `enrich-search`(AI1·grounding) → `enrich-structure`(AI1·schema). 상태 전이·§14 라우트표·client `run-pipeline` phases·orchestrator step 이름 추가 | `manifest.json`·`lib/orchestrator`·`lib/client/run-pipeline` | **대** |
-| C | **새 AI 스킬 2개** `grounded-place-search`(kind:ai·grounding)·`enrichment-structure`(kind:ai·schema) + SKILL.md 프롬프트 + `ai-contracts.ts` 스키마 + `ai-skills.ts` + manifest | `.claude/skills/*`·`lib/pipeline/ai-contracts.ts` | 중 |
-| D | **검증 스킬** `existence-verify` — 구조화된 값이 ⓐ `sources` URL 집합에 근거하는지 대조(기계: source 커버리지 방식). 없으면 그 값 탈락 | `.claude/skills/*`·`lib/pipeline/*` | 중 |
-| E | **렌더러 블록** `place_review`(또는 spotlight 확장) — 리뷰 본문 + **출처 배지(인용 링크)**. `vocabulary.ts` 어휘 추가·`page.ts`/`checkPage` 커버리지·`sections.tsx`/`blocks.tsx` | `lib/pipeline/vocabulary`·`components/page/*` | 중 |
-| F | **저장 위치** — enrichment 결과를 `page_content`에 병합할지 별도 컬럼에 둘지 결정(편집 계약·게시 게이트 영향) | `spec.md`·DB | 중 |
-| G | **테스트** `test:policy`·`test:harness`에 enrichment 계약 추가 + 실측(`probe`→관통) | `scripts/*` | 중 |
+| # | 단계 | 상태 |
+|---|---|---|
+| A | spec §8.8 확장 (웹 출처 유형) | ⬜ **남음** — `.claude/`(manifest·skill·agent)·이 문서가 규정을 담고 있으나 `spec.md` 본문 반영은 아직. 기능엔 영향 없음 |
+| B | 새 라우트 2개 `enrich-search`→`enrich-structure` | ✅ **상태 기계 밖**(`driven_by:route`)으로 구현 — R7 영역을 안 건드렸다. `runStep`·재개표·409 경로 무변경. `lib/harness/enrichment.ts`가 체인을 돌린다 |
+| C | 새 AI 스킬 2개 + SKILL.md + 스키마 + manifest | ✅ `grounded-place-search`(grounding)·`enrichment-structure`(schema). `GROUNDED_SEARCH_SCHEMA`·`ENRICHMENT_SCHEMA` |
+| D | 실존 대조 (출처 없는 값 탈락) | ✅ `assembleEnrichment`(기계) — 출처번호가 실제 `sources`를 못 가리키거나 targets에 없는 이름이면 버린다. 단위 검사로 확인 |
+| E | 렌더러 + 출처 배지 | ✅ `components/page/enrichment.tsx` — 장소 카드 + 인용 링크. `PageRenderer`가 apply 앞에 그린다. `page_content.enrichment`(sections 밖)라 `checkPage` 무영향 |
+| F | 저장 위치 | ✅ `page_content.enrichment`(sibling 키) — **DB 마이그레이션 없음**. checkPage/편집 계약 무영향 |
+| G | 테스트·실측 | 🟡 게이트 초록(tsc·lint·harness 201/0·policy 316/0·build). **live AI grounding + DB 쓰기 실측은 미실행**(키·서버 필요) |
 
-**핵심 리스크:** B(상태 기계)가 가장 침습적이다 — R7이 하네스 바깥으로 못박은 영역이라
-`runStep`·재개표·409 경로를 건드린다. 여기서 게이트가 깨지기 쉬우므로 B는 독립 커밋으로,
-enrichment을 **관통 필수 경로 밖(선택 버튼)** 으로 두어 실패해도 기존 경로가 안 깨지게 한다.
+**남은 것:** ① `spec.md` §8.8 본문에 웹 출처 유형 공식 반영(A) ② `npm run dev` + 실 키로
+enrich 버튼 관통 실측(G). 나머지는 구현·검증 완료. B를 상태 기계 밖에 둔 덕에 관통 경로가 안 깨졌다.

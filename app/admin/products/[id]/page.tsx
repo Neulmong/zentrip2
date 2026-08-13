@@ -301,6 +301,8 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         updated_at={p.updated_at}
         // §11.5 책임 게시 모달은 실패 항목 **전체**를 열람시켜야 한다
         failed_items={failedItems}
+        // Task 2 — 페이지가 있으면 웹 리뷰 보강 버튼을 그린다
+        canEnrich={Boolean(p.page_content)}
       />
 
       {/* §12.4 — §15.1 표에 없는 별도 규정이라 별도 자리에 둔다 */}

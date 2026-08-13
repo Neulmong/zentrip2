@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import type { PageContent, PageSection } from '@/lib/pipeline/page'
 import type { BlockStyle, Tone } from '@/lib/pipeline/vocabulary'
 import { Background, renderTheme, themeVars } from './theme'
+import { EnrichmentSection } from './enrichment'
 import { indexImages, type PageImage } from './types'
 import {
   Accommodation, Apply, Flight, Hero, Itinerary, Meal, Price, Shop, Summary,
@@ -64,7 +65,20 @@ export function PageRenderer({
         const anchor = s.type === 'apply' ? 'sec_apply' : undefined
 
         if (s.type === 'apply') {
-          return <div key={s.id} id={anchor}><Apply {...props} form={applyForm} /></div>
+          /*
+           * place-enrichment(Task 2)는 apply **바로 앞**에 그린다 — 사실 섹션들
+           * 뒤, 신청 CTA 앞이 현지 정보의 자연스러운 자리다. sections 밖의 부가
+           * 데이터라 여기서만 주입한다(§7 · 계약 밖).
+           */
+          const applyTone = (s.style as BlockStyle | undefined)?.tone
+          return (
+            <Fragment key={s.id}>
+              {content.enrichment && (
+                <EnrichmentSection enrichment={content.enrichment} t={t} nextTone={applyTone} />
+              )}
+              <div id={anchor}><Apply {...props} form={applyForm} /></div>
+            </Fragment>
+          )
         }
 
         const Component = RENDERERS[s.type]

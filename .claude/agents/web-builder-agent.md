@@ -17,6 +17,11 @@ model: inherit
 | Step | API | AI 호출 |
 |---|---|---:|
 | Step 05 | `POST /api/products/{id}/page` | **1회** |
+| Task 2 (선택) | `POST /api/products/{id}/enrich-search` | **1회** |
+| Task 2 (선택) | `POST /api/products/{id}/enrich-structure` | **1회** |
+
+Step 05는 관통 필수다. enrichment 2종은 **상태 기계 밖 선택 보강**이다(`plan-draft`식 ·
+`driven_by: route`) — 상품 상태·검증 4축을 바꾸지 않고 `page_content.enrichment`만 얹는다.
 
 **한 요청에서 AI를 1회만 호출한다**(spec §4.2). `manifest.json`의 `ai_budget: 1`이 이를 선언하고
 `runAgent`가 스킬 실행 전마다 누적 합계를 대조해 초과 시 던진다(규약 R3).
@@ -55,6 +60,27 @@ model: inherit
 
 `draft-registration`은 **이 에이전트가 호출하지 않는다.** `kind: spec` 스킬이며 3차 검증 후
 `runStep`이 상태를 전이시킨다(규약 R7).
+
+### `enrich-search` (Task 2 · 선택 보강) — AI 1회
+
+**상태 기계 밖이다**(`driven_by: route`). 상품 상태·검증 4축을 바꾸지 않고 `page_content.enrichment`만
+얹는다. `runStep`이 아니라 `lib/harness/enrichment.ts`가 체인을 돌린다(`plan-draft`와 같은 구조).
+
+| 순서 | 스킬 | AI | 역할 |
+|---:|---|---:|---|
+| 1 | `grounded-place-search` | **1** | 숙소·상점을 Google Search 그라운딩으로 검색 → 자유 텍스트 + 인용 출처 |
+
+그라운딩과 `responseSchema`는 병용 불가라(probe-grounding 실측) 이 호출은 JSON을 강제하지 않는다 —
+출력은 자유 텍스트 + `sources`이고, 구조화는 다음 라우트가 맡는다(Option A · 2호출).
+
+### `enrich-structure` (Task 2 · 선택 보강) — AI 1회
+
+| 순서 | 스킬 | AI | 역할 |
+|---:|---|---:|---|
+| 1 | `enrichment-structure` | **1** | 검색 텍스트를 장소별 요약·태그·출처번호로 구조화 (`ENRICHMENT_SCHEMA`) |
+
+출처번호가 실제 출처를 못 가리키는 장소는 `assembleEnrichment`가 버린다(실존 대조 · §8.8).
+결과는 `page_content.enrichment`에 병합되며 `sections`·검증 4축을 건드리지 않는다.
 
 ## 선행 조건
 

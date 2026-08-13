@@ -169,6 +169,32 @@
       "skills": [
         { "name": "consistency-check" }
       ]
+    },
+
+    "enrich-search": {
+      "agent": "web-builder-agent",
+      "spec": "Task 2 · place-enrichment 1단계 · POST /api/products/[id]/enrich-search",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 1,
+      "driven_by": "route",
+      "driven_by_note": "상태 기계 밖 선택 보강(plan-draft식 · driven_by:route). 상품 상태·검증 4축을 건드리지 않고 page_content.enrichment만 얹는다. runStep의 전제(카운터·전이·단계 로그)를 쓰지 않으므로 lib/harness/enrichment.ts가 체인을 돌린다. grounding 호출이라 responseSchema 없이 자유 텍스트+출처를 낸다(probe-grounding 실측 · docs/planner-pivot-design.md §7).",
+      "skills": [
+        { "name": "grounded-place-search" }
+      ]
+    },
+
+    "enrich-structure": {
+      "agent": "web-builder-agent",
+      "spec": "Task 2 · place-enrichment 2단계 · POST /api/products/[id]/enrich-structure",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 1,
+      "driven_by": "route",
+      "driven_by_note": "검색 텍스트를 구조화해 page_content.enrichment에 병합한다(조건부 갱신 유지). grounding 없이 responseSchema로 JSON을 강제하고, 출처번호가 실제 출처를 못 가리키는 장소는 assembleEnrichment가 버린다(실존 대조 · §8.8).",
+      "skills": [
+        { "name": "enrichment-structure" }
+      ]
     }
   },
 
@@ -177,7 +203,7 @@
     "intake-agent": { "routes": ["products", "form-input", "decompose"] },
     "content-writer-agent": { "routes": ["brochure"] },
     "validator-agent": { "routes": ["validate-brochure", "validate-page", "validate-consistency"] },
-    "web-builder-agent": { "routes": ["page"] },
+    "web-builder-agent": { "routes": ["page", "enrich-search", "enrich-structure"] },
     "log-monitor-agent": { "routes": [], "owns_spec_skills": ["execution-log-collection", "abnormality-detection"] }
   },
 
@@ -366,6 +392,30 @@
       "status": "existing"
     },
 
+    "grounded-place-search": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "GROUNDED_SEARCH_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "user_prompt_sections": { "default": "user 지시문" },
+      "does": "장소 목록을 Google Search 그라운딩으로 검색해 실제 정보·인용 출처를 낸다",
+      "why_ai": "웹 검색+요약은 기계 치환으로 환원되지 않는다. 그라운딩 도구는 AI 호출 안에서만 돈다",
+      "grounding_note": "responseSchema와 병용 불가(probe-grounding 실측). runner가 grounding:true로 부르고 GROUNDED_SEARCH_SCHEMA는 무시된다 — 출력은 자유 텍스트 + sources. 코드젠이 kind:ai에 schema를 요구해 이름만 둔다.",
+      "status": "new"
+    },
+    "enrichment-structure": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "ENRICHMENT_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "user_prompt_sections": { "default": "user 지시문" },
+      "does": "검색 텍스트를 장소별 요약·태그·출처번호로 구조화한다",
+      "why_ai": "산문 요약·태깅은 판단이라 규칙 치환이 아니다. 실존 대조(출처번호→출처)는 assembleEnrichment가 기계로 한다",
+      "status": "new"
+    },
+
     "edit-contract-check": {
       "kind": "mechanical",
       "ai": 0,
@@ -433,8 +483,8 @@
 
   "invariants": {
     "ai_per_route_max": 1,
-    "ai_per_script_total": 6,
-    "ai_per_script_total_note": "라우트 예산의 총합이다. **§20 관통 경로는 여전히 5회다** — 6번째는 `plan-draft`(§7.5)이고 §20 경로에 없다. 자연어 초안을 쓰면 그 요청 1회가 추가된다.",
+    "ai_per_script_total": 8,
+    "ai_per_script_total_note": "라우트 예산의 총합이다. **§20 관통 경로는 여전히 5회다** — 나머지 셋은 §20 경로 밖의 선택 요청이다: `plan-draft`(§7.5) 1회, place-enrichment(Task 2 · `enrich-search`+`enrich-structure`) 2회. 자연어 초안을 쓰거나 웹 리뷰 보강을 누를 때만 그 요청이 추가된다.",
     "spec_skills_never_in_chain": true,
     "prompts_only_in_skill_md": true,
     "user_instructions_only_in_skill_md": true
