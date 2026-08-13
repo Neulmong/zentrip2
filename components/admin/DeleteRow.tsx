@@ -106,7 +106,7 @@ export function DeleteRow({ id, 행사명, status, hasApplications, updated_at }
             <h3 className="text-base font-semibold">이 상품을 삭제할까요?</h3>
             <p className="mt-3 rounded-lg bg-neutral-50 px-3 py-2 text-sm font-medium">{행사명}</p>
             <p className="mt-3 text-sm leading-relaxed text-neutral-600">
-              상품·이미지·편집 이력이 삭제되며 되돌릴 수 없습니다. 실행 로그는 남습니다(§12.4).
+              상품·이미지·편집 이력이 삭제되며 되돌릴 수 없습니다. 실행 로그는 남습니다.
             </p>
             {error && (
               <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">

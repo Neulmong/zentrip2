@@ -128,7 +128,7 @@ export function PublishDialog({
 
           {isOverride && (
             <p className="mt-2 text-xs text-neutral-600">
-              게시 시점이 기록되고 목록에 「검증 실패 · 책임 게시됨」 배지가 붙습니다(§11.5·§10.4).
+              게시 시점이 기록되고 목록에 「검증 실패 · 책임 게시됨」 배지가 붙습니다.
             </p>
           )}
         </footer>

@@ -44,7 +44,7 @@ export default async function PreviewPage({
         images={[]}
         applyForm={
           <p className="rounded-xl border border-dashed border-[var(--t-primary)] px-4 py-6 text-center text-sm">
-            신청 폼 자리 — 고정 컴포넌트가 렌더링한다 (§13.1)
+            신청 폼 자리 — 고정 컴포넌트가 렌더링한다
           </p>
         }
       />

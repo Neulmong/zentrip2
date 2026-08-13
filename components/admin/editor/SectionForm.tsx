@@ -78,7 +78,7 @@ export function SectionForm({ section, images, errors, onChange }: SectionFormPr
 
         if (key === 'image_slot') {
           return (
-            <Field key={key} label="대표 사진 슬롯" error={err} hint="업로드된 슬롯 중에서 고릅니다(§7.3).">
+            <Field key={key} label="대표 사진 슬롯" error={err} hint="업로드된 슬롯 중에서 고릅니다.">
               <select
                 value={String(value ?? '')}
                 onChange={(e) => set(key, e.target.value)}
@@ -95,7 +95,7 @@ export function SectionForm({ section, images, errors, onChange }: SectionFormPr
           const picked = new Set(Array.isArray(value) ? value.map(String) : [])
           return (
             <Field key={key} label="사진 슬롯" error={err}
-              hint="장수와 순서는 업로드 순서가 정합니다(§9.3).">
+              hint="장수와 순서는 업로드 순서가 정합니다.">
               <div className="flex flex-wrap gap-3">
                 {slots.length === 0 && <span className="text-sm text-neutral-500">업로드된 사진이 없습니다.</span>}
                 {slots.map((s) => (
@@ -120,7 +120,7 @@ export function SectionForm({ section, images, errors, onChange }: SectionFormPr
         if (key === 'image_id') {
           return (
             <Field key={key} label="사진" error={err}
-              hint="편집기에서는 새로 올리지 않고 이미 올라간 사진 중에서 고릅니다(§10.2).">
+              hint="편집기에서는 새로 올리지 않고 이미 올라간 사진 중에서 고릅니다.">
               <select
                 value={String(value ?? '')}
                 onChange={(e) => set(key, e.target.value)}

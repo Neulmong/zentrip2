@@ -387,7 +387,7 @@ export function Editor(props: EditorProps) {
             ) : (
               <p className="mt-2 text-sm text-neutral-600">
                 <code className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs">/p/{slug}</code>
-                <span className="ml-2 text-xs text-neutral-500">게시 후에는 변경할 수 없습니다(§12.1).</span>
+                <span className="ml-2 text-xs text-neutral-500">게시 후에는 변경할 수 없습니다.</span>
               </p>
             )}
           </section>
