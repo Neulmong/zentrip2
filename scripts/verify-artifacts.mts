@@ -216,17 +216,15 @@ for (const p of complete) {
    * 그래서 편집된 상품은 order 검사만 빼고, 연속성은 J-05c가 따로 본다.
    */
   const renumbered = base.map((s, i) => ({ ...s, order: i + 1 }))
-  const pgErrors = checkPage({ ...pg, sections: renumbered } as never, slots)
-  check('H-01/01b/10/11/15', '서버 검사 통과 — 섹션 9개·source·토큰·길이 4종·슬롯',
+  const pgErrors = checkPage({ ...pg, sections: renumbered } as never, slots, cd)
+  check('H-01/01b/10/11/15', '서버 검사 통과 — 어휘·커버리지·source·토큰·타입별 길이·슬롯',
     pgErrors.length === 0, pgErrors)
 
-  if (blocks.length === 0) {
-    check('H-01(order)', '생성 직후 order가 1~9다',
-      base.map((s) => s.order).join(',') === '1,2,3,4,5,6,7,8,9',
-      base.map((s) => s.order))
-  } else {
-    skipped('H-01(order)', '생성 직후 order 1~9',
-      `편집으로 블록 ${blocks.length}개가 끼워져 전 섹션이 1..${pg.sections.length}로 재부여됨(§10.2 정상). 연속성은 J-05c가 판정`)
+  // 2.8: 구성이 자유로워 「9개」를 가정하지 않는다. order가 1..n 연속인지만 본다(§8.4)
+  {
+    const orders = [...pg.sections].map((s) => s.order).sort((a, b) => a - b)
+    check('H-01(order)', '생성 직후 order가 1..n 연속이다',
+      orders.every((o, i) => o === i + 1), orders)
   }
 
   check('H-01c', '모든 섹션이 7개 최상위 필드를 가진다',

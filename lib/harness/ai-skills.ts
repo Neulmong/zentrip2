@@ -1,9 +1,11 @@
 import 'server-only'
 import { ai, toLogOutput, type Effort } from '@/lib/ai'
 import {
-  DECOMPOSE_SCHEMA, EXPAND_SCHEMA, OVERVIEW_SCHEMA, VALIDATION_SCHEMA,
-  type DecomposeResult, type ExpandResult, type ValidationResult,
+  COMPOSE_SCHEMA, DECOMPOSE_SCHEMA, OVERVIEW_SCHEMA, VALIDATION_SCHEMA,
+  type ComposeResult, type DecomposeResult, type ValidationResult,
 } from '@/lib/pipeline/ai-contracts'
+import { VOCABULARY, TONES, WIDTHS, PADS, EDGES, MEDIAS, ALIGNS } from '@/lib/pipeline/vocabulary'
+import { MOODS, BACKGROUNDS, RHYTHMS, SCALES, HEADLINES, ACCENTS } from '@/lib/pipeline/theme'
 import type { PageContent } from '@/lib/pipeline/page'
 import type { ValidationItem } from '@/lib/types'
 import { promptOf, skillSpec, userPromptOf } from './loader'
@@ -141,29 +143,57 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
     c.핵심일정 = data.핵심일정.trim()
   },
 
-  /** 페이지 확장 서술 + 신청 문구 — §9.3의 `generated` 필드 */
+  /**
+   * 페이지 구성 (spec 2.8 §9.2·§9.3 · 명령서 4-①·⑤). AI가 디자이너가 되어
+   * **디자인 스펙(theme) + 블록 계획(blocks) + 서술**을 만든다. 값 필드는 `buildPage`가
+   * `confirmed_data`에서 치환하므로 여기 없다(사실정보가 AI를 거치지 않는다).
+   *
+   * 어휘·재료 표는 여기서 조립하고(gate 산출을 싣는다), **지시 문장은 SKILL.md에서**
+   * 온다(규약 R4).
+   */
   'content-structuring': async (c, args) => {
     if (!c.cd) throw new Error('하네스: content-structuring이 confirmed_data를 요구한다')
     const cd = c.cd
+    const gate = c.gate
+    if (!gate) throw new Error('하네스: content-structuring이 block-vocabulary-gate 산출을 요구한다')
 
-    const data = await call<ExpandResult>(c, 'content-structuring', args,
-      `## 일차별 압축 서술 (소개서) — 이것을 확장하라\n`
+    const 어휘표 = gate.available
+      .map((t) => `- ${t} (layout: ${VOCABULARY[t].layouts.join('·')})`).join('\n')
+    const 금지 = gate.unavailable.length
+      ? `\n## 만들지 마라 (재료 없음 — §8.5)\n${gate.unavailable.join(' · ')}\n` : ''
+    const refs = gate.spotlightRefs.length
+      ? `\n## spotlight 참조 대상\n${gate.spotlightRefs.join(' · ')}\n` : ''
+
+    const data = await call<ComposeResult>(c, 'content-structuring', args,
+      `## 쓸 수 있는 블록과 layout\n${어휘표}\n${금지}${refs}`
+      + `\n## 스타일 손잡이 (블록마다 지정 · 무효 값은 무시된다)\n`
+      + `tone: ${TONES.join('·')} / width: ${WIDTHS.join('·')} / align: ${ALIGNS.join('·')}\n`
+      + `pad: ${PADS.join('·')} / edge: ${EDGES.join('·')} / media: ${MEDIAS.join('·')}\n`
+      + `\n## 테마(디자인 의도 · 색이 아니라 hue+mood)\n`
+      + `hue: 0~359 정수 / mood: ${MOODS.join('·')} / background: ${BACKGROUNDS.join('·')}\n`
+      + `headline: ${HEADLINES.join('·')} / accent: ${ACCENTS.join('·')}\n`
+      + `rhythm: ${RHYTHMS.join('·')} / scale: ${SCALES.join('·')}\n`
+      + `\n## 일차별 압축 서술 (days[].text로 확장하라)\n`
       + cd.행사정보.일정.map((d) =>
         `${d.day}일차\n  원문근거: ${d.원문근거 || '(없음)'}\n  압축: ${d.내용}`).join('\n')
-      + `\n\n## 상품 정보 (신청 안내문구 작성용)\n`
+      + `\n\n## 상품 정보 (신청 문구·분위기 참고)\n`
       + `행사명: ${cd.행사정보.행사명} / 여행지: ${cd.행사정보.여행지}\n`
-      + `여행기간: ${cd.행사정보.여행기간}\n`
+      + `여행기간: ${cd.행사정보.여행기간} / 여행스타일: ${cd.행사정보.여행스타일}\n`
       + `여행주제: ${cd.행사정보.여행주제}\n`
-      // 비어 있으면 싣지 않는다 — 프롬프트만 늘린다.
       + (cd.행사정보.기획메모?.trim()
         ? `\n## 기획 메모 (어조 참고용 · 인용 금지 · 고객 미노출)\n${cd.행사정보.기획메모}\n`
         : '')
       + `\n${userPromptOf('content-structuring')}`,
-      EXPAND_SCHEMA)
+      COMPOSE_SCHEMA)
     if (!data) return
 
-    c.expanded = new Map(data.days.map((d) => [d.day, d.text]))
-    c.apply = data.apply
+    // 관대한 스키마라 일부가 빠질 수 있다 — 조립이 완결하도록 기본값을 둔다(재시도 소진 방지)
+    c.themeSpec = data.theme
+    c.plan = Array.isArray(data.blocks) ? data.blocks : []
+    c.expanded = new Map((data.days ?? []).map((d) => [d.day, d.text]))
+    c.apply = data.apply?.제목 || data.apply?.안내문구
+      ? data.apply
+      : { 제목: '신청 안내', 안내문구: '아래 양식으로 신청해 주세요. 확인 후 연락드리겠습니다.' }
   },
 
   /**
@@ -177,7 +207,7 @@ export const AI_SKILLS: Record<string, AiSkillRunner> = {
 
     const user = args.target === 'page'
       ? 기준
-        + `## 검사 대상 (page_content — 페이지 9개 섹션)\n`
+        + `## 검사 대상 (page_content — 페이지 블록)\n`
         + `${JSON.stringify(c.p.page_content as PageContent, null, 2)}\n\n`
         + `## 업로드된 이미지 슬롯\n${JSON.stringify(c.materials.imageSlots, null, 2)}\n\n`
         + userPromptOf('fact-check', 'page')

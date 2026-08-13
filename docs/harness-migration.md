@@ -766,12 +766,30 @@ npm run test:demo                    # §20 대본 관통. AI 5회를 쓴다
 
 ---
 
-# 8. spec 2.8 설계 — 상품 페이지의 「정해진 형식」을 없앤다 (2026-08-13 결정 · **착수는 데모 후**)
+# 8. spec 2.8 설계 — 상품 페이지의 「정해진 형식」을 없앤다 (2026-08-13 **구현 완료**)
 
-**아직 한 줄도 구현하지 않았다.** 이 절은 R6(「새 기능은 자리를 먼저 정한다」)에 따라
-**자리와 근거만** 정해 둔 것이다. `spec.md`는 여전히 2.7이며, **착수하는 사람이
-`spec.md`를 2.8로 올린 다음 코드를 고친다** — 규정만 2.8이고 코드가 2.7이면
-그 사이에 구현하는 사람이 없는 규정을 믿는다.
+> **✅ 구현했다 (2026-08-13 · `명령서.txt` 지시).** 이 절의 계획을 코드로 옮겼다. 실행 근거:
+> `.claude/harness/manifest.json`(2.8.0 · page 체인 6→7) · `spec.md` 2.8 · 아래 파일들.
+> 키리스 검사 전부 통과: **test:harness 185·0 · test:policy 313·0 · verify:a11y 23·0**
+> (hue 360×mood 6 = 2160 조합 전수) · tsc · lint · build.
+>
+> | 무엇 | 어디 |
+> |---|---|
+> | 색 엔진 (OKLCH 유도 + 대비 4종 강제 + 필드별 폴백 + 레거시 문자열 호환) | `lib/pipeline/theme.ts` |
+> | 어휘 단일 출처 (기존 9 + 삽입 3 + 추가 7 · layout · 재료 · 길이) | `lib/pipeline/vocabulary.ts` (신설) |
+> | AI 계약 `EXPAND_SCHEMA` → `COMPOSE_SCHEMA` | `lib/pipeline/ai-contracts.ts` |
+> | `buildPage` 계획 순회 + 값 치환 · `checkPage` 어휘·커버리지 | `lib/pipeline/page.ts` |
+> | 커버리지 기준 `requiredPaths(cd)` | `lib/pipeline/paths.ts` |
+> | `SECTION_PAIRS` 삭제 → 커버리지 · 일정은 type으로 | `lib/pipeline/consistency.ts` |
+> | 생성 집합 불변 · theme `same()` · renumber type | `lib/edit-contract.ts` |
+> | Band 공용 래퍼 · 배경 레이어 · 새 블록 7종 · nextTone | `components/page/{theme,sections,blocks,PageRenderer}.tsx` |
+> | 게이트 스킬 신설 · 체인 배선 | `block-vocabulary-gate` · `lib/harness/{impls,ai-skills,context}.ts` |
+> | a11y 전수 스윕 | `scripts/verify-a11y.mts` |
+>
+> **미완(정직하게):** ① `checklist.md` §9·§10·§11의 「9섹션」 전제 재해석(§8.9의 예고된 대량 작업)
+> ② `components/page/fixture.ts`·`app/admin/preview/page.tsx`를 새 블록·hue/mood로 확장(둘 다
+> typecheck·build는 통과하며 레거시 경로로 동작한다) ③ 키 필요한 관통(`test:real`)은 미실행.
+> 아래는 착수 전 계획이며 근거로 남긴다.
 
 ## 8.1 먼저 알아야 하는 사실 — 지금 AI는 페이지 구성에 발언권이 없다
 

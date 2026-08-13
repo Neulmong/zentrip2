@@ -30,26 +30,28 @@ model: inherit
 
 | 순서 | 스킬 | AI | 역할 |
 |---:|---|---:|---|
-| 1 | `theme-design-token-match` | 0 | 테마 키 + 디자인 토큰 3종 |
-| 2 | `content-structuring` | **1** | 일차별 확장 서술 + `apply` 안내 문구 |
-| 3 | `web-content-structure-gen` | 0 | 9섹션 조립 + `source` 승계 |
-| 4 | `page-contract-check` | 0 | 섹션·순서·이미지 슬롯·길이 계약 4종 |
-| 5 | `memo-leak-check` | 0 | 기획메모의 숫자가 서술 필드에 샜는지 (`args.target: page`) |
-| 6 | `slug-issue` | 0 | slug 발급 |
+| 1 | `block-vocabulary-gate` | 0 | 어휘 목록 + 재료 유무를 확정해 AI에게 넘긴다 |
+| 2 | `content-structuring` | **1** | 디자인 스펙 + 블록 계획 + 서술 (`COMPOSE_SCHEMA`) |
+| 3 | `theme-design-token-match` | 0 | AI가 고른 hue+mood를 검증·색 계산·대비 강제 |
+| 4 | `web-content-structure-gen` | 0 | 계획대로 조립 + 사실정보 값 치환 |
+| 5 | `page-contract-check` | 0 | 어휘·source 커버리지·hero/apply·order·타입별 길이 |
+| 6 | `memo-leak-check` | 0 | 기획메모의 숫자가 서술 필드에 샜는지 (`args.target: page`) |
+| 7 | `slug-issue` | 0 | slug 발급 |
 
-`memo-leak-check`는 계약 검사 **뒤**에 온다 — 구조가 깨진 상태에서는 어느 필드가 서술
-필드인지도 신뢰할 수 없다. `brochure` 체인에도 같은 스킬이 들어간다.
+`block-vocabulary-gate`가 **AI 앞**에 온다 — AI가 존재할 수 없는 블록(항공 미이용·0행)에
+토큰을 쓰지 않게 어휘·재료를 먼저 확정한다(명령서 ⑥).
 
-`slug-issue`가 마지막인 이유: 앞선 검사가 하나라도 실패했으면 발급하지 않는다. 그 요청은
-어차피 실패로 돌아가고, slug를 미리 잡아 두면 다음 시도에서 쓸 이름이 하나 줄어든다.
+`theme-design-token-match`가 **AI 뒤**로 이동했다 — 2.8에서 색은 AI가 고른 hue+mood를
+받아 기계가 OKLCH로 계산하고 대비 4종을 강제하므로, AI 출력이 나온 뒤에 돈다(명령서 4-②).
 
-> **2.2에서 바뀐 점.** 이전에는 `content-structuring`과 `web-content-structure-gen`이
-> "같은 프롬프트의 연속 단계"였다 — 1AI호출 제약을 프롬프트 하나에 두 일을 넣어 우회한 것이다.
-> 하네스에서는 **AI가 서술만 쓰고 조립은 기계가 한다.** §9.3에서 `source: "generated"`인 필드는
-> `itinerary.days[].text`와 `apply` 2종뿐이므로, 값 필드를 AI에게 다시 쓰게 할 이유가 없다.
-> 이 분리가 §16.1의 값 변형 금지를 구조적으로 보장한다.
->
-> slug 발급도 `slug-issue`로 분리했다(규약 R2 — 스킬은 단일 기능).
+`memo-leak-check`는 계약 검사 **뒤**에 온다. `slug-issue`가 마지막인 이유: 앞선 검사가
+하나라도 실패했으면 발급하지 않는다.
+
+> **2.7 → 2.8에서 바뀐 점.** 고정 9섹션을 없애고 AI가 **디자이너**가 되어 구성·순서·분위기·
+> 레이아웃을 정한다(명령서 1). 대신 **사실정보 값과 색은 AI가 만들지 않는다** — 값은
+> `web-content-structure-gen`이 `confirmed_data`에서 치환하고 색은 계산기가 계산한다.
+> 그래야 값이 바뀔 수 없고(§16.1), 대비 4.5:1이 보증된다. 검증은 「섹션 대응」에서
+> 「`source` 커버리지」로 옮겼다(§8.4).
 
 `draft-registration`은 **이 에이전트가 호출하지 않는다.** `kind: spec` 스킬이며 3차 검증 후
 `runStep`이 상태를 전이시킨다(규약 R7).

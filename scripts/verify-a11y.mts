@@ -13,9 +13,11 @@
  *   npm run verify:a11y
  */
 import { readFileSync } from 'node:fs'
-import { THEME_TOKENS, type ThemeKey } from '../lib/pipeline/theme'
+import {
+  THEME_TOKENS, deriveColors, CONTRAST_MIN, WHITE, MOODS, type ThemeKey,
+} from '../lib/pipeline/theme'
 
-let pass = 0, fail = 0, warn = 0
+let pass = 0, fail = 0
 const check = (name: string, ok: boolean, got?: unknown) => {
   if (ok) { pass++; console.log(`  ✅ ${name}`) }
   else { fail++; console.log(`  ❌ ${name}${got !== undefined ? `  → ${JSON.stringify(got)}` : ''}`) }
@@ -40,48 +42,41 @@ function contrast(a: string, b: string): number {
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 
-/* ══ V-06 ① 본문 대비 4.5:1 (테마 7종) ═══════════════════════════ */
-section('§17.2 · V-06 — 본문 대비 4.5:1 이상 (테마 7종)')
-console.log('  기준: WCAG 2.1 일반 텍스트 AA = 4.5:1\n')
+/* ══ V-06 ① 대비 4종 — hue 360 × mood 6 전수 스윕 (spec 2.8 · 명령서 4-②) ══
+ *
+ * 2.7까지는 팔레트 7종 육안/고정 검사였다. 2.8은 AI가 hue+mood를 고르고 기계가
+ * OKLCH로 색을 계산하므로, **모든 hue×mood 조합**에서 대비 4종이 만족됨을 증명해야
+ * 「보증이 계산기 쪽에 남는다」가 성립한다. 프리셋 육안 검사보다 강한 보증이다.
+ */
+section('§17.2 · V-06 — 대비 4종 전수 스윕 (hue 0~359 × mood 6 = 2160 조합)')
+console.log('  강제: text/surfaceDeep≥7 · primary/white≥4.5 · secondary/text≥4.5 · primary/surface≥3\n')
 
-const MIN_BODY = 4.5
-const themes = Object.keys(THEME_TOKENS) as ThemeKey[]
+console.log(`  ${'mood'.padEnd(8)} ${'본문/deep'.padStart(10)} ${'P/white'.padStart(9)} ${'S/text'.padStart(9)} ${'P/surf'.padStart(9)}  판정`)
+console.log(`  ${'─'.repeat(56)}`)
 
-console.log(`  ${'테마'.padEnd(10)} ${'본문/배경'.padStart(10)} ${'제목/배경'.padStart(10)}  판정`)
-console.log(`  ${'─'.repeat(46)}`)
-
-for (const t of themes) {
-  const c = THEME_TOKENS[t].colors
-  const body = contrast(c.text, c.surface)      // 본문 — 규정 대상
-  const head = contrast(c.primary, c.surface)   // 제목·강조 — 참고
-  const ok = body >= MIN_BODY
-  const mark = ok ? '✅' : '❌'
-  console.log(`  ${t.padEnd(10)} ${(r2(body) + ':1').padStart(10)} ${(r2(head) + ':1').padStart(10)}  ${mark}`)
+for (const mood of MOODS) {
+  let mn = { t: 99, pw: 99, st: 99, ps: 99 }
+  let bad = 0
+  for (let hue = 0; hue < 360; hue++) {
+    const c = deriveColors(hue, mood)
+    const t = contrast(c.text, c.surfaceDeep)
+    const pw = contrast(c.primary, WHITE)
+    const st = contrast(c.secondary, c.text)
+    const ps = contrast(c.primary, c.surface)
+    mn = { t: Math.min(mn.t, t), pw: Math.min(mn.pw, pw), st: Math.min(mn.st, st), ps: Math.min(mn.ps, ps) }
+    if (t < CONTRAST_MIN.text_vs_surfaceDeep - 1e-9 || pw < CONTRAST_MIN.primary_vs_white - 1e-9
+      || st < CONTRAST_MIN.secondary_vs_text - 1e-9 || ps < CONTRAST_MIN.primary_vs_surface - 1e-9) bad++
+  }
+  console.log(`  ${mood.padEnd(8)} ${(r2(mn.t) + ':1').padStart(10)} ${(r2(mn.pw) + ':1').padStart(9)} ${(r2(mn.st) + ':1').padStart(9)} ${(r2(mn.ps) + ':1').padStart(9)}  ${bad === 0 ? '✅' : '❌'}`)
+  check(`${mood}: 360개 hue 전부 대비 4종 만족`, bad === 0, { 미달개수: bad })
 }
-console.log('')
 
-for (const t of themes) {
+/* ── 레거시 — 게시된 문자열 테마 7종의 색은 바뀌지 않는다(완료조건 8) ── */
+section('레거시 — 게시된 테마 7종 본문 대비 4.5:1 (색 보존)')
+for (const t of Object.keys(THEME_TOKENS) as ThemeKey[]) {
   const c = THEME_TOKENS[t].colors
   const body = contrast(c.text, c.surface)
-  check(`${t} 본문 대비가 4.5:1 이상이다`, body >= MIN_BODY,
-    { 대비: `${r2(body)}:1`, 본문: c.text, 배경: c.surface })
-}
-
-/* ── 참고: 제목·강조색은 대형 텍스트(3:1)가 기준이다 ────────────── */
-section('참고 — 제목·강조색 (WCAG 대형 텍스트 AA = 3:1)')
-for (const t of themes) {
-  const c = THEME_TOKENS[t].colors
-  const head = contrast(c.primary, c.surface)
-  if (head >= 3) { pass++; console.log(`  ✅ ${t} 제목 대비 ${r2(head)}:1`) }
-  else { warn++; console.log(`  ⚠️  ${t} 제목 대비 ${r2(head)}:1 — 3:1 미만. 큰 글자에만 쓰는지 확인 필요`) }
-}
-
-/* ── 보조색은 텍스트에 쓰지 않는다(배경·테두리용) ───────────────── */
-section('참고 — 보조색(secondary)은 배경·테두리용이다')
-console.log('  텍스트로 쓰면 대비가 부족하다. 아래는 그 근거 수치다.\n')
-for (const t of themes) {
-  const c = THEME_TOKENS[t].colors
-  console.log(`  ${t.padEnd(10)} secondary/surface = ${r2(contrast(c.secondary, c.surface))}:1`)
+  check(`${t} 본문 대비 4.5:1 이상`, body >= 4.5, { 대비: `${r2(body)}:1` })
 }
 
 /* ══ V-06 ② 폼 필드에 label ══════════════════════════════════════ */
@@ -157,5 +152,5 @@ section('§17.2 — 다크 모드는 범위 제외 (라이트 단일)')
 }
 
 console.log(`\n${'─'.repeat(52)}`)
-console.log(`통과 ${pass} · 실패 ${fail}${warn > 0 ? ` · 주의 ${warn}` : ''}`)
+console.log(`통과 ${pass} · 실패 ${fail}`)
 process.exit(fail > 0 ? 1 : 0)

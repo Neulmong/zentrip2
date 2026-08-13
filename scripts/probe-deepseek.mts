@@ -23,7 +23,7 @@
 import { createDeepseekProvider } from '../lib/ai/deepseek'
 import {
   DECOMPOSE_SCHEMA,
-  EXPAND_SCHEMA,
+  COMPOSE_SCHEMA,
   VALIDATION_SCHEMA,
 } from '../lib/pipeline/ai-contracts'
 /*
@@ -92,18 +92,18 @@ report(await call<{ 판정: string; 일정: { day: string }[] }>({
 })
 
 /* ── ② 페이지 확장 서술 (§9.5 ①) — 가장 긴 출력 ──────────────── */
-console.log('\n② 페이지 확장 서술 — EXPAND_SCHEMA (effort: generate)')
-report(await call<{ days: unknown[]; apply: { 제목: string } }>({
+console.log('\n② 페이지 구성 — COMPOSE_SCHEMA (effort: generate)')
+report(await call<{ blocks: unknown[]; days: unknown[]; apply: { 제목: string } }>({
   system: PROMPTS['content-structuring'],
   user: '## 일차별 압축 서술 (소개서) — 이것을 확장하라\n'
     + '1일차: 김해공항 출발, 올레 7코스 걷기\n2일차: 성산일출봉 관람\n3일차: 귀국\n\n'
     + '## 확정 값\n행사명: 제주 올레 바람 여행 / 여행지: 제주\n'
     + '숙소: 롯데호텔 제주 (디럭스룸, 중문) / 성인 120,000원 / 아동 해당 없음',
-  schema: EXPAND_SCHEMA,
+  schema: COMPOSE_SCHEMA,
   effort: 'generate',
-  label: 'probe-expand',
+  label: 'probe-compose',
 }), (d) => {
-  const x = d as { days: { text?: string }[]; apply: { 제목: string } }
+  const x = d as { blocks: unknown[]; days: { text?: string }[]; apply: { 제목: string } }
   const longest = Math.max(0, ...(x.days ?? []).map((v) => (v.text ?? '').length))
   return [
     `days        ${Array.isArray(x.days) ? `${x.days.length}개` : '없음'}`,

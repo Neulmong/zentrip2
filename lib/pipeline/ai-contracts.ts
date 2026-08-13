@@ -226,15 +226,76 @@ export interface ValidationResult {
 }
 
 /* ════════════════════════════════════════════════════════════════
- * Step 05 — 페이지 확장 서술 (§9.3)
+ * Step 05 — 페이지 구성 (spec 2.8 §9.2·§9.3 · 명령서 4-①·⑤)
  *
- * 값 필드는 서버가 승계하므로 AI는 일차별 확장 서술과 신청 문구만 만든다.
- * (근거는 lib/pipeline/page.ts 상단)
+ * 2.7의 `EXPAND_SCHEMA`(일차 서술 + apply 2필드)를 대체한다. 2.8에서 AI는
+ * **디자이너**가 되어 구성·순서·분위기·블록별 레이아웃을 정한다.
+ *
+ * ## AI가 쓰는 것 / 기계가 쓰는 것 (명령서 4-①)
+ *
+ *   AI  : 디자인 스펙(`theme`) + 블록 계획(`blocks`) + `source:"generated"` 서술
+ *   기계: 사실정보 값 치환 — 행사명·기간·가격·숙소명·상점명·항공편은
+ *         `confirmed_data`에서 **그대로** 꽂는다(`buildPage`)
+ *
+ * **얻는 것 둘:** ① 사실정보가 AI를 거치지 않으므로 바뀔 수 없다(§16.1 구조적 보장)
+ * ② 출력 토큰이 거의 늘지 않는다(스펙 + 블록 배열 + 서술 몇 개) → AI 1회 · 40초 예산 유지.
+ *
+ * ## `theme`은 색이 아니라 **색의 의도**다 (명령서 4-②)
+ *
+ * `hue`(0~359) + `mood`만 받는다. `#RRGGBB`는 받지 않는다 — 색은 기계가 OKLCH로
+ * 계산하고 WCAG 대비를 강제한다(`theme.ts`). 스키마에서 색을 뺐으므로 AI가 색을
+ * 낼 경로가 없다(절대 원칙 3 — 지시가 아니라 구조로 막는다).
  * ════════════════════════════════════════════════════════════════ */
 
-export const EXPAND_SCHEMA = {
+/**
+ * 블록 1개의 계획. 값 필드는 없다 — `type`·스타일·(생성 블록의) 서술만.
+ * 어휘·layout·재료 대응은 `lib/pipeline/vocabulary.ts`가 단일 출처다.
+ */
+const 블록 = {
   type: Type.OBJECT,
   properties: {
+    /** 어휘의 type. 무효면 조립이 버린다 */
+    type: { type: Type.STRING },
+    /** spotlight 참조 대상 (`숙박[0]`·`상점[2]`). 그 밖 타입은 무시된다 */
+    ref: { type: Type.STRING },
+    /** 스타일 손잡이 (명령서 4-③). 무효 값은 조립이 기본으로 떨어뜨린다 */
+    layout: { type: Type.STRING },
+    tone: { type: Type.STRING },
+    width: { type: Type.STRING },
+    align: { type: Type.STRING },
+    pad: { type: Type.STRING },
+    edge: { type: Type.STRING },
+    media: { type: Type.STRING },
+    /** 생성 서술 — cta·free 계열 제목 */
+    제목: { type: Type.STRING },
+    /** 생성 서술 — cta·spotlight 본문 */
+    본문: { type: Type.STRING },
+    /** 생성 서술 — highlight 강조 문구들 */
+    문구들: { type: Type.ARRAY, items: { type: Type.STRING } },
+  },
+  required: ['type'],
+}
+
+export const COMPOSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    theme: {
+      type: Type.OBJECT,
+      properties: {
+        hue: { type: Type.INTEGER },
+        mood: { type: Type.STRING },
+        background: { type: Type.STRING },
+        headline: { type: Type.STRING },
+        accent: { type: Type.STRING },
+        rhythm: { type: Type.STRING },
+        scale: { type: Type.STRING },
+        근거: { type: Type.STRING },
+      },
+      // 필수 없음 — 결측·무효 필드는 `resolveThemeSpec`이 필드별로 폴백한다.
+      // 강제하면 DeepSeek이 하나만 빠뜨려도 schema_invalid → 재시도 소진이 된다.
+      required: [],
+    },
+    blocks: { type: Type.ARRAY, items: 블록 },
     days: {
       type: Type.ARRAY,
       items: {
@@ -249,10 +310,38 @@ export const EXPAND_SCHEMA = {
       required: ['제목', '안내문구'],
     },
   },
-  required: ['days', 'apply'],
+  /*
+   * 최상위 필수는 `apply`만. `theme`·`blocks`·`days`가 빠져도 조립이 완결된
+   * 페이지를 만든다 — theme는 폴백, blocks 결측은 자동 보강(모든 사실 블록),
+   * days 결측은 소개서 압축 서술로 대체(buildBlock). **관대한 스키마가 재시도
+   * 소진을 막는다** — 검증은 조립 뒤 `checkPage`·`memo-leak`이 실질을 지킨다.
+   */
+  required: ['apply'],
 }
 
-export interface ExpandResult {
+/** AI의 원시 블록 계획 — 값은 없고 type·스타일·서술만. 전 필드가 무효일 수 있다 */
+export interface ComposeBlock {
+  type: string
+  ref?: string
+  layout?: string
+  tone?: string
+  width?: string
+  align?: string
+  pad?: string
+  edge?: string
+  media?: string
+  제목?: string
+  본문?: string
+  문구들?: string[]
+}
+
+export interface ComposeResult {
+  /** 디자인 의도. 색이 아니라 hue+mood. 무효 필드는 `resolveThemeSpec`이 폴백 */
+  theme: {
+    hue?: number; mood?: string; background?: string; headline?: string
+    accent?: string; rhythm?: string; scale?: string; 근거?: string
+  }
+  blocks: ComposeBlock[]
   days: { day: string; text: string }[]
   apply: { 제목: string; 안내문구: string }
 }

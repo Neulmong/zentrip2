@@ -2,7 +2,9 @@ import type { AiErrorType } from '@/lib/ai'
 import type { ConfirmedData, NormalizeChange } from '@/lib/pipeline/normalize'
 import type { BrochureContent } from '@/lib/pipeline/brochure'
 import type { PageContent } from '@/lib/pipeline/page'
-import type { ThemeKey } from '@/lib/pipeline/theme'
+import type { ResolvedTheme } from '@/lib/pipeline/theme'
+import type { ComposeBlock, ComposeResult } from '@/lib/pipeline/ai-contracts'
+import type { GateInfo } from '@/lib/pipeline/vocabulary'
 import type { NounCandidate } from '@/lib/pipeline/axis0'
 import type { FormInput, ProductRow, ValidationItem } from '@/lib/types'
 
@@ -56,7 +58,14 @@ export interface HarnessContext {
   partialDays: string[]
   핵심일정?: string
   brochure?: BrochureContent
-  theme?: ThemeKey
+  /** block-vocabulary-gate 산출 — AI에게 넘길 어휘·재료 요약 (명령서 ⑥) */
+  gate?: GateInfo
+  /** content-structuring 산출 — AI의 디자인 의도(색이 아니라 hue+mood) */
+  themeSpec?: ComposeResult['theme']
+  /** content-structuring 산출 — AI의 블록 계획 (구성·순서·스타일·서술) */
+  plan?: ComposeBlock[]
+  /** theme-design-token-match 산출 — 계산·검증이 끝난 테마 (§9.4) */
+  theme?: ResolvedTheme
   expanded?: Map<string, string>
   apply?: { 제목: string; 안내문구: string }
   page?: PageContent

@@ -1,7 +1,10 @@
 ---
 name: web-content-structure-gen
-description: 상품 페이지의 page_content JSON 콘텐츠 모델을 완성한다. 히어로·요약·일정표·숙박·항공·식사·가격·제휴상점·신청 9개 섹션과 콘텐츠 길이 계약을 적용하며, HTML을 생성하지 않는다.
+description: 상품 페이지의 page_content JSON 콘텐츠 모델을 완성한다. AI 블록 계획대로 조립하고 사실정보 값을 confirmed_data에서 치환하며, 타입별 길이 계약을 적용하고 HTML을 생성하지 않는다.
 ---
+
+> **2.8**: 9섹션 하드코딩을 버렸다. **AI의 블록 계획대로 조립**하며 사실정보 값을 `confirmed_data`에서 치환한다(`buildPage`). hero는 처음·apply는 마지막을 기계가 보증하고 그 사이는 계획 순서다. 어휘·재료는 `vocabulary.ts`가 단일 출처다.
+
 
 ## 목적
 - `page_content` 콘텐츠 모델을 최종 형태로 완성한다.

@@ -15,6 +15,8 @@
  * 로그 뷰. 각자 문자열을 쪼개면 표기가 갈리는 순간 조용히 다른 값을 본다.
  * **경로를 해석하는 코드는 여기 하나뿐이어야 한다.**
  */
+import type { ConfirmedData } from './normalize'
+import { BLOCK_TYPES, VOCABULARY } from './vocabulary'
 
 /** `숙박[0]` → `{ key: '숙박', index: 0 }`, `가격` → `{ key: '가격' }` */
 function segment(s: string): { key: string; index?: number } {
@@ -79,4 +81,32 @@ export function expandRows(
 export const ROW_FIELDS: Readonly<Record<string, string>> = {
   숙소들: '숙박',
   상점들: '상점',
+}
+
+/**
+ * 커버리지의 기준 목록 (spec 2.8 §9.2 · 명령서 ⑤) — **순수 함수**.
+ *
+ * 구성이 자유로워지면 「9섹션·순서」로는 사실정보 누락을 잡을 수 없다. 대신
+ * **확정 데이터의 모든 사실정보 경로가 페이지의 `source` 집합에 있어야 한다**로
+ * 옮긴다 — 어느 블록에 있든 상관없다.
+ *
+ * 반환값은 페이지가 **반드시 덮어야 하는 최상위 `source` 경로**의 집합이다.
+ * 어휘(`VOCABULARY`)의 `fact` 블록이 정의한 재료 경로를 모아, 재료가 없는 것
+ * (`available: false`)과 값이 `해당 없음`인 스칼라 경로를 뺀다. `추후 추가 예정`은
+ * **포함**한다 — §6.1의 목적이 「빈칸을 기획자가 알아차리게」이므로 페이지에 남아야 한다.
+ */
+export function requiredPaths(cd: ConfirmedData): Set<string> {
+  const out = new Set<string>()
+  for (const t of BLOCK_TYPES) {
+    const def = VOCABULARY[t]
+    if (def.role !== 'fact' || !def.materialPaths) continue
+    if (def.available && !def.available(cd)) continue
+    for (const p of def.materialPaths(cd)) {
+      const v = resolvePath(cd, p)
+      // 값이 `해당 없음`인 스칼라 경로는 커버리지 대상에서 제외(§8.5)
+      if (typeof v === 'string' && v.trim() === '해당 없음') continue
+      out.add(p)
+    }
+  }
+  return out
 }

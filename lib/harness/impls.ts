@@ -7,7 +7,8 @@ import {
 } from '@/lib/pipeline/brochure'
 import { buildPage, checkPage, type PageContent } from '@/lib/pipeline/page'
 import { checkConsistency } from '@/lib/pipeline/consistency'
-import { resolveTheme } from '@/lib/pipeline/theme'
+import { resolveThemeSpec } from '@/lib/pipeline/theme'
+import { gateInfo } from '@/lib/pipeline/vocabulary'
 import { findMemoLeaks } from '@/lib/pipeline/memo-leak'
 import { proposeSlug, withSuffix } from '@/lib/pipeline/slug'
 import type { HarnessContext } from './context'
@@ -102,9 +103,23 @@ export const MECHANICAL: Record<string, SkillRunner> = {
 
   /* ── web-builder-agent ────────────────────────────────────── */
 
+  /**
+   * 어휘·재료 게이트 (명령서 ⑥) — 체인 1번(AI 앞). 어휘 목록 + 재료 유무(§8.5)를
+   * 확정해 AI에게 넘긴다. AI가 존재할 수 없는 블록(항공 미이용·0행)에 토큰을
+   * 쓰지 않게 한다. `ai-skills.ts`가 `c.gate`를 user 메시지에 싣는다.
+   */
+  'block-vocabulary-gate': (c) => {
+    const cd = need(c.cd, 'block-vocabulary-gate', 'confirmed_data')
+    c.gate = gateInfo(cd)
+  },
+
+  /**
+   * 테마 — **AI 뒤로 이동**(명령서 ⑥). AI가 고른 디자인 의도(`themeSpec`: hue+mood)를
+   * 검증하고 무효 필드만 폴백한다. 색은 OKLCH로 계산되고 대비 4종이 보증된다(theme.ts).
+   */
   'theme-design-token-match': (c) => {
     const cd = need(c.cd, 'theme-design-token-match', 'confirmed_data')
-    c.theme = resolveTheme(cd.행사정보.여행스타일)
+    c.theme = resolveThemeSpec(c.themeSpec, cd.행사정보.여행스타일)
   },
 
   'web-content-structure-gen': (c) => {
@@ -113,6 +128,7 @@ export const MECHANICAL: Record<string, SkillRunner> = {
       cd,
       theme: need(c.theme, 'web-content-structure-gen', 'theme'),
       slots: new Set(c.materials.imageSlots.map((r) => r.slot)),
+      plan: need(c.plan, 'web-content-structure-gen', '블록 계획'),
       expanded: need(c.expanded, 'web-content-structure-gen', '확장 서술'),
       apply: need(c.apply, 'web-content-structure-gen', 'apply 문구'),
     })
@@ -120,7 +136,8 @@ export const MECHANICAL: Record<string, SkillRunner> = {
 
   'page-contract-check': (c) => {
     const page = need(c.page, 'page-contract-check', 'page_content')
-    c.errors.push(...checkPage(page, new Set(c.materials.imageSlots.map((r) => r.slot))))
+    const cd = need(c.cd, 'page-contract-check', 'confirmed_data')
+    c.errors.push(...checkPage(page, new Set(c.materials.imageSlots.map((r) => r.slot)), cd))
   },
 
   /**
@@ -168,12 +185,26 @@ export const MECHANICAL: Record<string, SkillRunner> = {
     const { 기획메모, ...메모제외 } = cd.행사정보
     const 확정값 = JSON.stringify({ ...cd, 행사정보: 메모제외 })
 
+    /**
+     * 2.8에서 서술 필드가 넓어졌다(명령서 ⑥) — 일차 서술·apply 문구에 더해
+     * AI가 계획에 쓴 `highlight.문구들`·`cta.제목/본문`·`spotlight.본문`도 본다.
+     * 이 셋은 `c.plan`에 있다(값이 아니라 서술이므로 AI가 직접 쓴 필드다).
+     */
+    const 계획서술: [string, string][] = (c.plan ?? []).flatMap((b, i) => {
+      const out: [string, string][] = []
+      if (Array.isArray(b.문구들)) b.문구들.forEach((s, j) => out.push([`blocks[${i}].문구들[${j}]`, String(s)]))
+      if (typeof b.제목 === 'string' && b.제목) out.push([`blocks[${i}].제목`, b.제목])
+      if (typeof b.본문 === 'string' && b.본문) out.push([`blocks[${i}].본문`, b.본문])
+      return out
+    })
+
     const 서술: [string, string][] = args.target === 'page'
       ? [
           ...[...need(c.expanded, 'memo-leak-check', '확장 서술').entries()]
             .map(([day, text]) => [`days[${day}].text`, text] as [string, string]),
           ['apply.제목', need(c.apply, 'memo-leak-check', 'apply 문구').제목],
           ['apply.안내문구', need(c.apply, 'memo-leak-check', 'apply 문구').안내문구],
+          ...계획서술,
         ]
       : [['b_overview.핵심일정', need(c.핵심일정, 'memo-leak-check', 'overview.핵심일정')]]
 

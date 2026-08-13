@@ -105,8 +105,21 @@ export const AI_MAX_TOKENS = 8000
  * G03 45.9초(재시도 후 통과). 40초는 DeepSeek 분해 지연 분포(19~47초)의 중앙보다
  * 위였을 뿐 상한을 못 덮었다. 55초면 관측 최대 47초에 8초 여유가 있고 `maxDuration`
  * 60초 안이다. 넘는 호출은 여전히 우리가 끊어 409·재시도가 산다.
+ *
+ * ## env로 조정 가능 (2026-08-13 · spec 2.8 page 생성이 무거워짐)
+ *
+ * 2.8에서 `content-structuring`(AI가 디자인 스펙+구성을 짬)이 무거워져 50초대까지
+ * 관측됐다. `maxDuration`(플랫폼 상한)이 60초인 한 이 값은 그 아래여야 하므로
+ * **55초가 사실상의 천장이다** — 라우트의 나머지(DB·로그·응답)에 5초를 남긴다.
+ * 더 기다리려면 `maxDuration`부터 올려야 한다(Vercel Pro면 가능). 그 경우:
+ *   `AI_TIMEOUT_SECONDS`(env)로 타임아웃을, 각 라우트의 `export const maxDuration`
+ *   리터럴을 함께 올린다. 여기서는 env 오버라이드만 제공하고, 미설정 시 55초다.
+ * 근본 해법은 이 값을 늘리는 것이 아니라 **AI 호출을 가볍게** 하는 것이다 —
+ * 관대한 스키마·자동 보강으로 재시도 소진을 없앤 것이 그 방향이다(ai-contracts·page.ts).
  */
-export const AI_TIMEOUT_MS = 55_000
+const _timeoutEnv = Number(process.env.AI_TIMEOUT_SECONDS)
+export const AI_TIMEOUT_MS =
+  Number.isFinite(_timeoutEnv) && _timeoutEnv > 0 ? Math.round(_timeoutEnv * 1000) : 55_000
 
 /**
  * 지연 감지 임계값 (§5.5).

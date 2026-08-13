@@ -1,6 +1,6 @@
 {
-  "version": "2.7.0",
-  "authority": "spec.md 2.7. 이 파일과 spec이 어긋나면 spec이 이기고 이 파일을 고친다.",
+  "version": "2.8.0",
+  "authority": "spec.md 2.8. 이 파일과 spec이 어긋나면 spec이 이기고 이 파일을 고친다.",
   "covenant": "CLAUDE.md의 🔒 하네스 규약 R1~R7",
 
   "routes": {
@@ -136,8 +136,9 @@
       },
       "materials": ["image_slots", "used_slugs"],
       "skills": [
-        { "name": "theme-design-token-match" },
+        { "name": "block-vocabulary-gate" },
         { "name": "content-structuring" },
+        { "name": "theme-design-token-match" },
         { "name": "web-content-structure-gen" },
         { "name": "page-contract-check" },
         { "name": "memo-leak-check", "args": { "target": "page" } },
@@ -316,37 +317,46 @@
       "status": "existing"
     },
 
-    "theme-design-token-match": {
+    "block-vocabulary-gate": {
       "kind": "mechanical",
       "ai": 0,
-      "impl": "pipeline/theme#resolveTheme",
-      "does": "여행스타일 → 테마 키 + 디자인 토큰 3종",
-      "status": "existing"
+      "impl": "pipeline/vocabulary#gateInfo",
+      "does": "어휘 목록 + 재료 유무(§8.5)를 확정해 AI에게 넘긴다. AI가 존재할 수 없는 블록에 토큰을 쓰지 않게",
+      "why_mechanical": "재료 유무는 confirmed_data 조회다. AI가 판단할 것이 없다",
+      "status": "new"
     },
     "content-structuring": {
       "kind": "ai",
       "ai": 1,
       "effort": "generate",
-      "schema": "EXPAND_SCHEMA",
+      "schema": "COMPOSE_SCHEMA",
       "prompt_sections": ["프롬프트"],
-      "does": "소개서의 압축 서술을 페이지의 확장 서술로 늘리고 apply 안내 문구를 쓴다",
+      "does": "디자인 스펙 + 블록 계획 + generated 서술을 만든다. 사실정보 값은 만들지 않는다",
       "user_prompt_sections": { "default": "user 지시문" },
-      "why_ai": "§9.3에서 source가 'generated'인 필드는 itinerary days text와 apply 2종뿐이다",
-      "status": "existing"
+      "why_ai": "구성·순서·분위기·블록별 레이아웃은 판단이다. 값 필드는 buildPage가 기계로 치환한다(§8.3)",
+      "status": "changed:EXPAND→COMPOSE (2.8 자유 구성)"
+    },
+    "theme-design-token-match": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/theme#resolveThemeSpec",
+      "does": "AI가 고른 디자인 의도(hue+mood)를 검증하고 무효 필드만 폴백. 색은 OKLCH로 계산·대비 강제",
+      "note": "AI 뒤로 이동(체인 3번). 색은 AI가 아니라 계산기가 만들고 대비 4종을 보증한다(명령서 4-②)",
+      "status": "changed:AI 뒤로 이동 · 검증·폴백"
     },
     "web-content-structure-gen": {
       "kind": "mechanical",
       "ai": 0,
       "impl": "pipeline/page#buildPage",
-      "does": "페이지 9섹션을 조립하고 source 맵을 승계한다",
-      "status": "existing"
+      "does": "AI 블록 계획대로 조립하고 사실정보 값을 confirmed_data에서 치환한다. source 맵 승계",
+      "status": "changed:계획 순회 (9섹션 하드코딩 제거)"
     },
     "page-contract-check": {
       "kind": "mechanical",
       "ai": 0,
       "impl": "pipeline/page#checkPage",
-      "does": "9섹션·순서·이미지 슬롯·길이 계약 4종(생성 시점)",
-      "status": "existing"
+      "does": "어휘·source 커버리지·hero/apply·order 연속·타입별 길이 계약",
+      "status": "changed:9섹션·순서 → 어휘·커버리지(명령서 ⑤)"
     },
     "slug-issue": {
       "kind": "mechanical",
@@ -360,9 +370,9 @@
       "kind": "mechanical",
       "ai": 0,
       "impl": "edit-contract#validateEdit",
-      "does": "편집 저장 계약 — 기본 9섹션 불변부·삽입 블록 3종·이미지 참조·길이 계약 6종",
-      "note": "생성 시 4종(page-contract-check)과 저장 시 6종이 갈리는 지점이다. 앞 4종의 상한은 반드시 같아야 하며 어긋나면 화면과 서버가 갈린다(§17.1)",
-      "status": "existing"
+      "does": "편집 저장 계약 — 생성된 집합의 불변부·삽입 블록 3종·이미지 참조·타입별 길이 계약",
+      "note": "2.8: 고정 9섹션 대신 「그 상품이 생성한 집합」이 불변. 길이 계약은 VOCABULARY가 단일 출처라 생성 시점과 상한이 갈릴 수 없다(§17.1). theme 비교는 same()(객체이므로)",
+      "status": "changed:생성 집합 기준(명령서 ⑤)"
     },
     "edit-history-diff": {
       "kind": "mechanical",
@@ -385,7 +395,7 @@
       "kind": "mechanical",
       "ai": 0,
       "impl": "pipeline/consistency#checkConsistency",
-      "does": "소개서와 페이지를 source 경로를 조인 키로 대조한다. apply 섹션 제외",
+      "does": "소개서와 페이지를 source 경로를 조인 키로 대조한다. SECTION_PAIRS 삭제 → 커버리지. 일정은 type으로 찾는다. apply 제외",
       "why_mechanical": "두 콘텐츠 모델이 **같은 source 경로 문자열**을 쓰므로 필드 이름을 하드코딩하지 않고 값을 맞대볼 수 있다. §11.1이 규정한 3차의 목적(교차 검증·회귀 감지)은 source를 기준으로 봐야 드러난다 — AI 의미 대조보다 오히려 엄격하다",
       "gave_up": "일차별 서술의 「페이지에만 새로 등장한 요소」 판정. 의미 판정이라 기계로 환원되지 않는다. 반대 방향(소개서 명사구가 페이지에 살아남았는가)만 보고, 입력에 없는 요소는 form_input을 쥔 1·2차 fact-check가 잡는다",
       "status": "changed:ai→mechanical (AI 6→5회)"

@@ -30,12 +30,19 @@ import { buildConfirmedData } from '../lib/pipeline/normalize'
 import { assertFactsUnchanged, buildBrochure, checkBrochure } from '../lib/pipeline/brochure'
 import { buildPage, checkPage } from '../lib/pipeline/page'
 import { assertSectionCoverage, checkConsistency } from '../lib/pipeline/consistency'
-import { resolveTheme } from '../lib/pipeline/theme'
+import { resolveThemeSpec } from '../lib/pipeline/theme'
+import type { ComposeBlock } from '../lib/pipeline/ai-contracts'
+
+/** 커버리지를 만족하는 최소 블록 계획 (재료 있는 사실 블록 전부). hero·apply는 buildPage가 보증한다 */
+const 기본계획: ComposeBlock[] = [
+  { type: 'summary' }, { type: 'itinerary' }, { type: 'accommodation' },
+  { type: 'flight' }, { type: 'meal' }, { type: 'price' }, { type: 'shop' },
+]
 import { findMemoLeaks } from '../lib/pipeline/memo-leak'
 import { checkDayNumbers, checkDeclaredTerms, verifyAxis0 } from '../lib/pipeline/axis0'
 import { toJsonSchema, validateAgainstSchema } from '../lib/ai/schema'
 import {
-  DECOMPOSE_SCHEMA, EXPAND_SCHEMA, VALIDATION_SCHEMA,
+  DECOMPOSE_SCHEMA, COMPOSE_SCHEMA, VALIDATION_SCHEMA,
 } from '../lib/pipeline/ai-contracts'
 import { MAX_BACKOFF_MS, backoff } from '../lib/client/run-pipeline'
 import { quotaSummary } from '../lib/ai/gemini'
@@ -889,9 +896,13 @@ check('핵심표현이 빠지면 스키마가 거부한다 (3단계 신고 누�
   V({ 판정: 'pass', 일정: [{ day: '1', 원문근거: 'a', 내용: 'b' }] }, DECOMPOSE_SCHEMA).length > 0)
 check('올바른 검증 출력은 통과한다',
   V({ 판정: 'pass', items: [] }, VALIDATION_SCHEMA).length === 0)
-check('올바른 확장 서술 출력은 통과한다',
-  V({ days: [{ day: '1', text: 'x' }], apply: { 제목: 'a', 안내문구: 'b' } }, EXPAND_SCHEMA)
-    .length === 0)
+const 정상구성 = {
+  theme: { hue: 30, mood: 'warm', background: 'plain', headline: 'neutral-sans', accent: 'underline-accent', rhythm: 'even', scale: 'balanced' },
+  blocks: [{ type: 'summary' }],
+  days: [{ day: '1', text: 'x' }],
+  apply: { 제목: 'a', 안내문구: 'b' },
+}
+check('올바른 구성 출력은 통과한다', V(정상구성, COMPOSE_SCHEMA).length === 0, V(정상구성, COMPOSE_SCHEMA))
 
 check('필수 필드 누락을 잡는다',
   V({ 판정: 'pass' }, VALIDATION_SCHEMA).some((e) => /items.*필수/.test(e)))
@@ -900,13 +911,13 @@ check('enum 밖의 판정값을 잡는다 (§8.2의 판정 3종)',
 check('타입 불일치를 잡는다',
   V({ 판정: 'pass', items: 'nope' }, VALIDATION_SCHEMA).some((e) => /array/.test(e)))
 check('배열 원소 **안쪽**의 누락을 잡는다',
-  V({ days: [{ day: '1' }], apply: { 제목: 'a', 안내문구: 'b' } }, EXPAND_SCHEMA)
+  V({ ...정상구성, days: [{ day: '1' }] }, COMPOSE_SCHEMA)
     .some((e) => /days\[0\]\.text/.test(e)))
-check('최상위가 객체가 아니면 잡는다', V('문자열', EXPAND_SCHEMA).length > 0)
-check('null을 잡는다', V(null, EXPAND_SCHEMA).length > 0)
+check('최상위가 객체가 아니면 잡는다', V('문자열', COMPOSE_SCHEMA).length > 0)
+check('null을 잡는다', V(null, COMPOSE_SCHEMA).length > 0)
 check('실패 경로가 사람이 읽을 수 있다 (로그에 그대로 남는다)',
-  V({ days: [], apply: {} }, EXPAND_SCHEMA).join(' ').includes('$.apply.제목'),
-  V({ days: [], apply: {} }, EXPAND_SCHEMA))
+  V({ ...정상구성, apply: {} }, COMPOSE_SCHEMA).join(' ').includes('$.apply.제목'),
+  V({ ...정상구성, apply: {} }, COMPOSE_SCHEMA))
 check('모르는 키워드는 무시한다 (거부하지 않는다)',
   V({ a: 'x' }, { type: 'OBJECT', properties: { a: { type: 'STRING', minLength: 99 } } })
     .length === 0)
@@ -1212,14 +1223,14 @@ section('하네스 체인 — 새 검사가 정상 산출물을 반려하지 않
     checkBrochure(누락).length > 0, checkBrochure(누락))
 
   // 페이지 쪽도 같은 방식으로 확인한다
-  const theme = resolveTheme(cd.행사정보.여행스타일)
+  const theme = resolveThemeSpec({}, cd.행사정보.여행스타일)
   const expanded = new Map(cd.행사정보.일정.map((d) => [d.day, d.내용]))
   const pageContent = buildPage({
-    cd, theme, slots: new Set<string>(), expanded,
+    cd, theme, slots: new Set<string>(), plan: 기본계획, expanded,
     apply: { 제목: '신청 안내', 안내문구: '아래 양식으로 신청해 주세요. 확인 후 연락드립니다.' },
   })
   check('page-contract-check: 정상 페이지에 계약 위반 0건',
-    checkPage(pageContent, new Set()).length === 0, checkPage(pageContent, new Set()))
+    checkPage(pageContent, new Set(), cd).length === 0, checkPage(pageContent, new Set(), cd))
 
   const { 기획메모, ...메모제외 } = cd.행사정보
   const 확정값 = JSON.stringify({ ...cd, 행사정보: 메모제외 })
@@ -1233,7 +1244,7 @@ section('하네스 체인 — 새 검사가 정상 산출물을 반려하지 않
    * **정상 산출물에 0건**이 아니면 파이프라인이 매 실행 반려된다.
    */
   check('consistency-check: 대응표가 두 모델의 섹션을 전부 덮는다',
-    assertSectionCoverage().length === 0, assertSectionCoverage())
+    assertSectionCoverage(br, cd).length === 0, assertSectionCoverage(br, cd))
   check('consistency-check: 정상 산출물에 위반 0건',
     checkConsistency(br, pageContent).length === 0, checkConsistency(br, pageContent))
 
@@ -1333,7 +1344,7 @@ section('0차 — 명사구는 표시만, 확정 위반만 실패')
     /* 슬롯이 실제로 붙는가 — 이 검사가 없어서 결함이 드러나지 않았다 */
     const slots = new Set(['itinerary_day_1', 'itinerary_day_2'])
     const 정상페이지 = buildPage({
-      cd: 정상, theme: resolveTheme(정상.행사정보.여행스타일), slots,
+      cd: 정상, theme: resolveThemeSpec({}, 정상.행사정보.여행스타일), slots, plan: 기본계획,
       expanded: new Map(정상.행사정보.일정.map((d) => [d.day, d.내용])),
       apply: { 제목: '신청 안내', 안내문구: '아래 양식으로 신청해 주세요.' },
     })
@@ -1344,7 +1355,7 @@ section('0차 — 명사구는 표시만, 확정 위반만 실패')
       days1.map((d) => d.image_slot))
 
     const 깨진페이지 = buildPage({
-      cd: 단위붙음, theme: resolveTheme(단위붙음.행사정보.여행스타일), slots,
+      cd: 단위붙음, theme: resolveThemeSpec({}, 단위붙음.행사정보.여행스타일), slots, plan: 기본계획,
       expanded: new Map(단위붙음.행사정보.일정.map((d) => [d.day, d.내용])),
       apply: { 제목: '신청 안내', 안내문구: '아래 양식으로 신청해 주세요.' },
     })
