@@ -4,7 +4,7 @@ import type { BlockStyle, Tone } from '@/lib/pipeline/vocabulary'
 import { Background, renderTheme, themeVars } from './theme'
 import { indexImages, type PageImage } from './types'
 import {
-  Accommodation, Apply, Flight, Hero, Itinerary, Meal, Price, Shop, Summary,
+  Accommodation, Apply, Flight, Hero, isDining, Itinerary, Meal, Price, Shop, Summary,
   type SectionProps,
 } from './sections'
 import {
@@ -46,9 +46,18 @@ export function PageRenderer({
   // 그라운딩 실측 정보(이름 → 장소) — 일정·숙박·상점 렌더러가 실제 설명을 위빙한다
   const enrich = new Map((content.enrichment?.places ?? []).map((p) => [p.이름, p]))
 
-  const visible: PageSection[] = content.sections
+  const sorted: PageSection[] = content.sections
     .filter((s) => s.visible !== false)
     .sort((a, b) => a.order - b.order)
+
+  // 여행 개요는 항상 여행 일정보다 위에 (사용자 요청 · 순수 렌더 재배치)
+  const visible = summaryBeforeItinerary(sorted)
+
+  // 식사/상점 분류 — 상점 목록을 식당·카페(dining) vs 리테일(retail)로 나눈다.
+  // 값은 그대로이고 「어느 섹션에 보일지」만 정한다(순수 렌더 · 검증 계약 밖).
+  const 상점들 = (visible.find((s) => s.type === 'shop')?.data.상점들 ?? []) as Record<string, string>[]
+  const dining = 상점들.filter((r) => isDining(r.상점명, enrich))
+  const retail = 상점들.filter((r) => !isDining(r.상점명, enrich))
 
   return (
     <div
@@ -70,6 +79,9 @@ export function PageRenderer({
         if (s.type === 'apply') {
           return <div key={s.id} id={anchor}><Apply {...props} form={applyForm} /></div>
         }
+        // 식사 = 식당·카페 카드, 상점 = 리테일만 (분류를 넘긴다)
+        if (s.type === 'meal') return <Meal key={s.id} {...props} dining={dining} />
+        if (s.type === 'shop') return <Shop key={s.id} {...props} retail={retail} />
 
         const Component = RENDERERS[s.type]
         /**
@@ -82,4 +94,20 @@ export function PageRenderer({
       })}
     </div>
   )
+}
+
+/**
+ * 여행 개요(summary)를 여행 일정(itinerary·timeline) **앞으로** 옮긴다.
+ * 저장 데이터의 `order`는 건드리지 않는다 — 표시 순서만 바꾸므로 편집·검증에 영향이 없고
+ * 이미 게시된 페이지에도 즉시 적용된다. 둘 중 하나라도 없거나 이미 앞서면 그대로 둔다.
+ */
+function summaryBeforeItinerary(secs: PageSection[]): PageSection[] {
+  const out = [...secs]
+  const si = out.findIndex((s) => s.type === 'summary')
+  const isItin = (s: PageSection) => s.type === 'itinerary' || s.type === 'timeline'
+  const ii = out.findIndex(isItin)
+  if (si === -1 || ii === -1 || si < ii) return out
+  const [sum] = out.splice(si, 1)
+  out.splice(out.findIndex(isItin), 0, sum)
+  return out
 }

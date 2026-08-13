@@ -33,6 +33,26 @@ export interface SectionProps {
   nextTone?: Tone
   /** 그라운딩 실측 정보 (이름 → 장소). 일정·숙박·상점에 실제 설명을 위빙한다 */
   enrich?: Map<string, EnrichmentPlace>
+  /** 식사 섹션이 받는 식당·카페 목록 (PageRenderer가 상점에서 분류해 넘긴다) */
+  dining?: Record<string, string>[]
+  /** 상점 섹션이 받는 리테일 목록 (식당·카페를 뺀 나머지) */
+  retail?: Record<string, string>[]
+}
+
+/**
+ * 식당·카페 판별 — 이름 + 그라운딩 태그·요약으로 판단한다.
+ *
+ * `구분` 필드는 「제휴·추천」(제휴 유형)이라 카테고리가 아니다. 그래서 이름의 업종
+ * 단서와, 있으면 그라운딩 실측(태그·요약)을 함께 본다. 식당·카페는 「식사」 섹션으로,
+ * 나머지 상점은 「제휴·추천 상점」 섹션으로 나뉜다. 판정은 표시 위치만 정한다(값 불변).
+ */
+const DINING_RE = /카페|커피|로스터|베이커리|제과|디저트|브런치|식당|맛집|해장|순두부|국수|칼국수|냉면|분식|김밥|백반|한식|중식|일식|양식|레스토랑|비스트로|다이닝|키친|고깃|구이|갈비|삼겹|횟집|초밥|스시|파스타|피자|버거|치킨|족발|보쌈|국밥|우동|라멘|펍|호프|주점|양조장|와인|반점|포차|다방|찻집|술도가|밥집|주막/
+export function isDining(name: string, enrich?: Map<string, EnrichmentPlace>): boolean {
+  if (DINING_RE.test(name)) return true
+  const pl = enrich?.get(name)
+  if (!pl) return false
+  if (pl.태그.some((t) => /카페|맛집|레스토랑|음식|식당|디저트|브런치|베이커리|커피|펍|바|양조/.test(t))) return true
+  return /카페|레스토랑|식당|맛집|음식점|브런치|베이커리|디저트|양조장|펍|커피/.test(pl.요약)
 }
 
 /**
@@ -195,6 +215,18 @@ export function Hero({ data, t, idx }: SectionProps) {
         <div aria-hidden className="absolute inset-0 bg-gradient-to-br from-[var(--t-primary)] to-[var(--t-secondary)]" />
       )}
       <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
+
+      {/* 요금 배지 — 진입 즉시 보이도록 상단 오른쪽에 고정. 숫자 크게 + '원' 아래 줄 */}
+      {hasVal(성인가격) && (
+        <div className="absolute right-4 top-4 z-10 rounded-2xl bg-black/30 px-4 py-2.5 text-right leading-none text-white shadow-lg backdrop-blur-md md:right-7 md:top-7 md:px-5 md:py-3">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-white/75 md:text-[10px]">1인 요금</p>
+          <p className={`mt-1.5 font-serif text-2xl font-medium tabular-nums md:text-3xl ${headlineClass(t)}`}>
+            {금액형 ? 가격숫자 : 성인가격}
+            {금액형 && <span className="block text-xs font-normal text-white/80 md:text-sm">원</span>}
+          </p>
+        </div>
+      )}
+
       <div className="relative mx-auto w-full max-w-5xl px-5 pb-14 md:px-8 md:pb-20">
         {행사명 && (
           <p className="mb-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/85">
@@ -202,21 +234,9 @@ export function Hero({ data, t, idx }: SectionProps) {
             {행사명}
           </p>
         )}
-        {/* 제목 + (오른쪽) 요금 — 요금은 숫자 아래 줄바꿈으로 '원' */}
-        <div className="flex items-start justify-between gap-5 md:gap-10">
-          <h1 className={`max-w-[15ch] flex-1 break-keep text-[2.6rem] font-extrabold leading-[0.98] tracking-tight text-white [text-shadow:0_2px_28px_rgb(0_0_0/0.5)] md:text-6xl lg:text-7xl ${headlineClass(t)}`}>
-            {headline}
-          </h1>
-          {hasVal(성인가격) && (
-            <div className="shrink-0 text-right leading-none text-white [text-shadow:0_2px_18px_rgb(0_0_0/0.55)]">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/70">1인 요금</p>
-              <p className={`mt-2 break-all font-serif text-3xl font-medium tabular-nums md:text-5xl ${headlineClass(t)}`}>
-                {금액형 ? 가격숫자 : 성인가격}
-                {금액형 && <span className="block text-sm font-normal text-white/80 md:text-lg">원</span>}
-              </p>
-            </div>
-          )}
-        </div>
+        <h1 className={`max-w-[15ch] break-keep text-[2.6rem] font-extrabold leading-[0.98] tracking-tight text-white [text-shadow:0_2px_28px_rgb(0_0_0/0.5)] md:text-6xl lg:text-7xl ${headlineClass(t)}`}>
+          {headline}
+        </h1>
         {subcopy && (
           <p className="mt-6 max-w-2xl break-keep text-base leading-relaxed text-white/90 [text-shadow:0_1px_14px_rgb(0_0_0/0.55)] md:text-xl">
             {subcopy}
@@ -362,10 +382,18 @@ export function Flight(p: SectionProps) {
 
 export function Meal(p: SectionProps) {
   const { data, t } = p
+  const 식사정보 = text(data, '식사정보')
+  const dining = p.dining ?? []
+  // 식사정보도 없고 식당·카페도 없으면 섹션을 생략한다(빈 제목만 남지 않게)
+  if (!hasVal(식사정보) && dining.length === 0) return null
   return (
     <Band style={p.style} nextTone={p.nextTone}>
-      <SectionHeading t={t}>식사</SectionHeading>
-      <p className="mt-5 max-w-2xl break-keep text-lg leading-relaxed"><Value v={text(data, '식사정보')} /></p>
+      <SectionHeading t={t}>식사 · 맛집</SectionHeading>
+      {hasVal(식사정보) && (
+        <p className="mt-5 max-w-2xl break-keep text-lg leading-relaxed">{식사정보}</p>
+      )}
+      {/* 일정에 포함된 식당·카페 — 그라운딩 실측 설명 위빙 */}
+      <CardList rows={dining} 제목필드="상점명" 배지필드="구분" 필드={['위치']} cols={2} enrich={p.enrich} />
     </Band>
   )
 }
@@ -396,7 +424,10 @@ export function Price(p: SectionProps) {
 export function Shop(p: SectionProps) {
   const { data, t, idx } = p
   const images = slotNames(data).flatMap((s) => idx.bySlot.get(s) ?? [])
-  const list = rows(data, '상점들', ['상점명', '구분', '위치', '상점정보'])
+  // PageRenderer가 식당·카페를 뺀 리테일만 넘긴다. 없으면 전체(폴백)
+  const list = p.retail ?? rows(data, '상점들', ['상점명', '구분', '위치', '상점정보'])
+  // 식당·카페가 전부 식사로 갔고 남은 상점이 없으면 이 섹션은 생략한다
+  if (list.length === 0 && images.length === 0) return null
   const layout = layoutOf(p)
   return (
     <Band style={p.style} nextTone={p.nextTone}>
