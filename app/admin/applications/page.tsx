@@ -36,7 +36,9 @@ interface Props {
 }
 
 const EMAIL_STATUS: Record<EmailStatus, { label: string; tone: string }> = {
-  pending: { label: '발송 중', tone: 'bg-neutral-100 text-neutral-600' },
+  // 이메일 발송이 꺼져 있으면(EMAIL_ENABLED 미설정) 접수분이 이 상태로 남는다 —
+  // 「지금 보내는 중」이 아니라 「아직 안 보냄」이므로 '발송 대기'로 읽는다.
+  pending: { label: '발송 대기', tone: 'bg-neutral-100 text-neutral-600' },
   sent: { label: '발송됨', tone: 'bg-emerald-50 text-emerald-700' },
   // §13.3 — 발송 실패는 신청 실패가 아니다. 재발송이 남은 경로라는 것을 톤으로 구분한다
   failed: { label: '발송 실패', tone: 'bg-red-50 text-red-700' },

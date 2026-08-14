@@ -164,7 +164,13 @@ npm run test:harness   # R1·R3·R4 + 매니페스트 정합성. 실패하면 �
 
 ### AI 공급자 제약 (확정 · 2026-08-12 실측)
 
-- **공급자는 Gemini `gemini-3.5-flash-lite` 하나다.** 교체는 `AI_MODEL`로 다른 flash 계열만 허용한다
+- **주 공급자는 Gemini `gemini-3.5-flash-lite`다 — 무조건 기본.** 아무것도 안 넣으면 Gemini로 돈다.
+  같은 공급자 안에서 다른 flash 계열로 갈아타려면 `AI_MODEL`만 바꾼다
+- **예비 공급자는 DeepSeek이다** (2026-08-14 복원). Gemini가 과부하·인증·잔액으로 막히면
+  `AI_PROVIDER=deepseek` 한 줄로 되돌린다. 키는 `DEEPSEEK_API_KEY`. ⚠️ **그라운딩(웹 검색)은
+  예비 경로에 없다** — DeepSeek엔 Google Search 도구가 없어 `grounding` 호출이 검색 없이 텍스트만
+  내고 출처를 비운다(구조화 단계가 근거 없는 장소를 버린다). 실검색은 주 경로에서만 된다.
+  아래 실측 표는 전부 Gemini 기준이다 — DeepSeek 경로는 별도 실측이 필요하다(`probe:deepseek`)
 
 #### ⚠️ 소요 시간은 두 종류다 — probe 수치를 파이프라인 기준으로 쓰지 않는다
 
@@ -229,7 +235,7 @@ npm run test:harness   # R1·R3·R4 + 매니페스트 정합성. 실패하면 �
 ## 환경 변수
 
 전부 **서버 전용**. `NEXT_PUBLIC_` 접두사 변수를 만들지 않는다 (공개 페이지도 서버 렌더링).
-`GEMINI_API_KEY` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` · `RESEND_API_KEY` · `ADMIN_PASSWORD` · `SESSION_SECRET` · `SITE_URL` · `CONTACT_INFO` · (선택) `AI_MODEL` · (선택) `MAIL_FROM`(도메인 인증 후 발신 주소 — 없으면 Resend 기본 주소, docs/email-domain-setup.md)
+`GEMINI_API_KEY` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` · `RESEND_API_KEY` · `ADMIN_PASSWORD` · `SESSION_SECRET` · `SITE_URL` · `CONTACT_INFO` · (선택) `AI_MODEL` · (선택) `AI_PROVIDER`(비우면 gemini 주경로, `deepseek`이면 예비경로) · (선택) `DEEPSEEK_API_KEY`(예비경로용) · (선택) `EMAIL_ENABLED`(`true`일 때만 신청 확인 메일 발송 — **기본 꺼짐**) · (선택) `MAIL_FROM`(도메인 인증 후 발신 주소 — 없으면 Resend 기본 주소, docs/email-domain-setup.md)
 
 ## 명령
 

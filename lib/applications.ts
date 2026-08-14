@@ -76,6 +76,18 @@ export function retentionExpired(created_at: string, now = new Date()): boolean 
 }
 
 /**
+ * 이메일 발송 스위치. **기본값은 꺼짐**이다 — `EMAIL_ENABLED=true`일 때만 보낸다.
+ *
+ * "우선은 이메일을 쓰지 말자"는 운영 결정을 코드 한 곳에서 강제한다. 발송 경로는
+ * 최초 접수(#14)와 재발송(#16) 둘뿐이고 둘 다 `deliverApplicationEmail`을
+ * 지나므로, 여기서 막으면 어느 경로로도 메일이 나가지 않는다. 다시 켜려면
+ * 환경변수만 `true`로 바꾼다 — 코드·DB 스키마는 그대로다.
+ */
+export function emailEnabled(): boolean {
+  return process.env.EMAIL_ENABLED === 'true'
+}
+
+/**
  * 발송하고 결과를 `applications`와 `execution_logs`에 반영한다.
  *
  * `verdict`는 발송 성패를 그대로 쓴다 — §5.4가 「성공·실패 모두 기록」을
@@ -83,11 +95,20 @@ export function retentionExpired(created_at: string, now = new Date()): boolean 
  *
  * 신청 자체는 이 함수의 성패와 무관하게 이미 확정돼 있다(§13.3 실패 처리).
  * 그래서 반환값을 응답 코드로 바꾸지 않는다 — 관리 화면의 [재발송]이 남은 경로다.
+ *
+ * `EMAIL_ENABLED`가 켜져 있지 않으면 **아무것도 보내지 않고** `email_status`를
+ * `pending`(발송 대기)에 그대로 둔다. 접수·로그(§13.2 5번)는 이미 끝났으므로
+ * 신청 자체는 온전하고, 화면에는 「발송 대기」로 보인다.
  */
 export async function deliverApplicationEmail(
   app: Pick<ApplicationRow, 'id' | 'name' | 'email' | 'headcount' | 'product_snapshot'>,
   ctx: { execution_id: string; product_id: string; attempt_no: number; resent: boolean },
 ): Promise<void> {
+  if (!emailEnabled()) {
+    // 발송 기능 비활성 — 상태를 건드리지 않고(대기 유지) 돌아간다.
+    return
+  }
+
   const result = await sendApplicationEmail(app)
 
   const { error: updateError } = await db()

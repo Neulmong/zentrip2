@@ -1145,9 +1145,12 @@ check('공급자 이름이 gemini다', createGeminiProvider('key-test').name ===
 check('AI_MODEL로 다른 flash 계열을 지정할 수 있다',
   createGeminiProvider('key-test', 'gemini-2.5-flash').model === 'gemini-2.5-flash')
 
-check('공급자 기본값이 gemini 하나로 고정돼 있다',
-  /gemini:\$\{model/.test(AI_INDEX_SOURCE),
-  'lib/ai/index.ts가 gemini 단일 공급자로 배선돼 있지 않다')
+check('공급자 기본값이 gemini다 (AI_PROVIDER 미설정 → 주 경로)',
+  /AI_PROVIDER \?\? 'gemini'/.test(AI_INDEX_SOURCE),
+  'lib/ai/index.ts의 기본 공급자가 gemini로 배선돼 있지 않다')
+check('예비 경로로 deepseek이 배선돼 있다 (AI_PROVIDER=deepseek)',
+  /createDeepseekProvider/.test(AI_INDEX_SOURCE) && /deepseek/.test(AI_INDEX_SOURCE),
+  'lib/ai/index.ts에 deepseek 예비 경로가 없다')
 check('GEMINI_API_KEY가 없으면 발급 안내와 함께 던진다',
   /GEMINI_API_KEY/.test(AI_INDEX_SOURCE) && /aistudio\.google\.com/.test(AI_INDEX_SOURCE))
 check('타임아웃이 공용 상수를 쓴다 (한 곳에서 온다 · SDK 자동 재시도는 U17이 검사)',
