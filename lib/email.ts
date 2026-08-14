@@ -12,16 +12,13 @@ import type { ApplicationRow } from './types'
  * 여기 남는 것은 서버에서만 할 수 있는 일뿐이다: 키를 읽고, 보내고, 실패를
  * 값으로 돌려준다.
  *
- * ## 발신 주소
+ * ## 발신 주소 (`MAIL_FROM`)
  *
- * 자체 도메인 인증 전에는 Resend 기본 발신 주소를 쓴다(§13.3). 이 경로에서
- * **수신은 Resend 가입 이메일로만** 도달한다 — 데모 대본이 본인 가입 주소를
- * 넣는 이유이고, 다른 주소로 보내면 Resend가 422로 거부한다(그 실패는
- * `email_status = failed`로 남고 신청 자체는 성공으로 확정된다).
+ * `env.MAIL_FROM`이 정한다. **설정 안 하면** Resend 기본 주소(`onboarding@resend.dev`)로
+ * 떨어지고, 그 경로에선 **수신이 Resend 가입 이메일로만** 도달한다 — 다른 주소로 보내면
+ * Resend가 422로 거부한다(그 실패는 `email_status = failed`로 남고 신청 자체는 성공으로 확정된다).
+ * 도메인 인증 후 `MAIL_FROM`을 자체 도메인 주소로 두면 누구에게나 발송된다(docs/email-domain-setup.md).
  */
-
-/** 도메인 인증 전 고정 발신 주소. 인증 후 `MAIL_FROM` 같은 변수로 바꾼다. */
-const FROM = 'zentrip <onboarding@resend.dev>'
 
 export interface SendResult {
   ok: boolean
@@ -44,7 +41,7 @@ export async function sendApplicationEmail(
     const contact = env.CONTACT_INFO
     const resend = new Resend(env.RESEND_API_KEY)
     const { data, error } = await resend.emails.send({
-      from: FROM,
+      from: env.MAIL_FROM,
       to: app.email,
       subject: applicationSubject(app.product_snapshot),
       text: applicationText(app, contact),

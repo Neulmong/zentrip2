@@ -9,6 +9,7 @@ import {
   describeStatus, publishProcedure, type ActionButton, type StatusInput,
 } from '@/lib/status-view'
 import { PublishDialog } from '@/components/admin/PublishDialog'
+import { GenerationProgress } from '@/components/GenerationProgress'
 import type { ValidationItem } from '@/lib/types'
 
 /**
@@ -29,18 +30,25 @@ export interface ActionsProps extends StatusInput {
   updated_at: string
   /** §11.5 책임 게시 모달이 **전부** 열람시켜야 하는 실패 항목 */
   failed_items: ValidationItem[]
+  /** Task 2 — 페이지가 있으면 웹 리뷰 보강 버튼을 그린다 */
+  canEnrich?: boolean
 }
 
 export function ProductActions(p: ActionsProps) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
+  /** 파이프라인이 도는 동안만 채워진다 — 스켈레톤 오버레이가 이 값으로 뜬다 */
+  const [genPhases, setGenPhases] = useState<Phase[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   /** 열려 있으면 그 모드의 게시 확인 모달을 띄운다(§11.5) */
   const [dialog, setDialog] = useState<'override' | 'acknowledge' | null>(null)
+  /** Task 2 — 웹 리뷰 보강 진행 표시 */
+  const [enrichMsg, setEnrichMsg] = useState<string | null>(null)
 
   const buttons = describeStatus(p).buttons
-  if (buttons.length === 0) return null
+  // 상태 버튼이 없어도 보강 버튼이 있으면 그린다
+  if (buttons.length === 0 && !p.canEnrich) return null
 
   const onProgress = (label: string, attempt: number) =>
     setProgress(attempt > 0 ? `${label} (재시도 ${attempt}회)` : label)
@@ -51,15 +59,25 @@ export function ProductActions(p: ActionsProps) {
       setError('재개할 단계를 찾지 못했습니다. 화면을 새로고침해 주세요.')
       return
     }
+    setGenPhases(phases)
     const outcome = await runPipeline(p.id, phases, onProgress)
-    setProgress(null)
 
-    if (outcome.kind === 'error') { setError(outcome.message); return }
+    if (outcome.kind === 'error') { setProgress(null); setGenPhases(null); setError(outcome.message); return }
     if (outcome.kind === 'input_error') {
       // 입력 문제 — 값이 유지되는 폼으로 보낸다(§15.1)
+      setProgress(null); setGenPhases(null)
       router.push(`/new?product_id=${p.id}`)
       return
     }
+
+    /*
+     * 페이지를 새로 만들었으면(라우트 ⑤ 포함) **그라운딩을 자동 실행**해 장소
+     * 정보를 채운다 — 빈 자리에 「추후 추가 예정」 대신 실제 검색 정보가 들어간다.
+     * 실패해도 페이지는 유지되므로 조용히 넘어간다(선택 보강).
+     */
+    if (phases.some((ph) => ph.num === 5)) await doEnrich()
+
+    setProgress(null); setGenPhases(null); setEnrichMsg(null)
     // done · refetch 모두 서버에서 현재 상태를 다시 읽는다
     router.refresh()
   }
@@ -92,6 +110,67 @@ export function ProductActions(p: ActionsProps) {
       return
     }
     await run(phasesFrom(body.restart_from))
+  }
+
+  /**
+   * Task 2 — 웹 리뷰 보강 (place-enrichment). **AI 2회**(검색 → 구조화).
+   *
+   * 상태 기계 밖 선택 동작이라 `run()`(파이프라인)과 분리한다. 두 요청을 클라이언트가
+   * 이어 부른다(§7 · Option A): ① 그라운딩 검색 → 텍스트·출처, ② 그 결과를 구조화해
+   * `page_content.enrichment`에 병합. 실패해도 기존 페이지는 그대로다.
+   */
+  /**
+   * 그라운딩 2호출 코어 (검색 → 구조화). 자동(생성 직후)·수동(버튼) 양쪽이 쓴다.
+   * **조회 시점을 새로 읽는다** — 방금 생성으로 `updated_at`이 바뀌었을 수 있어
+   * `p.updated_at`(초기 로드값)을 그대로 쓰면 구조화가 409 stale이 된다(§16.1.1).
+   */
+  async function doEnrich(): Promise<'ok' | 'empty' | 'error'> {
+    const H = { 'content-type': 'application/json' }
+    // 그라운딩은 가끔 검색 없이 빈 응답을 낸다(출처 0건 · 실측). 재검색으로 해소된다 —
+    // 「무조건 채운다」를 지키려면 빈 응답에 한 번 더 시도한다.
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        setProgress('장소를 웹에서 검색하는 중…')
+        setEnrichMsg('장소를 웹에서 검색하는 중…')
+        const r1 = await fetch(`/api/products/${p.id}/enrich-search`, { method: 'POST', headers: H, body: '{}' })
+        const b1 = await r1.json().catch(() => ({}))
+        if (!r1.ok) { if (attempt === 1) return 'error'; continue }
+        // 출처가 비면 그라운딩이 검색을 안 한 것 — 재검색
+        if ((b1.sources ?? []).length === 0) continue
+
+        setProgress('검색 결과를 정리해 페이지에 반영하는 중…')
+        setEnrichMsg('검색 결과를 정리해 페이지에 반영하는 중…')
+        let updatedAt = p.updated_at
+        try {
+          const g = await fetch(`/api/products/${p.id}`)
+          if (g.ok) { const gb = await g.json().catch(() => ({})); if (typeof gb.updated_at === 'string') updatedAt = gb.updated_at }
+        } catch { /* 읽지 못해도 진행 — 서버 조건부 갱신이 최종 방어선 */ }
+
+        const r2 = await fetch(`/api/products/${p.id}/enrich-structure`, {
+          method: 'POST', headers: H,
+          body: JSON.stringify({ grounded_text: b1.grounded_text, sources: b1.sources, updated_at: updatedAt }),
+        })
+        const b2 = await r2.json().catch(() => ({}))
+        if (!r2.ok) return 'error'
+        return (b2.enrichment?.places ?? []).length > 0 ? 'ok' : 'empty'
+      }
+      return 'empty'
+    } catch {
+      return 'error'
+    }
+  }
+
+  /** [웹 리뷰 보강] 버튼 — 수동 실행. 자동(생성 직후)과 같은 코어를 쓴다. */
+  async function enrich() {
+    setBusy(true)
+    setError(null)
+    const res = await doEnrich()
+    setEnrichMsg(null)
+    setProgress(null)
+    setBusy(false)
+    if (res === 'error') { setError('웹 리뷰 보강에 실패했습니다. 잠시 후 다시 시도해 주세요.'); return }
+    if (res === 'empty') { setError('웹 검색에서 출처가 확인되는 정보를 찾지 못했습니다. 장소명이 정확한지 확인해 주세요.'); return }
+    router.refresh()
   }
 
   /**
@@ -202,6 +281,15 @@ export function ProductActions(p: ActionsProps) {
 
   return (
     <div className="mt-8 border-t border-neutral-200 pt-6">
+      {genPhases && (
+        <GenerationProgress
+          phases={genPhases}
+          progress={progress}
+          variant="page"
+          title="상품 페이지를 생성하고 있습니다"
+        />
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         {buttons.map((b, i) => (
           <button
@@ -222,6 +310,24 @@ export function ProductActions(p: ActionsProps) {
         ))}
         {progress && <span className="text-sm text-neutral-600">{progress}</span>}
       </div>
+
+      {/* Task 2 — 웹 리뷰 보강. 상태 버튼과 별개 규정이라 별도 줄에 둔다 */}
+      {p.canEnrich && (
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-4">
+          <button
+            onClick={enrich}
+            disabled={busy}
+            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm transition
+                       hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            웹 리뷰 보강
+          </button>
+          <span className="text-xs text-neutral-500">
+            숙소·상점을 웹에서 검색해 <strong>실제 정보·출처</strong>를 페이지에 추가합니다 (AI 2회).
+          </span>
+          {enrichMsg && <span className="text-sm text-neutral-600">{enrichMsg}</span>}
+        </div>
+      )}
 
       {/* 잠긴 버튼은 왜 잠겼는지 함께 알린다 — 막힌 길이 아님을 알려야 한다(§15.1) */}
       {!busy && buttons.filter((b) => b.disabled && b.disabledReason).map((b) => (

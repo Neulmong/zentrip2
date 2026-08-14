@@ -38,8 +38,11 @@ for (const [k, v] of Object.entries({
     '3일: 자유 일정, 조식 제공',
     '4일: 귀국',
   ].join('\n'),
-  숙소명: '롯데호텔 제주', 객실타입: '디럭스룸', 위치: '중문',
-  상점명: '제주 로컬 기념품 숍', 상점정보: '여행객 10% 할인',
+  // 폼 필드 이름이 `source` 경로와 같은 표기다 (§7.4 · 실제 화면이 그렇게 보낸다)
+  '숙박[0].숙소명': '롯데호텔 제주', '숙박[0].위치': '중문',
+  '숙박[0].객실타입': '디럭스룸', '숙박[0].숙박일정': '',
+  '상점[0].상점명': '제주 로컬 기념품 숍', '상점[0].구분': '추천',
+  '상점[0].위치': '', '상점[0].상점정보': '여행객 10% 할인',
   가격_성인: '120000', 가격_아동: '해당 없음', 가격_기타: '항공료 별도',
   식사정보: '조식 3회, 중식 2회, 석식 1회', 여행스타일: '자연', 여행주제: '제주 걷기와 로컬 맛집 휴식',
   기획메모: '',
@@ -140,20 +143,24 @@ check('200', r5.status === 200)
 
 const p5 = await row()
 const pc = p5?.page_content
-check('섹션 9개·순서 (§9.3)',
-  JSON.stringify(pc?.sections?.map((s: { id: string }) => s.id)) === JSON.stringify([
-    'sec_hero', 'sec_summary', 'sec_itinerary', 'sec_accommodation',
-    'sec_flight', 'sec_meal', 'sec_price', 'sec_shop', 'sec_apply']),
-  pc?.sections?.map((s: { id: string }) => s.id))
-check('order 1~9', JSON.stringify(pc?.sections?.map((s: { order: number }) => s.order))
-  === JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8, 9]))
+// 2.8: 구성이 자유로워 「9개·순서」를 가정하지 않는다. type으로 hero/apply·일정을 본다(명령서 ⑤)
+const types = (pc?.sections ?? []).map((s: { type: string }) => s.type)
+check('hero 1개(맨 앞) · apply 1개(맨 끝) (§8.4)',
+  types.filter((t: string) => t === 'hero').length === 1 && types[0] === 'hero'
+  && types.filter((t: string) => t === 'apply').length === 1 && types[types.length - 1] === 'apply',
+  types)
+check('일정 블록(itinerary·timeline)이 있다 (§8.4)',
+  types.some((t: string) => t === 'itinerary' || t === 'timeline'), types)
+const orders5 = (pc?.sections ?? []).map((s: { order: number }) => s.order).sort((a: number, b: number) => a - b)
+check('order 1..n 연속', orders5.every((o: number, i: number) => o === i + 1), orders5)
 check('7개 최상위 필드 (§9.2 — visible·locked 포함)',
   (pc?.sections ?? []).every((s: object) =>
     ['id', 'type', 'order', 'visible', 'locked', 'data', 'source'].every((k) => k in s)))
 check('hero·apply만 locked (§10.2)',
-  pc?.sections?.filter((s: { locked: boolean }) => s.locked).map((s: { id: string }) => s.id)
-    .join(',') === 'sec_hero,sec_apply')
-check('테마 nature (자연 → §9.4)', pc?.theme === 'nature', pc?.theme)
+  (pc?.sections ?? []).filter((s: { locked: boolean }) => s.locked)
+    .every((s: { type: string }) => s.type === 'hero' || s.type === 'apply'))
+check('테마가 계산된 객체다 (hue+mood → colors · §9.4)',
+  !!pc?.theme && typeof pc.theme === 'object' && !!pc.theme.colors?.surfaceDeep, pc?.theme)
 check('slug 발급 — 한글 행사명이라 무작위 (§12.1)',
   typeof p5?.slug === 'string' && /^p-[a-z0-9]{6}$/.test(p5.slug), p5?.slug)
 check('hero.headline 값 보존 + 40자 이내 (§17.1)',

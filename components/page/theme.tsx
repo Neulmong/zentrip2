@@ -1,39 +1,199 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { THEME_TOKENS, type ThemeKey, type ThemeTokens } from '@/lib/pipeline/theme'
+import {
+  legacyColors, THEME_TOKENS,
+  type BackgroundKey, type HeadlineTone, type AccentStyle,
+  type Rhythm, type Scale, type ThemeColors, type ThemeKey, type PageTheme,
+  isResolvedTheme,
+} from '@/lib/pipeline/theme'
+import type { BlockStyle, Tone } from '@/lib/pipeline/vocabulary'
 
 /**
- * 테마 토큰 → 화면 (§9.4) — **순수 모듈**.
+ * 테마 → 화면 (spec 2.8 §9.4) — **순수 모듈**.
  *
- * 적용 범위는 **컬러 스킴 · 헤드라인 톤 · 강조 포인트 3가지뿐이다.**
- * 테마가 섹션 구성·문구·사실정보를 바꾸지 않는다.
+ * ## 2.8에서 넓어진 것 (명령서 4-②·4-③)
  *
- * ## 구현 결정 — 왜 CSS 변수인가
+ * 2.7은 컬러 스킴·헤드라인·강조 3가지뿐이었다. 2.8은 **배경 레이어 · 블록별
+ * 스타일 손잡이(tone·width·pad·align·edge·media) · 리듬 · 스케일**까지 화면이
+ * 읽는다. 색은 5종(`surfaceDeep` 추가)이며 전부 CSS 변수로 주입한다.
  *
- * 토큰 값은 런타임에 `page_content.theme`으로 정해지는데, Tailwind는 빌드
- * 시점에 클래스를 수집하므로 `bg-${primary}` 같은 동적 클래스를 만들 수 없다.
- * 최상위에서 CSS 변수 4개를 주입하고 각 컴포넌트는 `bg-[var(--t-primary)]`로
- * 참조한다 — 클래스 문자열이 정적이라 수집되고, 값만 테마별로 갈린다.
+ * ## 레거시 호환
+ *
+ * `page_content.theme`이 문자열(`"nature"`)이면 옛 `THEME_TOKENS` hex를 그대로
+ * 쓴다 — 게시된 페이지의 색이 바뀌면 안 된다(명령서 완료조건 8). `surfaceDeep`은
+ * 옛 값에 없으므로 `surface`를 그대로 쓴다(배경 레이어가 `plain`으로 떨어진다).
  */
 
-export function tokensOf(theme: ThemeKey): ThemeTokens {
-  return THEME_TOKENS[theme] ?? THEME_TOKENS.default
+/** 렌더링이 읽는 테마 번들. 객체·문자열 어느 저장 형태에서도 이걸로 정규화한다. */
+export interface RenderTheme {
+  colors: ThemeColors
+  headline: HeadlineTone
+  accent: AccentStyle
+  background: BackgroundKey
+  rhythm: Rhythm
+  scale: Scale
 }
 
-export function themeVars(theme: ThemeKey): CSSProperties {
-  const c = tokensOf(theme).colors
+export function renderTheme(theme: PageTheme): RenderTheme {
+  if (isResolvedTheme(theme)) {
+    return {
+      colors: theme.colors, headline: theme.headline, accent: theme.accent,
+      background: theme.background, rhythm: theme.rhythm, scale: theme.scale,
+    }
+  }
+  // 레거시 문자열
+  const key = (typeof theme === 'string' && theme in THEME_TOKENS ? theme : 'default') as ThemeKey
+  const tok = THEME_TOKENS[key]
+  return {
+    colors: legacyColors(key), headline: tok.headline, accent: tok.accent,
+    background: 'plain', rhythm: 'even', scale: 'balanced',
+  }
+}
+
+export function themeVars(theme: PageTheme): CSSProperties {
+  const c = renderTheme(theme).colors
   return {
     '--t-primary': c.primary,
     '--t-secondary': c.secondary,
     '--t-surface': c.surface,
+    '--t-surface-deep': c.surfaceDeep,
     '--t-text': c.text,
   } as CSSProperties
 }
 
+/* ════════════════════════════════════════════════════════════════
+ * 배경 레이어 — `background` 6종 (명령서 4-②·4-③)
+ *
+ * surface → surfaceDeep 사이만 쓴다. `surfaceDeep`이 배경의 **가장 어두운 지점**
+ * 이고, 본문 대비를 surface가 아니라 surfaceDeep에 대고 잰 이유가 이것이다 —
+ * 배경 표현이 붙어도 보증이 유지된다(명령서 4-②).
+ * ════════════════════════════════════════════════════════════════ */
+
+export function Background({ background }: { background: BackgroundKey }) {
+  const base = 'pointer-events-none fixed inset-0 -z-10'
+  switch (background) {
+    case 'wash':
+      return <div aria-hidden className={`${base} bg-gradient-to-b from-[var(--t-surface)] to-[var(--t-surface-deep)]`} />
+    case 'glow':
+      return (
+        <div aria-hidden className={`${base} bg-[var(--t-surface)]`}>
+          <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-[var(--t-secondary)]/30 to-transparent" />
+        </div>
+      )
+    case 'bloom':
+      return (
+        <div aria-hidden className={`${base} bg-[var(--t-surface)]`}>
+          <div className="absolute -left-24 -top-24 h-96 w-96 rounded-full bg-[var(--t-secondary)]/25 blur-3xl" />
+          <div className="absolute -right-24 bottom-0 h-96 w-96 rounded-full bg-[var(--t-primary)]/10 blur-3xl" />
+        </div>
+      )
+    case 'wave':
+      return (
+        <div aria-hidden className={`${base} bg-[var(--t-surface)]`}>
+          <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-[var(--t-surface-deep)] via-[var(--t-surface)] to-transparent" />
+        </div>
+      )
+    case 'grain':
+      return (
+        <div aria-hidden className={`${base} bg-[var(--t-surface)]`}
+          style={{ backgroundImage: 'repeating-linear-gradient(45deg, var(--t-surface-deep) 0, var(--t-surface-deep) 1px, transparent 1px, transparent 6px)', opacity: 0.4 }} />
+      )
+    case 'plain':
+    default:
+      return <div aria-hidden className={`${base} bg-[var(--t-surface)]`} />
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * Band — 공용 래퍼 (명령서 4-③)
+ *
+ * **대부분의 시각적 변화가 여기서 나온다.** tone·width·pad·align·edge를 래퍼
+ * 하나가 전부 처리하므로 타입별 컴포넌트에 다양성을 흩뿌리지 않는다 — 그래야
+ * 새 블록을 추가할 때 비용이 커지지 않는다.
+ * ════════════════════════════════════════════════════════════════ */
+
+const WIDTH_CLASS = {
+  narrow: 'max-w-xl', normal: 'max-w-3xl', wide: 'max-w-5xl', full: 'max-w-none',
+} as const
+
+const PAD_CLASS = {
+  tight: 'py-8 md:py-12', normal: 'py-14 md:py-20', loose: 'py-24 md:py-32',
+} as const
+
 /**
- * 헤드라인 톤 7종. 자간·굵기·세리프 여부만 바꾼다 — 크기는 컴포넌트가 정한다.
- * 본문 서체에는 적용하지 않는다(가독성 기준은 §17.2가 단일 출처다).
+ * tone → 배경·글자색. **②에서 강제하는 대비 4종이 정확히 이 둘(invert·tint)을 덮는다.**
+ * 다른 배경색 조합을 만들지 않는다(명령서 4-③).
  */
-const HEADLINE_CLASS: Record<ThemeTokens['headline'], string> = {
+function toneClass(tone: Tone): string {
+  switch (tone) {
+    case 'invert': return 'bg-[var(--t-primary)] text-white'
+    case 'tint': return 'bg-[var(--t-secondary)] text-[var(--t-text)]'
+    case 'surface': return 'bg-[var(--t-surface)] text-[var(--t-text)]'
+    case 'bare': default: return 'text-[var(--t-text)]'
+  }
+}
+
+/** tone → CSS 색값 (edge 장식이 다음 블록의 tone 색을 칠할 때 쓴다) */
+export function toneColorVar(tone: Tone | undefined): string {
+  switch (tone) {
+    case 'invert': return 'var(--t-primary)'
+    case 'tint': return 'var(--t-secondary)'
+    default: return 'var(--t-surface)'
+  }
+}
+
+/**
+ * edge 장식 — **컨텐츠 박스를 clip하지 않는다.** clip-path로 잘라내면 좁은 화면에서
+ * 글자가 사라진다(명령서 4-③). 대신 **다음 블록의 tone 색으로 칠한 장식 도형**을
+ * 띠 아래에 놓는다. `nextTone`은 PageRenderer가 정렬된 목록에서 내려보낸다.
+ */
+function EdgeShape({ edge, nextTone }: { edge: BlockStyle['edge']; nextTone?: Tone }) {
+  if (edge === 'none') return null
+  const color = toneColorVar(nextTone)
+  if (edge === 'rule') {
+    return <div aria-hidden className="absolute inset-x-0 bottom-0 h-px" style={{ background: 'currentColor', opacity: 0.15 }} />
+  }
+  if (edge === 'diagonal') {
+    return <div aria-hidden className="absolute inset-x-0 -bottom-px h-6" style={{ background: color, clipPath: 'polygon(0 100%, 100% 0, 100% 100%)' }} />
+  }
+  if (edge === 'arc') {
+    return <div aria-hidden className="absolute inset-x-0 -bottom-px h-8 rounded-t-[50%]" style={{ background: color }} />
+  }
+  // curve
+  return <div aria-hidden className="absolute inset-x-0 -bottom-px h-6 rounded-t-3xl" style={{ background: color }} />
+}
+
+export interface BandProps {
+  children: ReactNode
+  style?: BlockStyle
+  nextTone?: Tone
+  /** 히어로처럼 폭 제약 밖으로 나가는 경우 */
+  bleed?: boolean
+  className?: string
+}
+
+export function Band({ children, style, nextTone, bleed, className = '' }: BandProps) {
+  const s = style
+  const tone = s?.tone ?? 'surface'
+  const width = s?.width ?? 'normal'
+  const pad = s?.pad ?? 'normal'
+  const align = s?.align ?? 'left'
+  const edge = s?.edge ?? 'none'
+
+  const inner = `mx-auto w-full ${WIDTH_CLASS[width]} px-5 md:px-8 ${align === 'center' ? 'text-center' : ''}`
+
+  return (
+    <section className={`zt-reveal relative w-full ${toneClass(tone)} ${PAD_CLASS[pad]} ${className}`}>
+      <div className={bleed ? 'w-full' : inner}>{children}</div>
+      <EdgeShape edge={edge} nextTone={nextTone} />
+    </section>
+  )
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * 헤드라인 톤 7종 + 강조 6종 (2.7과 동일 — 렌더 로직 변경 0)
+ * ════════════════════════════════════════════════════════════════ */
+
+const HEADLINE_CLASS: Record<HeadlineTone, string> = {
   'calm-serif': 'font-serif font-medium tracking-tight',
   'soft-sans': 'font-sans font-medium tracking-normal',
   'tight-sans': 'font-sans font-semibold tracking-tighter',
@@ -43,40 +203,31 @@ const HEADLINE_CLASS: Record<ThemeTokens['headline'], string> = {
   'neutral-sans': 'font-sans font-semibold tracking-tight',
 }
 
-export function headlineClass(t: ThemeTokens): string {
+export function headlineClass(t: { headline: HeadlineTone }): string {
   return HEADLINE_CLASS[t.headline] ?? HEADLINE_CLASS['neutral-sans']
 }
 
-/**
- * 섹션 제목 + 강조 포인트 6종.
- *
- * 대비 검토(§17.2, 4.5:1) — 강조가 배경을 칠하는 변형은 2개뿐이다.
- *   `block-accent` : primary 배경 + 흰 글자. primary 6색 전부 흰색 대비 4.8:1 이상
- *   `pill-badge`   : secondary 배경 + `--t-text` 글자. secondary는 전부 밝은 값이고
- *                    text는 전부 어두운 값이라 9:1 이상
- * 나머지 4개는 선·점으로만 강조하므로 본문 대비에 영향을 주지 않는다.
- */
-export function SectionHeading({ t, children }: { t: ThemeTokens; children: ReactNode }) {
-  const base = `text-lg md:text-xl ${headlineClass(t)}`
+/** scale → 제목 크기 (명령서 4-② `scale`) */
+function headingSize(scale: Scale): string {
+  switch (scale) {
+    case 'compact': return 'text-xl md:text-2xl'
+    case 'dramatic': return 'text-3xl md:text-5xl'
+    case 'balanced': default: return 'text-2xl md:text-4xl'
+  }
+}
+
+export function SectionHeading(
+  { t, children }: { t: RenderTheme; children: ReactNode },
+) {
+  const base = `${headingSize(t.scale)} ${headlineClass(t)}`
 
   switch (t.accent) {
     case 'underline-accent':
-      return (
-        <h2 className={`${base} inline-block border-b-2 border-[var(--t-primary)] pb-1`}>
-          {children}
-        </h2>
-      )
+      return <h2 className={`${base} inline-block border-b-2 border-[var(--t-primary)] pb-1`}>{children}</h2>
     case 'pill-badge':
-      return (
-        <h2 className={`${base} inline-block rounded-full bg-[var(--t-secondary)]
-                        px-4 py-1 text-[var(--t-text)]`}>
-          {children}
-        </h2>
-      )
+      return <h2 className={`${base} inline-block rounded-full bg-[var(--t-secondary)] px-4 py-1 text-[var(--t-text)]`}>{children}</h2>
     case 'bar-accent':
-      return (
-        <h2 className={`${base} border-l-4 border-[var(--t-primary)] pl-3`}>{children}</h2>
-      )
+      return <h2 className={`${base} border-l-4 border-[var(--t-primary)] pl-3`}>{children}</h2>
     case 'dot-accent':
       return (
         <h2 className={`${base} flex items-center gap-2`}>
@@ -85,11 +236,7 @@ export function SectionHeading({ t, children }: { t: ThemeTokens; children: Reac
         </h2>
       )
     case 'block-accent':
-      return (
-        <h2 className={`${base} inline-block bg-[var(--t-primary)] px-3 py-1 text-white`}>
-          {children}
-        </h2>
-      )
+      return <h2 className={`${base} inline-block bg-[var(--t-primary)] px-3 py-1 text-white`}>{children}</h2>
     case 'rule-accent':
     default:
       return (

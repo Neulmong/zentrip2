@@ -79,7 +79,7 @@ export function DeleteProduct({ id, 행사명, status, hasApplications, updated_
       <h2 className="text-sm font-semibold text-red-800">상품 삭제</h2>
       <p className="mt-1 text-xs leading-relaxed text-neutral-600">
         상품과 업로드한 이미지가 삭제됩니다. <strong>실행 로그와 이상 플래그는 남습니다</strong>
-        {' '}— 사후 추적을 위해 `execution_id`로 보존됩니다(§12.4).
+        {' '}— 사후 추적을 위해 보존됩니다.
       </p>
 
       {error && (

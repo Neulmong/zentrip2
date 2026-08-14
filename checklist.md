@@ -41,13 +41,13 @@
 | A-05 | 재시도가 서버 내부 루프가 아니라 **클라이언트의 같은 API 재호출**로 이루어진다 | [필수] | spec §4.2 |
 | A-06 | 재시도 카운터가 `products.retry_counts`에 보관되고 서버가 이를 근거로 판정한다 | [필수] | spec §4.2, §5.1 |
 | A-07 | **상태 폴링을 사용하지 않고**, 각 요청의 응답으로 진행 표시가 갱신된다 | [필수] | spec §4.2, §18.2 |
-| A-08 | AI 호출 1회 타임아웃 25초, `maxDuration` 60초가 설정되어 있다 | [필수] | spec §4.2, §4.3 |
+| A-08 | AI 호출 1회 타임아웃 **55초**, `maxDuration` 60초가 설정되어 있다 | [필수] | spec §4.2, §4.3 |
 | A-09 | 백그라운드 워커·큐·Cron을 도입한 건이 0건이다(API 분할로 대체) | [필수] | spec §18.2 |
 | A-10 | 이메일 발송이 `after()` 안에서 실행되고, `after()`를 시간 한도 확장 수단으로 오용한 건이 0건이다 | [필수] | spec §4.2, §13.2 |
 | **A-11** | 모델이 **`claude-opus-5`**이고 날짜 접미사가 붙지 않았다 | [필수] | spec §4.3 |
 | **A-12** | **금지 파라미터가 0건**이다 — `temperature`·`top_p`·`top_k`·`budget_tokens`·마지막 assistant 턴 prefill·최상위 `output_format` | [필수] | spec §4.3 |
 | **A-13** | `thinking`이 `{type:"adaptive"}`이고, `output_config.effort`가 **생성 3종 `medium` / 검증 3종 `low`**로 설정되어 있다 | [필수] | spec §4.3 |
-| **A-14** | **SDK 재시도가 `maxRetries: 0`**이고, 요청 타임아웃이 요청 단위로 25초로 덮어써져 있다 | [필수] | spec §4.3 |
+| **A-14** | **SDK 재시도가 `maxRetries: 0`**이고, 요청 타임아웃이 요청 단위로 **`AbortSignal`로** 걸려 있다 (SDK `timeout` 옵션만으로는 끊기지 않는다) | [필수] | spec §4.3 |
 | **A-15** | **모든 AI 호출이 `output_config.format`으로 JSON 스키마를 강제**하고, 프롬프트로 "JSON만 출력하라"고 지시한 건이 0건이다 | [필수] | spec §4.3 |
 | **A-16** | 스키마의 모든 객체에 `additionalProperties: false`와 `required`가 있고, 지원되지 않는 제약(재귀·수치·문자열 길이)을 스키마에 넣은 건이 0건이다 | [필수] | spec §4.3 |
 | **A-17** | **`stop_reason`을 확인한 뒤 `content`를 읽는다.** 무조건 인덱싱해 예외가 발생한 건이 0건이다 | [필수] | spec §4.3 |

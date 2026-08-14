@@ -5,6 +5,7 @@ import {
   buttonTarget, describeStatus, screenPath, STATUS_FILTERS, type StatusInput,
 } from '@/lib/status-view'
 import { StatusBadges } from '@/components/admin/badges'
+import { DeleteRow } from '@/components/admin/DeleteRow'
 
 /**
  * §14.1 — 상품 목록. **인증 필요**(`proxy.ts`가 `/admin/*`를 막는다).
@@ -80,6 +81,20 @@ export default async function AdminPage({
   const counts = new Map<string, number>()
   for (const r of allRows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1)
   counts.set('all', allRows.length)
+
+  /*
+   * 신청이 있는 상품은 삭제할 수 없다(§12.4 · `deleteGate`). 삭제 버튼의 활성
+   * 여부를 정하려면 행마다 신청 유무를 알아야 하므로, 목록에 보이는 상품들의
+   * 신청을 **한 번에** 조회해 집합으로 만든다 — 행마다 조회하면 N+1이 된다.
+   */
+  const withApplications = new Set<string>()
+  if (allRows.length > 0) {
+    const { data: apps } = await db()
+      .from('applications')
+      .select('product_id')
+      .in('product_id', allRows.map((r) => r.id))
+    for (const a of (apps ?? []) as { product_id: string }[]) withApplications.add(a.product_id)
+  }
 
   const rows = active === 'all' ? allRows : allRows.filter((r) => r.status === active)
 
@@ -204,6 +219,15 @@ export default async function AdminPage({
                       </Link>
                     ),
                   )}
+
+                  {/* §12.4 삭제 — 상태별 버튼(§15.1) 밖의 별도 규정이라 끝에 둔다 */}
+                  <DeleteRow
+                    id={r.id}
+                    행사명={name}
+                    status={r.status}
+                    hasApplications={withApplications.has(r.id)}
+                    updated_at={r.updated_at}
+                  />
                 </div>
               </li>
             )

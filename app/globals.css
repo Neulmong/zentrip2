@@ -20,18 +20,31 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* 한글 웹폰트를 Tailwind 유틸(font-sans·font-serif·font-mono)에 연결한다.
+     이게 있어야 곳곳의 `font-serif` 헤드라인이 시스템 바탕체가 아니라
+     Noto Serif KR로 그려진다 — 「매거진 감성」의 실체. */
+  --font-sans: var(--font-sans-kr), system-ui, "Malgun Gothic", sans-serif;
+  --font-serif: var(--font-serif-kr), "Nanum Myeongjo", serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
 html {
   background: var(--background);
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, "Malgun Gothic", sans-serif;
+  font-family: var(--font-sans-kr), system-ui, "Malgun Gothic", sans-serif;
+  /* 젠트립식 부드러운 렌더 — 한글 자간을 살짝 열어 밝고 트인 느낌 */
+  letter-spacing: -0.003em;
+  word-break: keep-all;
+}
+
+/* 텍스트 선택색도 브랜드 톤으로 — 세부까지 감성 유지 */
+::selection {
+  background: color-mix(in srgb, var(--t-primary, #171717) 18%, transparent);
 }
 
 /* 폼 컨트롤도 OS 다크 모드를 따라가지 않게 고정한다 */
@@ -40,4 +53,28 @@ textarea,
 select,
 button {
   color-scheme: light;
+}
+
+/**
+ * 상품 페이지 진입 리빌 (Task 3 — 시각 폴리시).
+ *
+ * 공개 페이지는 서버 컴포넌트뿐이라 클라이언트 JS(IntersectionObserver 등)를
+ * 쓸 수 없다(§4 서버 전용). 그래서 스크롤 트리거 대신 **CSS-only 로드 리빌**로
+ * 각 섹션이 부드럽게 떠오르게 한다. 값·구조·대비는 그대로다 — 투명도는 애니메이션
+ * 종료 시 1로 고정되고(`both`), 모션 최소화 선호 시 애니메이션 자체를 끈다.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes zt-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .zt-reveal {
+    animation: zt-reveal 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
 }

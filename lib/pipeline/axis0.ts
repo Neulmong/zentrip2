@@ -47,20 +47,47 @@ export function checkNormalization(fi: FormInput, cd: ConfirmedData): Validation
   expectSpace('행사정보.행사명', fi.행사정보.행사명, cd.행사정보.행사명)
   expectSpace('행사정보.여행지', fi.행사정보.여행지, cd.행사정보.여행지)
   expectSpace('행사정보.일정원문', fi.행사정보.일정원문, cd.행사정보.일정원문)
-  expectSpace('숙박.숙소명', fi.숙박.숙소명, cd.숙박.숙소명)
-  expectSpace('숙박.객실타입', fi.숙박.객실타입, cd.숙박.객실타입)
-  expectSpace('숙박.위치', fi.숙박.위치, cd.숙박.위치)
-  expectSpace('상점.상점명', fi.상점.상점명, cd.상점.상점명)
-  expectSpace('상점.상점정보', fi.상점.상점정보, cd.상점.상점정보)
   expectSpace('식사.식사정보', fi.식사.식사정보, cd.식사.식사정보)
   // `가격.기타`는 자유 서술 필드다 — 금액 규칙을 적용하지 않는다(§6.2)
   expectSpace('가격.기타', fi.가격.기타, cd.가격.기타)
 
   expectFill('행사정보.여행스타일', fi.행사정보.여행스타일, cd.행사정보.여행스타일)
   expectFill('행사정보.타겟층', fi.행사정보.타겟층, cd.행사정보.타겟층)
-  expectFill('숙박.숙박일정', fi.숙박.숙박일정, cd.숙박.숙박일정)
+  expectFill('행사정보.여행주제', fi.행사정보.여행주제, cd.행사정보.여행주제)
   for (const k of ['공항', '항공사', '편명', '출발시간', '도착시간'] as const) {
     expectFill(`항공편.${k}`, fi.항공편[k], cd.항공편[k])
+  }
+
+  /* ── 배열 그룹 (§7.4) ──────────────────────────────────────────
+   * **행 수와 순서가 값의 일부다.** 행이 늘거나 줄거나 자리를 바꾸면 `source`
+   * 경로가 다른 원소를 가리켜 1·2·3차가 전부 어긋나므로, 여기서 먼저 잡는다.
+   * 행 수가 다르면 원소 대조는 하지 않는다 — 인덱스가 무엇을 가리키는지
+   * 알 수 없는 상태에서 낸 항목은 사람을 엉뚱한 칸으로 보낸다.
+   * ──────────────────────────────────────────────────────────── */
+  const rowFields = {
+    숙박: { required: ['숙소명', '위치'], optional: ['객실타입', '숙박일정'] },
+    상점: { required: ['상점명', '구분'], optional: ['위치', '상점정보'] },
+  } as const
+
+  for (const [key, spec] of Object.entries(rowFields)) {
+    const before = (fi as unknown as Record<string, Record<string, string>[]>)[key] ?? []
+    const after = (cd as unknown as Record<string, Record<string, string>[]>)[key] ?? []
+
+    if (before.length !== after.length) {
+      out.push(item('정규화 범위', key, `${before.length}건`, `${after.length}건`,
+        `${key} 행 수가 달라졌습니다. 행을 추가·삭제·병합할 수 없습니다.`,
+        `confirmed_data.${key}`))
+      continue
+    }
+
+    for (const [i, row] of before.entries()) {
+      for (const f of spec.required) {
+        expectSpace(`${key}[${i}].${f}`, row[f] ?? '', after[i][f] ?? '')
+      }
+      for (const f of spec.optional) {
+        expectFill(`${key}[${i}].${f}`, row[f] ?? '', after[i][f] ?? '')
+      }
+    }
   }
 
   // 금액 — 콤마 제거만 허용. 계산·환산·단위 변경은 금지(§16.1)
@@ -82,6 +109,19 @@ export function checkNormalization(fi: FormInput, cd: ConfirmedData): Validation
     out.push(item('결합 규칙', '행사정보.여행기간', want, cd.행사정보.여행기간,
       '여행기간은 «{시작} ~ {종료}» 형식으로만 결합합니다(§6.2.1).',
       'confirmed_data.행사정보.여행기간'))
+  }
+
+  // 행사 기간 (선택 · 2026-08-13) — 둘 다 있으면 결합 규칙, 없으면 빈 문자열이어야
+  // 한다. 여행기간과 같은 「1:1 대응 예외」이나 선택이므로 미입력이 정상이다.
+  const evS = fi.행사정보.행사기간_시작 ?? ''
+  const evE = fi.행사정보.행사기간_종료 ?? ''
+  const 행사want = normalizeSpace(evS) !== '' && normalizeSpace(evE) !== ''
+    ? combineTripPeriod(normalizeDate(evS), normalizeDate(evE))
+    : ''
+  if (cd.행사정보.행사기간 !== 행사want) {
+    out.push(item('결합 규칙', '행사정보.행사기간', 행사want, cd.행사정보.행사기간,
+      '행사기간은 «{시작} ~ {종료}» 형식으로 결합하며, 미입력이면 빈 문자열입니다.',
+      'confirmed_data.행사정보.행사기간'))
   }
 
   return out
@@ -131,22 +171,130 @@ export function extractNouns(text: string): string[] {
   return [...new Set(raw.map((t) => t.replace(PARTICLES, '')).filter((t) => t.length >= 2))]
 }
 
-export function checkNouns(cd: ConfirmedData): NounCandidate[] {
-  // 후보가 원문근거에 없더라도 confirmed_data의 다른 값(숙소명·상점명·식사정보 등)에
-  // 있으면 정상으로 본다(§6.3).
-  const others = [
+/**
+ * 근거로 인정하는 「다른 확정 값」 (§6.3).
+ *
+ * 후보가 `원문근거`에 없더라도 여기 있으면 정상이다 — 숙소명·상점명·식사정보는
+ * 일정 원문에 안 적혀 있어도 일정 서술에 등장하는 것이 자연스럽다.
+ */
+export function otherValues(cd: ConfirmedData): string {
+  return [
     cd.행사정보.행사명, cd.행사정보.여행지, cd.행사정보.일정원문,
-    cd.숙박.숙소명, cd.숙박.객실타입, cd.숙박.위치,
-    cd.상점.상점명, cd.상점.상점정보, cd.식사.식사정보, cd.가격.기타,
+    // **모든 행을 넣는다.** 첫 행만 넣으면 두 번째 숙소나 열두 번째 카페가
+    // 일정 서술에 등장할 때 근거 없음으로 잡힌다 — 입력에 있는 값인데도.
+    ...cd.숙박.flatMap((st) => [st.숙소명, st.객실타입, st.위치]),
+    ...cd.상점.flatMap((sh) => [sh.상점명, sh.위치, sh.상점정보]),
+    cd.식사.식사정보, cd.가격.기타,
   ].join(' ')
+}
+
+export function checkNouns(cd: ConfirmedData): NounCandidate[] {
+  const others = otherValues(cd)
 
   const out: NounCandidate[] = []
   for (const d of cd.행사정보.일정) {
     if (d.내용 === PLACEHOLDER) continue
     const haystack = `${d.원문근거} ${others}`
     for (const 후보 of extractNouns(d.내용)) {
-      out.push({ day: d.day, 후보, 근거존재: haystack.includes(후보) })
+      out.push({ day: d.day, 후보, 근거존재: hasEvidence(후보, haystack) })
     }
+  }
+  return out
+}
+
+/**
+ * 후보에 근거가 있는가. **haystack은 `원문근거 + others`여야 한다** —
+ * 검사 대상인 `일정[].내용`을 넣으면 후보가 거기서 왔으므로 항상 참이 되어
+ * 검사가 죽는다(이전 결함).
+ *
+ * `NOUN_PREFIX_LEN`자 접두 일치까지 근거로 인정한다. 복합어 분해 때문에 필요하다 —
+ * 원문근거가 «올레 7코스»인데 AI가 «올레길»이라 쓰면 완전 일치로는 창작으로 잡힌다.
+ * 접두 2자(«올레»)가 근거에 있으면 통과시킨다.
+ *
+ * 값을 키우면 창작이 통과하고, 줄이면 정상 서술이 반려된다. **실측으로 정한다.**
+ */
+export const NOUN_PREFIX_LEN = 2
+
+function hasEvidence(후보: string, haystack: string): boolean {
+  if (haystack.includes(후보)) return true
+  return 후보.length > NOUN_PREFIX_LEN && haystack.includes(후보.slice(0, NOUN_PREFIX_LEN))
+}
+
+/**
+ * 3단계 (§6.3) — **AI가 신고한 핵심표현에 근거가 있는가.**
+ *
+ * spec §6.3은 3단계를 「2에서 표시된 후보가 실제 위반인지 AI가
+ * (`itinerary-decomposition`의 호출 1회 안에서) 판정」으로 규정한다. 그런데 2단계는
+ * AI 출력(`내용`)에 대해 도는 검사라 **호출 전에는 후보가 존재하지 않는다.**
+ * 한 호출 안에서 성립시키는 방법은 하나뿐이다: AI가 **미리 신고**하게 한다.
+ *
+ * 그래서 역할을 이렇게 나눴다.
+ *
+ * | 주체 | 하는 일 |
+ * |---|---|
+ * | AI | `내용`에 쓴 장소·시설·활동·고유명사를 `핵심표현`으로 신고 |
+ * | **기계** | 신고된 표현이 `원문근거` 또는 다른 확정 값에 있는지 대조 → **판정** |
+ *
+ * **판정 주체가 기계다.** AI는 근거를 제시할 뿐이고 통과 여부를 정하지 않으므로
+ * 「AI가 자기 생성물을 자기가 검사하는」 구조가 아니다(§6.3 마지막 문단).
+ *
+ * 2단계의 `위반후보`는 계속 **표시만** 한다 — `extractNouns`가 동사 활용형을
+ * 명사구로 오인하므로 하드 실패로 쓰면 정상 산출물이 반려된다. 신고 목록은
+ * AI가 고른 것이라 그 오인이 없다. **그것이 3단계를 실패로 쓸 수 있는 이유다.**
+ */
+export function checkDeclaredTerms(cd: ConfirmedData): ValidationItem[] {
+  const out: ValidationItem[] = []
+  const others = otherValues(cd)
+
+  for (const [i, d] of cd.행사정보.일정.entries()) {
+    if (d.내용 === PLACEHOLDER) continue
+    // 옛 산출물 호환 — 신고가 없으면 검사할 것이 없다
+    if (!Array.isArray(d.핵심표현)) continue
+
+    const haystack = `${d.원문근거} ${others}`
+    for (const 표현 of d.핵심표현) {
+      const t = normalizeSpace(표현)
+      if (!t) continue
+      if (hasEvidence(t, haystack)) continue
+      out.push(item('일정 근거', '행사정보.일정', '(원문근거 또는 확정 값)', t,
+        `${d.day}일차의 «${t}»이(가) 원문에도 확정 데이터에도 없습니다. `
+        + '입력에 없는 장소·시설·활동을 만들 수 없습니다.',
+        `confirmed_data.행사정보.일정[${i}].내용`))
+    }
+  }
+  return out
+}
+
+/**
+ * `day`는 **숫자만 담은 문자열**이고 순서대로 1부터다 (§6.1).
+ *
+ * ## 왜 검사가 필요한가 — 실측으로 드러난 결함
+ *
+ * SKILL.md 산문은 「`day`는 문자열로 저장한다(`"1"`)」로 규정했지만 **실행되는
+ * 프롬프트 펜스에는 그 규칙이 없었다.** 그래서 AI가 `"1일"`을 반환했고 아무도
+ * 잡지 못했다.
+ *
+ * 조용히 넘어가지 않는다. `buildPage`가 일차별 이미지 슬롯을
+ * `itinerary_day_${day}`로 만드는데, 업로드된 슬롯 이름은 `itinerary_day_1`이다.
+ * `day`가 `"1일"`이면 `itinerary_day_1일`을 찾게 되어 **일차별 사진이 페이지에
+ * 붙지 않는다.** 값이 비는 것이 아니라 화면에서 사진이 사라진다.
+ *
+ * ## 왜 고쳐 쓰지 않고 실패로 두는가
+ *
+ * `day`는 위치로 완전히 결정되므로 기계가 덮어쓸 수도 있다. 그러나 덮어쓰면
+ * **AI가 규칙을 어긴 사실이 사라진다** — 같은 어긋남이 `내용`·`원문근거`에서
+ * 일어나고 있어도 알 수 없게 된다. §11.6 재시도 경로가 이런 상황을 위해 있다.
+ */
+export function checkDayNumbers(cd: ConfirmedData): ValidationItem[] {
+  const out: ValidationItem[] = []
+  for (const [i, d] of cd.행사정보.일정.entries()) {
+    const want = String(i + 1)
+    if (d.day === want) continue
+    out.push(item('일차 번호', '행사정보.일정', want, d.day,
+      `${i + 1}번째 일차의 day가 «${d.day}»입니다. `
+      + '숫자만 담은 문자열이어야 하며 단위를 붙일 수 없습니다(§6.1). '
+      + '이미지 슬롯 이름이 어긋나 일차별 사진이 표시되지 않습니다.',
+      `confirmed_data.행사정보.일정[${i}].day`))
   }
   return out
 }
@@ -158,4 +306,70 @@ export function checkDayCount(cd: ConfirmedData, tripDays: number): ValidationIt
   return [item('일정 일치', '행사정보.일정', `${tripDays}일`, `${got}일`,
     `일차 수가 여행기간과 다릅니다. 초과·미달은 허용되지 않습니다.`,
     'confirmed_data.행사정보.일정')]
+}
+
+/**
+ * 스킬 `axis0-verification` — 0차 기계 검증 **4종 집계**.
+ *
+ * 이전에는 이 조립이 `decompose` 라우트 안에 흩어져 있었다. 스킬로 올리면서
+ * 명사구 판정의 허용 폭(2자 접두 일치)도 여기로 들어왔다 — 라우트에 두면
+ * 그 폭이 규정 문서 어디에도 안 남는다.
+ *
+ * **AI를 쓰지 않는다.** 0차는 전부 기계 판정이다(§11.1) — AI가 자기 생성물을
+ * 자기가 검사하는 구조에만 의존하지 않는다.
+ *
+ * 항목을 모아서 반환한다. 첫 위반에서 멈추지 않는다 — 기획자가 한 번에 다 보고
+ * 고쳐야 한다. 0건이면 통과다. **재시도 여부는 판단하지 않는다**(규약 R7).
+ */
+export interface Axis0Result {
+  /** 기계가 **확정한** 위반. 0차 실패 판정의 근거다 */
+  items: ValidationItem[]
+  /**
+   * §6.3 판정 2단계의 「위반 후보로 **표시**」.
+   *
+   * **실패로 세지 않는다.** 3단계(AI가 조사·어미 변화 등 정상 변형을 제외하고
+   * 실제 위반인지 판정)가 아직 구현되지 않았다. 로그에 남겨 추적만 한다.
+   */
+  위반후보: NounCandidate[]
+}
+
+export function verifyAxis0(
+  fi: FormInput, cd: ConfirmedData, tripDays: number,
+): Axis0Result {
+  const items: ValidationItem[] = [
+    ...checkNormalization(fi, cd),
+    ...checkDayCount(cd, tripDays),
+    // `day`가 «1일» 같은 값이면 이미지 슬롯 이름이 어긋난다 (§6.1)
+    ...checkDayNumbers(cd),
+    ...checkEvidence(cd),
+    // 3단계 — AI가 신고한 핵심표현을 **기계가** 대조한다 (§6.3)
+    ...checkDeclaredTerms(cd),
+  ]
+
+  /*
+   * 명사구 후보 (§6.3 판정 2단계) — **표시만 한다. 실패로 만들지 않는다.**
+   *
+   * spec §6.3의 3단계 표가 주체를 이렇게 나눈다:
+   *   2단계 기계 — 후보 추출 + 포함 검사. 미존재 후보는 「위반 후보로 표시」
+   *   3단계 AI   — 표시된 후보가 실제 위반인지, **조사·어미 변화 등 정상 변형을 제외하고** 판정
+   *
+   * 어미 변화를 걸러내는 일이 3단계(AI)에 배정되어 있다는 것이 핵심이다.
+   * 2단계를 하드 실패로 쓰면 그 판정을 기계가 대신하게 되는데, `extractNouns`는
+   * `[가-힣]{2,}`로 모든 한국어 토큰을 잡고 `PARTICLES`는 조사만 벗기므로
+   * **동사 활용형을 명사구로 오인한다.**
+   *
+   * 실측(정상 서술 4일차분): 후보 25개 중 8개가 무근거로 표시되고, 그 8개가
+   * «걷습니다» «숙박하십니다» «보내시며» «이용하실» «있습니다» «마치고» 같은
+   * 활용형과 «지역» «일정» 같은 일반명사였다. 하드 실패로 쓰면 정상 산출물이
+   * 매번 반려된다.
+   *
+   * 이전 라우트 코드는 `JSON.stringify(cd)`를 haystack으로 써서 후보가 항상
+   * 발견되게 만들어 놓았고(검사 대상인 `일정[].내용`이 그 문자열에 포함된다),
+   * 결과적으로 하드 실패가 나지 않았다 — **틀린 방법으로 맞는 결과**를 내고 있었다.
+   * 그 우연을 spec대로 된 구조로 바꾼다.
+   *
+   * 창작이 여기서 안 잡혀도 1·2차 검증(`fact-check`)이 「입력에 없는 지명·시설·
+   * 경유지·관광지 등장」을 실패로 잡는다. 0차의 이 항목은 유일한 방어선이 아니다.
+   */
+  return { items, 위반후보: checkNouns(cd).filter((n) => !n.근거존재) }
 }

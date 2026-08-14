@@ -1,0 +1,517 @@
+{
+  "version": "2.8.0",
+  "authority": "spec.md 2.8. 이 파일과 spec이 어긋나면 spec이 이기고 이 파일을 고친다.",
+  "covenant": "CLAUDE.md의 🔒 하네스 규약 R1~R7",
+
+  "routes": {
+    "plan-draft": {
+      "agent": "planner-agent",
+      "spec": "§7.5 · #20 · POST /api/plan-draft",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 1,
+      "driven_by": "route",
+      "driven_by_note": "상품 행이 **아직 없는** 시점에 호출된다. `runStep`의 전제(기존 행·조건부 갱신·카운터·로그)가 하나도 성립하지 않으므로 `runAgent`로 구동할 수 없다. 대신 `lib/harness/draft.ts`의 `runPlanDraft`가 같은 규율로 체인을 돌린다 — 매니페스트 순서대로 실행하고, ai 스킬 앞에서 `assertBudget`으로 예산을 대조한다(R3). `step`이 없는 유일한 라우트다: `execution_logs`·`abnormality_flags`가 둘 다 `product_id`를 요구하므로 남길 곳이 없다(§5.4·§5.5).",
+      "skills": [
+        { "name": "freeform-parse" },
+        { "name": "trip-planning" },
+        { "name": "draft-assemble" },
+        { "name": "draft-form-check" }
+      ]
+    },
+
+    "plan-chat": {
+      "agent": "planner-agent",
+      "spec": "Task 1 · AI 역질문 챗봇 · POST /api/plan-chat",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 1,
+      "driven_by": "route",
+      "driven_by_note": "폼 앞단의 앞단(plan-draft식 · driven_by:route). 상품 행이 없고 상태 전이도 없다. 대화 이력은 클라이언트가 매 요청에 싣고(서버 무상태), 한 턴이 AI 1회다(1요청 1AI). 산출은 form_input이 아니라 메모이며, 그 메모가 plan-draft로 넘어가 사람이 폼에서 확정한다. lib/harness/chat.ts가 체인을 돌린다.",
+      "skills": [
+        { "name": "plan-chat" }
+      ]
+    },
+
+    "products": {
+      "agent": "intake-agent",
+      "spec": "§7.4 · 라우트 ①",
+      "step": "pipeline_started",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 0,
+      "driven_by": "route",
+      "driven_by_note": "상품 행을 **만드는** 라우트다. runStep·runAgent는 기존 행을 전제로 하므로(시작 조건·조건부 갱신·카운터) 여기에는 성립하지 않는다. 체인이 스킬 1개이고 AI가 0회라 하네스가 대체할 것도 없다 — 라우트가 impl을 직접 부른다.",
+      "skills": [
+        { "name": "input-guard" }
+      ]
+    },
+
+    "form-input": {
+      "agent": "intake-agent",
+      "spec": "§14.4 #17 · PATCH /form-input",
+      "step": "form_input_resubmitted",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 0,
+      "driven_by": "route",
+      "driven_by_note": "입력 재제출. `attempt_no`를 올리고 산출물을 비우는 라우트이므로 runStep의 전제(같은 시도 안의 재시도·카운터)가 성립하지 않는다. 관문 검사는 라우트 ①과 **같은 impl**을 쓴다 — 검사가 두 벌이 되면 등록에서 통과한 입력이 재제출에서 거부되는 일이 생긴다.",
+      "skills": [
+        { "name": "input-guard" }
+      ]
+    },
+
+    "content": {
+      "agent": null,
+      "spec": "§14.4 #10 · PATCH /content · 편집 저장",
+      "step": "content_edited",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 0,
+      "driven_by": "route",
+      "driven_by_note": "편집은 사람이 하고 서버는 계약만 검사한다. 담당 에이전트가 없다 — 에이전트 5종은 전부 생성·검증 주체이고 편집은 그 어느 쪽도 아니다. 억지로 배정하면 그 에이전트 문서가 자기가 하지 않는 일을 설명하게 된다.",
+      "skills": [
+        { "name": "edit-contract-check" },
+        { "name": "edit-history-diff" }
+      ]
+    },
+
+    "slug": {
+      "agent": null,
+      "spec": "§14.4 #11 · PATCH /slug · 주소 변경",
+      "step": "slug_changed",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 0,
+      "driven_by": "route",
+      "driven_by_note": "발급이 아니라 사람이 입력한 값의 형식 판정이다. 중복은 DB UNIQUE가 보고 409 slug_conflict로 간다(§12.1·§14.6).",
+      "skills": [
+        { "name": "slug-format-check" }
+      ]
+    },
+
+    "decompose": {
+      "agent": "intake-agent",
+      "spec": "§8.2 · 라우트 ②",
+      "step": "normalization_validated",
+      "extra_steps": ["itinerary_decomposed"],
+      "counter": "normalization",
+      "retry_from": 2,
+      "ai_budget": 1,
+      "skills": [
+        { "name": "optional-field-fill" },
+        { "name": "data-normalization" },
+        { "name": "itinerary-decomposition" },
+        { "name": "axis0-verification" }
+      ]
+    },
+
+    "brochure": {
+      "agent": "content-writer-agent",
+      "spec": "§8.7·§8.8 · 라우트 ③",
+      "step": "brochure_generated",
+      "counter": "brochure",
+      "retry_from": 3,
+      "ai_budget": 1,
+      "skills": [
+        { "name": "intro-content-fill", "args": { "label": "intro-overview" } },
+        { "name": "intro-template-writer" },
+        { "name": "tonal-manner-apply" },
+        { "name": "brochure-contract-check" },
+        { "name": "memo-leak-check", "args": { "target": "brochure" } }
+      ]
+    },
+
+    "validate-brochure": {
+      "agent": "validator-agent",
+      "spec": "§11.2 · 라우트 ④ · 1차",
+      "step": "validation_1_completed",
+      "counter": "brochure",
+      "retry_from": 3,
+      "ai_budget": 1,
+      "skills": [
+        { "name": "fact-check", "args": { "target": "brochure", "axis": "axis_1", "label": "fact-check-1" } }
+      ]
+    },
+
+    "page": {
+      "agent": "web-builder-agent",
+      "spec": "§9.2·§9.3 · 라우트 ⑤",
+      "step": "page_generated",
+      "counter": "page",
+      "retry_from": 5,
+      "ai_budget": 1,
+      "entry": {
+        "from": "brochure_ready",
+        "to": "generating",
+        "reset": "product-create",
+        "note": "[상품 생성] 진입 전이(§14.5 #5). 카운터 초기화가 없으면 소진 후 되돌아와 다시 눌러도 즉시 실패한다(§11.6). 전이 후에는 새 updated_at이 기준이다 — 낡게 만든 것이 이 라우트 자신이므로."
+      },
+      "materials": ["image_slots", "used_slugs"],
+      "skills": [
+        { "name": "block-vocabulary-gate" },
+        { "name": "content-structuring" },
+        { "name": "theme-design-token-match" },
+        { "name": "web-content-structure-gen" },
+        { "name": "page-contract-check" },
+        { "name": "memo-leak-check", "args": { "target": "page" } },
+        { "name": "slug-issue" }
+      ]
+    },
+
+    "validate-page": {
+      "agent": "validator-agent",
+      "spec": "§11.3 · 라우트 ⑥ · 2차",
+      "step": "validation_2_completed",
+      "counter": "page",
+      "retry_from": 5,
+      "ai_budget": 1,
+      "materials": ["image_slots"],
+      "skills": [
+        { "name": "fact-check", "args": { "target": "page", "axis": "axis_2", "label": "fact-check-2" } }
+      ]
+    },
+
+    "validate-consistency": {
+      "agent": "validator-agent",
+      "spec": "§11.4 · 라우트 ⑦ · 3차",
+      "step": "validation_3_completed",
+      "counter": "consistency",
+      "retry_from": 5,
+      "ai_budget": 0,
+      "skills": [
+        { "name": "consistency-check" }
+      ]
+    },
+
+    "enrich-search": {
+      "agent": "web-builder-agent",
+      "spec": "Task 2 · place-enrichment 1단계 · POST /api/products/[id]/enrich-search",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 1,
+      "driven_by": "route",
+      "driven_by_note": "상태 기계 밖 선택 보강(plan-draft식 · driven_by:route). 상품 상태·검증 4축을 건드리지 않고 page_content.enrichment만 얹는다. runStep의 전제(카운터·전이·단계 로그)를 쓰지 않으므로 lib/harness/enrichment.ts가 체인을 돌린다. grounding 호출이라 responseSchema 없이 자유 텍스트+출처를 낸다(probe-grounding 실측 · docs/planner-pivot-design.md §7).",
+      "skills": [
+        { "name": "grounded-place-search" }
+      ]
+    },
+
+    "enrich-structure": {
+      "agent": "web-builder-agent",
+      "spec": "Task 2 · place-enrichment 2단계 · POST /api/products/[id]/enrich-structure",
+      "counter": null,
+      "retry_from": null,
+      "ai_budget": 1,
+      "driven_by": "route",
+      "driven_by_note": "검색 텍스트를 구조화해 page_content.enrichment에 병합한다(조건부 갱신 유지). grounding 없이 responseSchema로 JSON을 강제하고, 출처번호가 실제 출처를 못 가리키는 장소는 assembleEnrichment가 버린다(실존 대조 · §8.8).",
+      "skills": [
+        { "name": "enrichment-structure" }
+      ]
+    }
+  },
+
+  "agents": {
+    "planner-agent": { "routes": ["plan-draft", "plan-chat"] },
+    "intake-agent": { "routes": ["products", "form-input", "decompose"] },
+    "content-writer-agent": { "routes": ["brochure"] },
+    "validator-agent": { "routes": ["validate-brochure", "validate-page", "validate-consistency"] },
+    "web-builder-agent": { "routes": ["page", "enrich-search", "enrich-structure"] },
+    "log-monitor-agent": { "routes": [], "owns_spec_skills": ["execution-log-collection", "abnormality-detection"] }
+  },
+
+  "skills": {
+    "freeform-parse": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/freeform#parseFreeform",
+      "does": "자연어 메모에서 라벨 블록·날짜·URL·«이름 (주소)» 장소 후보를 추출한다",
+      "why_mechanical": "라벨(`-항목:`)·괄호 주소·`11.04~11.08` 날짜는 규칙 치환으로 환원된다. 그리고 이 추출 결과가 §7.5 ②의 **누락 0건 검사의 기준 목록**이 되므로, AI가 만들면 AI가 빠뜨린 것을 AI의 목록으로 검사하게 된다",
+      "status": "new"
+    },
+    "trip-planning": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "plan",
+      "effort_note": "`plan`은 **사고를 최소로 낮춘다**(`thinkingLevel: LOW` — Gemini엔 사고를 끄는 값이 없어 최선). 실측으로 정해졌다 — 사고를 높이면 max_tokens 8000을 전부 추론에 쓰고 본문이 0자로 나왔다(63~74초 · 2026-08-12). LOW로 낮추면 2.9초에 완전한 출력이 나온다. `generate`로 되돌리면 이 라우트가 항상 409를 낸다. 표는 spec §4.3.",
+      "schema": "PLAN_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "does": "추출된 장소·행사 일정을 근거로 일차별 동선을 배분하고 폼 초안을 쓴다",
+      "user_prompt_sections": { "default": "user 지시문" },
+      "why_ai": "일차 배분은 권역·행사일·이동 순서를 함께 보는 판단이고, 규칙 치환으로 환원되지 않는다. 입력에 없는 서술(일정원문 문장·식사정보)을 새로 쓰는 유일한 초안 단계다",
+      "status": "new"
+    },
+    "draft-assemble": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/freeform#assembleDraft",
+      "does": "AI가 고른 후보 번호를 실제 이름·주소로 치환해 form_input 구조를 만든다",
+      "why_mechanical": "값 치환은 R3의 mechanical 영역이다. 실측 근거도 있다 — AI가 이름·주소를 다시 쓰게 했을 때 카페 13곳에서 `max_tokens`로 실패했다(2026-08-12 · 62초). 값이 AI를 거치지 않으므로 이름·주소가 바뀔 수 없고, 그것이 §7.5 ② 누락 0건 검사가 문자열 대조로 성립하는 근거다",
+      "why_separate_skill": "`draft-form-check`는 판정하고 이것은 조립한다(R2). 합치면 「검사만 하고 조립은 안 하는」 경로가 없어지고, 조립 결함이 검사 결과에 섞인다",
+      "status": "new"
+    },
+    "draft-form-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/freeform#checkDraft",
+      "does": "초안을 §7.1 규칙으로 검사하고 origin 3종·누락 목록을 만든다",
+      "why_mechanical": "판정을 AI에게 되묻지 않는다(§7.5 ②). `origin`도 기계가 정한다 — 값이 입력 텍스트에 실제로 있는지 대조한 결과여야 하고, AI의 자기 신고는 근거가 아니다",
+      "status": "new"
+    },
+
+    "plan-chat": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "CHAT_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "user_prompt_sections": { "default": "user 지시문" },
+      "does": "대화 이력을 받아 역질문(ask) 또는 메모 합성(ready)을 낸다",
+      "why_ai": "부족한 정보를 판단해 다음 질문을 정하고 대화를 메모로 합성하는 일은 규칙 치환으로 환원되지 않는다. 최종 값 확정은 사람이 폼에서 하므로 반환각 보장은 유지된다",
+      "status": "new"
+    },
+
+    "input-guard": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "form-validation#validateFormInput",
+      "does": "필수 폼 그룹 6개 관문 재검사. 우회 호출 대비",
+      "status": "existing"
+    },
+    "optional-field-fill": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/normalize#fillOptional",
+      "does": "선택 4항목 미입력을 '추후 추가 예정'으로 채운다",
+      "status": "split_from:pipeline/normalize#buildConfirmedData"
+    },
+    "data-normalization": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/normalize#normalizeFields",
+      "does": "정규화 3종(날짜·금액 콤마·공백) + 여행기간 2필드 결합 1종",
+      "asserts": ["변경이력_존재"],
+      "asserts_note": "「3종 외 변형 0건」은 assert가 아니다. 그것은 spec §6.2의 판정이고 위반 시 ValidationItem이 되어 409 retry로 가야 한다 — assert로 걸면 던져서 500이 되고 §11.6 재시도 경로를 건너뛴다. 그 검사는 axis0-verification의 검사 1이다.",
+      "status": "split_from:pipeline/normalize#buildConfirmedData"
+    },
+    "itinerary-decomposition": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "DECOMPOSE_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "does": "일정 원문을 일차 단위로 분해하고 원문근거를 남긴다",
+      "user_prompt_sections": { "default": "user 지시문" },
+      "why_ai": "원문에서 일차 경계를 찾아 서술로 옮기는 일은 규칙 치환으로 환원되지 않는다",
+      "status": "existing"
+    },
+    "axis0-verification": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/axis0#verifyAxis0",
+      "does": "0차 기계 검증 4종 — 정규화·일수·원문근거 포함·명사구 근거",
+      "status": "new:aggregates checkNormalization+checkDayCount+checkEvidence+checkNouns"
+    },
+
+    "intro-content-fill": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "OVERVIEW_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "does": "소개서 overview.핵심일정 2~3문장을 쓴다",
+      "user_prompt_sections": { "default": "user 지시문" },
+      "why_ai": "§8.7에서 source가 'generated'인 유일한 필드다. 나머지는 전부 기계 치환이다",
+      "absorbs_label": "intro-overview",
+      "status": "existing"
+    },
+    "intro-template-writer": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/brochure#buildBrochure",
+      "does": "소개서 8섹션 뼈대를 조립하고 각 필드에 source 경로를 배치한다",
+      "status": "existing"
+    },
+    "tonal-manner-apply": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/brochure#assertFactsUnchanged",
+      "does": "보호값 검증 — 소개서의 사실정보가 confirmed_data와 바이트 동일한지 확인 (변경 0건)",
+      "status": "new"
+    },
+    "brochure-contract-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/brochure#checkBrochure",
+      "does": "섹션 8개·순서·source 누락 0건·미치환 토큰 0건·길이 계약",
+      "status": "existing"
+    },
+
+    "memo-leak-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/memo-leak#findMemoLeaks",
+      "does": "기획메모에만 있는 숫자가 서술 필드에 노출됐는지 검사한다. 소개서·페이지 양쪽 체인에 들어간다",
+      "why_separate_skill": "프롬프트의 「인용 금지」는 지시일 뿐 보증이 아니라서 별도 검사가 필요하다. 계약 검사(섹션 수·source·길이)와는 다른 일이므로 R2에 따라 스킬을 나눈다",
+      "status": "existing"
+    },
+    "fact-check": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "validate",
+      "schema": "VALIDATION_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "does": "form_input을 기준값으로 소개서(1차) 또는 페이지(2차)의 사실정보를 대조한다",
+      "user_prompt_sections": { "brochure": "user 지시문 · 소개서", "page": "user 지시문 · 페이지" },
+      "why_ai": "표기 차이가 허용 범위인지 판정하려면 의미 대조가 필요하다",
+      "args_schema": { "target": ["brochure", "page"], "axis": ["axis_1", "axis_2"] },
+      "status": "existing"
+    },
+
+    "block-vocabulary-gate": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/vocabulary#gateInfo",
+      "does": "어휘 목록 + 재료 유무(§8.5)를 확정해 AI에게 넘긴다. AI가 존재할 수 없는 블록에 토큰을 쓰지 않게",
+      "why_mechanical": "재료 유무는 confirmed_data 조회다. AI가 판단할 것이 없다",
+      "status": "new"
+    },
+    "content-structuring": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "COMPOSE_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "does": "디자인 스펙 + 블록 계획 + generated 서술을 만든다. 사실정보 값은 만들지 않는다",
+      "user_prompt_sections": { "default": "user 지시문" },
+      "why_ai": "구성·순서·분위기·블록별 레이아웃은 판단이다. 값 필드는 buildPage가 기계로 치환한다(§8.3)",
+      "status": "changed:EXPAND→COMPOSE (2.8 자유 구성)"
+    },
+    "theme-design-token-match": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/theme#resolveThemeSpec",
+      "does": "AI가 고른 디자인 의도(hue+mood)를 검증하고 무효 필드만 폴백. 색은 OKLCH로 계산·대비 강제",
+      "note": "AI 뒤로 이동(체인 3번). 색은 AI가 아니라 계산기가 만들고 대비 4종을 보증한다(명령서 4-②)",
+      "status": "changed:AI 뒤로 이동 · 검증·폴백"
+    },
+    "web-content-structure-gen": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/page#buildPage",
+      "does": "AI 블록 계획대로 조립하고 사실정보 값을 confirmed_data에서 치환한다. source 맵 승계",
+      "status": "changed:계획 순회 (9섹션 하드코딩 제거)"
+    },
+    "page-contract-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/page#checkPage",
+      "does": "어휘·source 커버리지·hero/apply·order 연속·타입별 길이 계약",
+      "status": "changed:9섹션·순서 → 어휘·커버리지(명령서 ⑤)"
+    },
+    "slug-issue": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/slug#proposeSlug",
+      "does": "행사명에서 slug를 발급한다. 충돌 시 접미사",
+      "status": "existing"
+    },
+
+    "grounded-place-search": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "GROUNDED_SEARCH_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "user_prompt_sections": { "default": "user 지시문" },
+      "does": "장소 목록을 Google Search 그라운딩으로 검색해 실제 정보·인용 출처를 낸다",
+      "why_ai": "웹 검색+요약은 기계 치환으로 환원되지 않는다. 그라운딩 도구는 AI 호출 안에서만 돈다",
+      "grounding_note": "responseSchema와 병용 불가(probe-grounding 실측). runner가 grounding:true로 부르고 GROUNDED_SEARCH_SCHEMA는 무시된다 — 출력은 자유 텍스트 + sources. 코드젠이 kind:ai에 schema를 요구해 이름만 둔다.",
+      "status": "new"
+    },
+    "enrichment-structure": {
+      "kind": "ai",
+      "ai": 1,
+      "effort": "generate",
+      "schema": "ENRICHMENT_SCHEMA",
+      "prompt_sections": ["프롬프트"],
+      "user_prompt_sections": { "default": "user 지시문" },
+      "does": "검색 텍스트를 장소별 요약·태그·출처번호로 구조화한다",
+      "why_ai": "산문 요약·태깅은 판단이라 규칙 치환이 아니다. 실존 대조(출처번호→출처)는 assembleEnrichment가 기계로 한다",
+      "status": "new"
+    },
+
+    "edit-contract-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "edit-contract#validateEdit",
+      "does": "편집 저장 계약 — 생성된 집합의 불변부·삽입 블록 3종·이미지 참조·타입별 길이 계약",
+      "note": "2.8: 고정 9섹션 대신 「그 상품이 생성한 집합」이 불변. 길이 계약은 VOCABULARY가 단일 출처라 생성 시점과 상한이 갈릴 수 없다(§17.1). theme 비교는 same()(객체이므로)",
+      "status": "changed:생성 집합 기준(명령서 ⑤)"
+    },
+    "edit-history-diff": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "edit-contract#diffSections",
+      "does": "저장 전후를 비교해 변경된 섹션만 edit_history 기록으로 만든다 (action 4종)",
+      "why_separate_skill": "검사와 이력 생성은 다른 일이다(R2). 합치면 「검사만 하고 저장은 안 하는」 경로에서 이력이 딸려 나온다",
+      "status": "existing"
+    },
+    "slug-format-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/slug#isValidSlug",
+      "does": "사람이 입력한 slug의 허용 문자·길이 판정. 중복은 DB UNIQUE가 본다",
+      "why_separate_skill": "`slug-issue`는 행사명에서 값을 만들고, 이것은 이미 있는 값을 판정한다(R2)",
+      "status": "existing"
+    },
+
+    "consistency-check": {
+      "kind": "mechanical",
+      "ai": 0,
+      "impl": "pipeline/consistency#checkConsistency",
+      "does": "소개서와 페이지를 source 경로를 조인 키로 대조한다. SECTION_PAIRS 삭제 → 커버리지. 일정은 type으로 찾는다. apply 제외",
+      "why_mechanical": "두 콘텐츠 모델이 **같은 source 경로 문자열**을 쓰므로 필드 이름을 하드코딩하지 않고 값을 맞대볼 수 있다. §11.1이 규정한 3차의 목적(교차 검증·회귀 감지)은 source를 기준으로 봐야 드러난다 — AI 의미 대조보다 오히려 엄격하다",
+      "gave_up": "일차별 서술의 「페이지에만 새로 등장한 요소」 판정. 의미 판정이라 기계로 환원되지 않는다. 반대 방향(소개서 명사구가 페이지에 살아남았는가)만 보고, 입력에 없는 요소는 form_input을 쥔 1·2차 fact-check가 잡는다",
+      "status": "changed:ai→mechanical (AI 6→5회)"
+    },
+
+    "product-orchestrator": {
+      "kind": "spec",
+      "ai": 0,
+      "implemented_by": "lib/orchestrator.ts#runStep",
+      "does": "재시도 카운터·상태 전이·응답 코드 결정. 하네스 바깥(R7)",
+      "status": "existing"
+    },
+    "execution-log-collection": {
+      "kind": "spec",
+      "ai": 0,
+      "implemented_by": "lib/logging.ts",
+      "does": "execution_logs append. 하네스 바깥(R7)",
+      "status": "existing"
+    },
+    "abnormality-detection": {
+      "kind": "spec",
+      "ai": 0,
+      "implemented_by": "lib/logging.ts",
+      "does": "이상 5종 감지 → abnormality_flags. 하네스 바깥(R7)",
+      "status": "existing"
+    },
+    "draft-registration": {
+      "kind": "spec",
+      "ai": 0,
+      "implemented_by": "lib/orchestrator.ts#runStep",
+      "does": "3차 통과 시 draft 전이. 하네스 바깥(R7)",
+      "status": "existing"
+    }
+  },
+
+  "invariants": {
+    "ai_per_route_max": 1,
+    "ai_per_script_total": 9,
+    "ai_per_script_total_note": "라우트 예산의 총합이다. **§20 관통 경로는 여전히 5회다** — 나머지 넷은 §20 경로 밖의 선택 요청이다: `plan-draft`(§7.5) 1회, `plan-chat`(Task 1 · 대화 한 턴) 1회, place-enrichment(Task 2 · `enrich-search`+`enrich-structure`) 2회. 자연어 초안·챗봇·웹 리뷰 보강을 쓸 때만 그 요청이 추가된다.",
+    "spec_skills_never_in_chain": true,
+    "prompts_only_in_skill_md": true,
+    "user_instructions_only_in_skill_md": true
+  }
+}

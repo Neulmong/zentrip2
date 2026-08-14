@@ -1,30 +1,155 @@
 import { Type } from '@google/genai'
 
 /**
- * AI 호출별 스키마·시스템 프롬프트 (§4.3의 출력 강제).
+ * AI 호출별 **출력 스키마와 TS 타입** (§4.3의 출력 강제).
  *
- * 시스템 프롬프트는 요청 간 **바이트 단위로 동일**해야 하므로 상수로 둔다 —
- * 날짜·product_id·타임스탬프를 넣지 않는다(§4.3).
+ * ## 시스템 프롬프트는 여기 없다 (규약 R4)
+ *
+ * `.claude/skills/<스킬>/SKILL.md`의 `## 프롬프트` 펜스가 유일한 출처이고,
+ * `npm run build:harness`가 그것을 `lib/harness/generated/registry.ts`로 굽는다.
+ * 프롬프트를 바꾸려면 SKILL.md를 고친다 — 이 파일에 `*_SYSTEM` 상수를
+ * 다시 만들면 `npm run test:harness`가 실패한다.
+ *
+ * 사본을 두지 않는 이유: 두 곳에 있으면 **어느 쪽이 실제로 실행되는지**
+ * 코드를 읽어야 알게 된다. 문서가 실행 근거라는 전제가 그 순간 무너진다.
+ *
+ * 스키마와 타입이 여기 남는 이유: 둘은 **짝이어야 한다.** 스키마를 문서로
+ * 옮기면 타입과 어긋나도 컴파일이 통과한다. SKILL.md는 스키마의 이름만 적는다.
  */
+
+/* ════════════════════════════════════════════════════════════════
+ * §7.5 — 자연어 초안 (`plan-draft` · #20)
+ *
+ * 폼 앞단이다. 산출물은 `form_input`이 **아니라** 사람이 검토할 초안이며,
+ * 구조는 `form_input`과 같게 맞춘다(§7.4) — 화면이 변환 없이 칸에 채운다.
+ *
+ * ## 가격 3필드가 스키마에 없다
+ *
+ * 금액은 공개 페이지(§9.3)와 신청 이메일(§13.3)에 그대로 실린다. 사람이 입력하지
+ * 않은 숫자가 고객에게 도달하는 경로를 만들지 않는다(§7.5 ③).
+ *
+ * 프롬프트로 「가격을 쓰지 마라」고 지시하는 대신 **구조에서 뺐다** — 지시는
+ * 어겨질 수 있고 스키마는 어겨질 수 없다. 절대 원칙 3을 금지에 쓴 경우다.
+ * ════════════════════════════════════════════════════════════════ */
+
+/* ── AI는 이름·주소를 **다시 쓰지 않는다** ──────────────────────────
+ * 실측으로 정해진 구조다. 처음에는 `숙박`·`상점` 행에 이름·주소를 그대로
+ * 출력하게 했더니 **카페 13곳에서 `max_tokens`로 실패했다**(2026-08-12, 62초).
+ * 값을 옮기는 것은 규약 R3의 mechanical 영역이고, AI에게 시키면 출력이 커지는
+ * 것으로 끝나지 않는다 — 옮기는 과정에서 이름이 바뀌거나 행이 사라진다.
+ *
+ * 그래서 AI는 **후보 번호**만 고른다. 실제 값 치환은 `draft-assemble`이 한다.
+ * `buildBrochure`·`buildPage`가 값 필드를 기계로 치환하는 것과 같은 이유다.
+ * 이름·주소가 AI를 거치지 않으므로 **바뀔 수 없다.**
+ * ──────────────────────────────────────────────────────────────── */
+
+const 초안_숙박 = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      /** `장소후보` 배열의 인덱스 (0부터) */
+      후보: { type: Type.INTEGER },
+      객실타입: { type: Type.STRING },
+      숙박일정: { type: Type.STRING },
+    },
+    required: ['후보', '객실타입', '숙박일정'],
+  },
+}
+
+/**
+ * 상점은 **번호만** 받는다.
+ *
+ * `구분`을 받지 않는 이유: `추천` 하나뿐이므로 기계가 넣으면 된다. 열거형으로
+ * 강제하는 것보다 아예 받지 않는 것이 확실하다 — 없는 제휴 관계를 만드는 일이고
+ * (§6.1), `제휴`로 올리는 경로는 사람이 폼에서 고르는 것뿐이다.
+ *
+ * `상점정보`를 받지 않는 이유: 메모에 가게 설명이 없으면 AI가 쓸 근거도 없다.
+ * 「감성 카페」 같은 문장은 창작이다. 미입력 표기(§6.1)가 빈칸을 처리한다.
+ */
+const 초안_상점 = { type: Type.ARRAY, items: { type: Type.INTEGER } }
+
+/**
+ * 일차별 배분 — **AI가 하는 유일한 판단**이 이 배열이다.
+ *
+ * `일정원문`(문장)을 받지 않는 이유는 실측이다. 번호와 산문을 **함께** 요구하면
+ * 추론이 발산한다 — `low`·`medium` 양쪽에서 8000 토큰을 전부 추론에 쓰고 출력이
+ * 0으로 잘렸다(2026-08-12 · 55.8초 / 60.4초 · `reasoning_tokens: 8000`).
+ *
+ * 「어느 장소를 몇째 날에 두는가」는 판단이고 「그것을 문장으로 적는 일」은 조립이다.
+ * 둘을 한 호출에 섞지 않는다. 문장은 `draft-assemble`이 만든다.
+ */
+const 초안_일정 = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      /** 1부터 */
+      day: { type: Type.INTEGER },
+      /** 그 날 가는 장소들의 후보 번호. 순서가 동선 순서다 */
+      후보: { type: Type.ARRAY, items: { type: Type.INTEGER } },
+    },
+    required: ['day', '후보'],
+  },
+}
+
+export const PLAN_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    행사명: { type: Type.STRING },
+    여행지: { type: Type.STRING },
+    여행기간_시작: { type: Type.STRING },
+    여행기간_종료: { type: Type.STRING },
+    여행스타일: { type: Type.STRING },
+    식사정보: { type: Type.STRING },
+    일정: 초안_일정,
+    숙박: 초안_숙박,
+    상점: 초안_상점,
+    항공편: {
+      type: Type.OBJECT,
+      properties: {
+        공항: { type: Type.STRING },
+        항공사: { type: Type.STRING },
+        편명: { type: Type.STRING },
+        출발시간: { type: Type.STRING },
+        도착시간: { type: Type.STRING },
+      },
+      required: ['공항', '항공사', '편명', '출발시간', '도착시간'],
+    },
+  },
+  required: [
+    '행사명', '여행지', '여행기간_시작', '여행기간_종료',
+    '여행스타일', '식사정보', '일정', '숙박', '상점', '항공편',
+  ],
+}
+
+/**
+ * `PLAN_SCHEMA`의 짝. **가격이 없고, 숙박·상점은 후보 번호다** — 위 주석의 근거를 읽는다.
+ *
+ * `여행스타일`을 `ShopKind`처럼 좁히지 않는 이유: 6종 밖의 값이 오면 테마가
+ * `default`로 떨어지고(§9.4) 그것으로 충분하다. 여기서 좁히면 스키마 위반이
+ * 되어 §11.6 재시도 경로를 쓰게 되는데, 테마 하나 때문에 AI를 다시 부르는 것은
+ * 25초 예산을 쓸 이유가 되지 못한다.
+ */
+export interface PlanResult {
+  행사명: string
+  여행지: string
+  여행기간_시작: string
+  여행기간_종료: string
+  여행스타일: string
+  식사정보: string
+  /** 일차별 장소 배분. `일정원문` 문장은 `draft-assemble`이 이것으로 조립한다 */
+  일정: { day: number; 후보: number[] }[]
+  /** 후보 번호 + AI가 쓸 수 있는 두 값. 이름·주소는 기계가 채운다 */
+  숙박: { 후보: number; 객실타입: string; 숙박일정: string }[]
+  /** 후보 번호만. 순서가 화면의 행 순서다 */
+  상점: number[]
+  항공편: { 공항: string; 항공사: string; 편명: string; 출발시간: string; 도착시간: string }
+}
 
 /* ════════════════════════════════════════════════════════════════
  * Step 02 — 일차 분해 (§6.3)
  * ════════════════════════════════════════════════════════════════ */
-
-export const DECOMPOSE_SYSTEM = `너는 여행 일정 원문을 일차 단위로 분해한다.
-
-절대 규칙:
-- 원문에 없는 일차·장소·활동·이동·시간을 만들지 않는다.
-- 「원문근거」는 일정원문에서 **그대로 잘라낸 부분 문자열**이어야 한다. 요약·재작성·의역·어순 변경을 하지 않는다.
-- 「내용」은 그 일차의 원문근거에 등장하는 요소만 사용해 쓴다. 새 장소나 활동을 덧붙이지 않는다.
-- 「내용」은 존댓말 서술문으로 쓴다. 종결어미는 ~습니다/~입니다로 통일하고, 명사형 종결을 쓰지 않는다.
-- 출처 없는 숫자를 만들지 않는다. 소요 시간·거리·인원·요금을 추정하지 않는다.
-- 일차 구분 표기는 다음 6종만 인식한다: n일 / n일차 / n일 차 / 첫째 날 / Day n / DAY n
-
-판정:
-- 원문의 일차 수가 여행기간 일수보다 **많으면** 판정을 day_overflow로 하고 일정을 비운다.
-- 일차 구분을 하나도 찾을 수 없으면 판정을 no_day_marker로 하고 일정을 비운다. 임의로 배분하지 않는다.
-- 원문의 일차 수가 여행기간보다 **적으면** 부족한 일차를 원문근거 빈 문자열, 내용 "추후 추가 예정"으로 채우고 판정은 pass로 한다.`
 
 export const DECOMPOSE_SCHEMA = {
   type: Type.OBJECT,
@@ -38,8 +163,9 @@ export const DECOMPOSE_SCHEMA = {
           day: { type: Type.STRING },
           원문근거: { type: Type.STRING },
           내용: { type: Type.STRING },
+          핵심표현: { type: Type.ARRAY, items: { type: Type.STRING } },
         },
-        required: ['day', '원문근거', '내용'],
+        required: ['day', '원문근거', '내용', '핵심표현'],
       },
     },
   },
@@ -48,7 +174,7 @@ export const DECOMPOSE_SCHEMA = {
 
 export interface DecomposeResult {
   판정: 'pass' | 'day_overflow' | 'no_day_marker'
-  일정: { day: string; 원문근거: string; 내용: string }[]
+  일정: { day: string; 원문근거: string; 내용: string; 핵심표현: string[] }[]
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -57,24 +183,6 @@ export interface DecomposeResult {
  * 값 필드는 서버가 기계 치환하므로 AI는 이 서술 하나만 만든다.
  * (근거는 lib/pipeline/brochure.ts 상단)
  * ════════════════════════════════════════════════════════════════ */
-
-export const OVERVIEW_SYSTEM = `너는 여행 상품 소개서의 개요 문장을 쓴다.
-
-「핵심일정」은 일차별 서술에 **이미 등장한** 장소·활동만 사용해 2~3문장으로 요약한다.
-
-절대 규칙:
-- 일정에 없는 장소·활동·이동·시설을 추가하지 않는다.
-- 출처 없는 숫자를 만들지 않는다. 소요 시간·거리·인원을 추정하지 않는다.
-- 가격을 계산·합계·환산하지 않는다.
-- 고유명사의 표기를 바꾸지 않는다. 약칭·영문 변환을 하지 않는다.
-- 마케팅 문구·과장 표현을 쓰지 않는다.
-- 존댓말로 쓴다. 종결어미는 ~습니다/~입니다로 통일한다.
-- 중괄호 토큰이나 파이프 기호를 출력에 남기지 않는다.
-
-「기획 메모」가 주어지면 **어조를 잡는 참고 자료로만** 쓴다.
-그 내용을 출력에 인용하거나 사실로 옮겨 적지 않는다 — 고객에게 표시되지 않는
-내부 메모이며, 거기 적힌 나이·인원·인물·가격은 **사실정보가 아니다.**
-메모를 읽고 「누가 읽을 글인가」만 감을 잡은 뒤, 문장은 확정 데이터만으로 쓴다.`
 
 export const OVERVIEW_SCHEMA = {
   type: Type.OBJECT,
@@ -85,29 +193,6 @@ export const OVERVIEW_SCHEMA = {
 /* ════════════════════════════════════════════════════════════════
  * Step 04·06 — 사실정보 대조 (§11.1 1·2차)
  * ════════════════════════════════════════════════════════════════ */
-
-export const FACTCHECK_SYSTEM = `너는 생성물의 사실정보가 사용자 원본 입력과 일치하는지 판정한다.
-
-기준값은 항상 **form_input**이다. 생성물이 기준값과 다르면 실패다.
-
-허용 차이 (실패가 아니다):
-- 앞뒤 공백, 내부 연속 공백 축약
-- HTML 이스케이프
-- 정규화 3종: 천 단위 콤마 제거(120,000원 → 120000원), 날짜 형식 통일(2026.03.14 → 2026-03-14)
-- **결합 1종: 여행기간_시작과 여행기간_종료를 «{시작} ~ {종료}»로 합친 것.**
-  form_input에는 여행기간이라는 필드가 없고 시작·종료 2개로 나뉘어 있다. 이는 정상이며 실패가 아니다.
-- 값을 둘러싼 서술 문장의 분량·어순·문장 수 차이
-
-실패로 판정하는 차이:
-- 값의 어순 변경 (롯데호텔 제주 → 롯데 제주 호텔)
-- 약칭·영문 변환, 날짜 재표기, 요약·부분 삭제, 단위 변경
-- 입력에 없는 지명·시설·경유지·관광지 등장
-- 출처 없는 숫자. 단 일차 번호와 여행기간에서 파생된 수(일수, 일수-1)는 정상이다
-- 「추후 추가 예정」이 다른 문구로 바뀌거나 빈칸이 된 경우
-- source가 없는 사실정보 필드
-
-실패 항목은 **전부** 반환한다. 첫 실패에서 멈추지 않는다.
-재시도 여부는 판단하지 않는다. 통과/실패와 사유만 반환한다.`
 
 export const VALIDATION_SCHEMA = {
   type: Type.OBJECT,
@@ -141,43 +226,86 @@ export interface ValidationResult {
 }
 
 /* ════════════════════════════════════════════════════════════════
- * Step 05 — 페이지 확장 서술 (§9.3)
+ * Step 05 — 페이지 구성 (spec 2.8 §9.2·§9.3 · 명령서 4-①·⑤)
  *
- * 값 필드는 서버가 승계하므로 AI는 일차별 확장 서술과 신청 문구만 만든다.
- * (근거는 lib/pipeline/page.ts 상단)
+ * 2.7의 `EXPAND_SCHEMA`(일차 서술 + apply 2필드)를 대체한다. 2.8에서 AI는
+ * **디자이너**가 되어 구성·순서·분위기·블록별 레이아웃을 정한다.
+ *
+ * ## AI가 쓰는 것 / 기계가 쓰는 것 (명령서 4-①)
+ *
+ *   AI  : 디자인 스펙(`theme`) + 블록 계획(`blocks`) + `source:"generated"` 서술
+ *   기계: 사실정보 값 치환 — 행사명·기간·가격·숙소명·상점명·항공편은
+ *         `confirmed_data`에서 **그대로** 꽂는다(`buildPage`)
+ *
+ * **얻는 것 둘:** ① 사실정보가 AI를 거치지 않으므로 바뀔 수 없다(§16.1 구조적 보장)
+ * ② 출력 토큰이 거의 늘지 않는다(스펙 + 블록 배열 + 서술 몇 개) → AI 1회 · 40초 예산 유지.
+ *
+ * ## `theme`은 색이 아니라 **색의 의도**다 (명령서 4-②)
+ *
+ * `hue`(0~359) + `mood`만 받는다. `#RRGGBB`는 받지 않는다 — 색은 기계가 OKLCH로
+ * 계산하고 WCAG 대비를 강제한다(`theme.ts`). 스키마에서 색을 뺐으므로 AI가 색을
+ * 낼 경로가 없다(절대 원칙 3 — 지시가 아니라 구조로 막는다).
  * ════════════════════════════════════════════════════════════════ */
 
-export const EXPAND_SYSTEM = `너는 여행 상품 페이지의 서술을 쓴다.
-
-소개서는 압축, 페이지는 확장이다. 이것은 설계된 차이이며 분량이 늘어나는 것 자체는 정상이다.
-
-허용:
-- 문장을 나누거나 연결어를 넣어 늘리기
-- 이미 등장한 요소를 다른 표현으로 재언급
-- 값을 감싸는 서술의 어순 조정
-
-금지:
-- 새 장소·활동·이동·시설을 추가하는 것. 원문근거에 등장하는 요소만 쓴다
-- 소요 시간·거리·인원 등 출처 없는 숫자를 만드는 것
-- 사실정보 값 자체를 재표기·요약·삭제하는 것
-- 고유명사의 표기를 바꾸는 것. 약칭·영문 변환 금지
-- 가격을 계산·합계·환산하는 것
-- 마케팅 문구·과장 표현
-- HTML·CSS·클래스명을 출력하는 것
-
-형식:
-- 존댓말. 종결어미는 ~습니다/~입니다로 통일한다.
-- **일차별 서술은 200자를 넘기지 않는다.**
-- 신청 안내문구는 2문장 이내로 담백하게 쓴다. 총액을 계산해 적지 않는다.
-
-「기획 메모」가 주어지면 **어조를 잡는 참고 자료로만** 쓴다.
-그 내용을 출력에 인용하거나 사실로 옮겨 적지 않는다 — 고객에게 표시되지 않는
-내부 메모이며, 거기 적힌 나이·인원·인물·가격은 **사실정보가 아니다.**
-메모를 읽고 「누가 읽을 글인가」만 감을 잡은 뒤, 문장은 확정 데이터만으로 쓴다.`
-
-export const EXPAND_SCHEMA = {
+/**
+ * 블록 1개의 계획. 값 필드는 없다 — `type`·스타일·(생성 블록의) 서술만.
+ * 어휘·layout·재료 대응은 `lib/pipeline/vocabulary.ts`가 단일 출처다.
+ */
+const 블록 = {
   type: Type.OBJECT,
   properties: {
+    /** 어휘의 type. 무효면 조립이 버린다 */
+    type: { type: Type.STRING },
+    /** spotlight 참조 대상 (`숙박[0]`·`상점[2]`). 그 밖 타입은 무시된다 */
+    ref: { type: Type.STRING },
+    /** 스타일 손잡이 (명령서 4-③). 무효 값은 조립이 기본으로 떨어뜨린다 */
+    layout: { type: Type.STRING },
+    tone: { type: Type.STRING },
+    width: { type: Type.STRING },
+    align: { type: Type.STRING },
+    pad: { type: Type.STRING },
+    edge: { type: Type.STRING },
+    media: { type: Type.STRING },
+    /** 생성 서술 — cta·free 계열 제목 */
+    제목: { type: Type.STRING },
+    /** 생성 서술 — cta·spotlight 본문 */
+    본문: { type: Type.STRING },
+    /** 생성 서술 — highlight 강조 문구들 */
+    문구들: { type: Type.ARRAY, items: { type: Type.STRING } },
+  },
+  required: ['type'],
+}
+
+export const COMPOSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    /**
+     * 히어로 감성 카피 (source: generated). 배너에 크게 실린다. 행사명이 아니라
+     * 여행의 결을 담은 문장이다 — 사실값(행사명·기간)은 기계가 따로 싣는다.
+     * 없으면 조립이 행사명으로 폴백한다.
+     */
+    hero: {
+      type: Type.OBJECT,
+      properties: { headline: { type: Type.STRING }, subcopy: { type: Type.STRING } },
+      required: [],
+    },
+    theme: {
+      type: Type.OBJECT,
+      properties: {
+        hue: { type: Type.INTEGER },
+        mood: { type: Type.STRING },
+        background: { type: Type.STRING },
+        headline: { type: Type.STRING },
+        accent: { type: Type.STRING },
+        rhythm: { type: Type.STRING },
+        scale: { type: Type.STRING },
+        근거: { type: Type.STRING },
+      },
+      // 필수 없음 — 결측·무효 필드는 `resolveThemeSpec`이 필드별로 폴백한다.
+      // 강제하면 모델이 하나만 빠뜨려도 schema_invalid → 재시도 소진이 된다.
+      required: [],
+    },
+    blocks: { type: Type.ARRAY, items: 블록 },
     days: {
       type: Type.ARRAY,
       items: {
@@ -192,45 +320,139 @@ export const EXPAND_SCHEMA = {
       required: ['제목', '안내문구'],
     },
   },
-  required: ['days', 'apply'],
+  /*
+   * 최상위 필수는 `apply`만. `theme`·`blocks`·`days`가 빠져도 조립이 완결된
+   * 페이지를 만든다 — theme는 폴백, blocks 결측은 자동 보강(모든 사실 블록),
+   * days 결측은 소개서 압축 서술로 대체(buildBlock). **관대한 스키마가 재시도
+   * 소진을 막는다** — 검증은 조립 뒤 `checkPage`·`memo-leak`이 실질을 지킨다.
+   */
+  required: ['apply'],
 }
 
-export interface ExpandResult {
+/** AI의 원시 블록 계획 — 값은 없고 type·스타일·서술만. 전 필드가 무효일 수 있다 */
+export interface ComposeBlock {
+  type: string
+  ref?: string
+  layout?: string
+  tone?: string
+  width?: string
+  align?: string
+  pad?: string
+  edge?: string
+  media?: string
+  제목?: string
+  본문?: string
+  문구들?: string[]
+}
+
+export interface ComposeResult {
+  /** 히어로 감성 카피 (source: generated). 없으면 조립이 행사명으로 폴백 */
+  hero?: { headline?: string; subcopy?: string }
+  /** 디자인 의도. 색이 아니라 hue+mood. 무효 필드는 `resolveThemeSpec`이 폴백 */
+  theme: {
+    hue?: number; mood?: string; background?: string; headline?: string
+    accent?: string; rhythm?: string; scale?: string; 근거?: string
+  }
+  blocks: ComposeBlock[]
   days: { day: string; text: string }[]
   apply: { 제목: string; 안내문구: string }
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * Task 1 — AI 역질문 챗봇 (`plan-chat` · 폼 앞단)
+ *
+ * `plan-draft`(#20)가 **완성된 메모 한 덩어리**를 받는다면, 이 라우트는 대화로
+ * 그 메모를 **함께 만든다.** 기획자가 핵심 키워드만 던지면 AI가 부족한 정보를
+ * 한 번에 하나씩 되묻고(multi-turn), 충분해지면 메모를 합성해 돌려준다.
+ *
+ * ## 원칙과의 조율
+ *
+ *   1요청 1AI      : 대화 한 턴 = 요청 1건 = AI 1회. 서버 루프·폴링 없음.
+ *   서버 무상태     : 대화 이력을 **클라이언트가** 매 요청에 실어 보낸다. 서버는
+ *                    상태를 저장하지 않는다(재시도를 클라이언트가 쥐는 것과 같은 결).
+ *   반환각 보장     : 최종 산출은 form_input이 아니라 **메모**다. 그 메모는 기존
+ *                    `plan-draft` 파이프라인(freeform-parse→trip-planning→…)을 그대로
+ *                    거치고, 사람이 폼을 검토·확정한다. 값이 AI로 확정되는 경로가 없다.
+ * ════════════════════════════════════════════════════════════════ */
+
+export const CHAT_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    mode: { type: Type.STRING, enum: ['ask', 'ready'] },
+    /** ask: 다음 질문 한 개 / ready: 마무리 인사 한 문장 */
+    message: { type: Type.STRING },
+    /** ready일 때만 — `plan-draft`에 넘길 자연어 메모(라벨·«이름 (주소)» 형식) */
+    memo: { type: Type.STRING },
+  },
+  required: ['mode', 'message'],
+}
+
+export interface ChatResult {
+  mode: 'ask' | 'ready'
+  message: string
+  /** ready일 때 채워진다. `freeform-parse`가 읽을 메모 텍스트 */
+  memo?: string
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * Task 2 — place-enrichment (그라운딩 웹 리뷰 · Option A · 2호출)
+ *
+ * 상태 기계 밖 선택 라우트 2개. `docs/planner-pivot-design.md` §7.
+ *
+ *   enrich-search    : googleSearch 그라운딩으로 장소 정보를 **검색**한다.
+ *                      responseSchema와 병용 불가라 출력은 자유 텍스트이고
+ *                      출처 URL이 groundingMetadata로 온다(probe-grounding 실측).
+ *   enrich-structure : 검색 텍스트를 **구조화**한다(그라운딩 없이 responseSchema).
+ *                      각 장소 서술에 출처 번호를 달아 실존 대조가 가능하게 한다.
+ * ════════════════════════════════════════════════════════════════ */
+
+/**
+ * `grounded-place-search`의 스키마 — **그라운딩 호출에서는 무시된다.**
+ *
+ * `AiRequest.grounding: true`이면 provider가 `responseSchema`를 걸지 않는다(병용
+ * 불가). 그럼에도 스키마를 두는 것은 코드젠이 `kind: ai` 스킬에 `schema`를
+ * 요구하기 때문이다(build-harness.mts). 이 호출의 실질 출력은 자유 텍스트 +
+ * `sources`이고, 그것을 `enrichment-structure`가 받아 구조화한다.
+ */
+export const GROUNDED_SEARCH_SCHEMA = {
+  type: Type.OBJECT,
+  properties: { text: { type: Type.STRING } },
+  required: [],
+}
+
+/**
+ * `enrichment-structure`의 출력. 검색 텍스트를 장소별로 접는다.
+ *
+ * `출처번호`는 user 메시지로 준 **출처 목록의 인덱스**다. 이 번호가 실제 출처를
+ * 가리키지 못하면 그 장소는 조립 단계에서 **버려진다**(실존 대조 — 출처 없는
+ * 값은 §8.8 위반). 사실 자체(주소·가격 등)를 여기서 새로 쓰지 않는다 — 검색
+ * 텍스트 안의 내용을 요약할 뿐이다.
+ */
+export const ENRICHMENT_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    places: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          이름: { type: Type.STRING },
+          요약: { type: Type.STRING },
+          태그: { type: Type.ARRAY, items: { type: Type.STRING } },
+          출처번호: { type: Type.ARRAY, items: { type: Type.INTEGER } },
+        },
+        required: ['이름', '요약', '태그', '출처번호'],
+      },
+    },
+  },
+  required: ['places'],
+}
+
+export interface EnrichmentStructureResult {
+  places: { 이름: string; 요약: string; 태그: string[]; 출처번호: number[] }[]
 }
 
 /* ════════════════════════════════════════════════════════════════
  * Step 07 — 3차 정합성 (§11.1)
  * ════════════════════════════════════════════════════════════════ */
 
-export const CONSISTENCY_SYSTEM = `너는 소개서와 상품 페이지가 같은 사실정보를 담고 있는지 대조한다.
-
-목적은 사실정보 재확인이 아니라 **교차 검증·회귀 감지**다 —
-source 맵 누락, 두 생성 경로의 스키마 드리프트, 앞선 검증에서 빠진 필드를 잡아낸다.
-
-섹션 대응:
-  b_title↔sec_hero(행사명) · b_overview↔sec_summary(여행지·여행기간·타겟층·여행스타일)
-  b_itinerary↔sec_itinerary(일차 수, 각 일차의 장소·활동·식사)
-  b_accommodation↔sec_accommodation · b_flight↔sec_flight · b_meal↔sec_meal
-  b_price↔sec_price · b_shop↔sec_shop
-  sec_apply는 소개서에 대응 섹션이 없어 **제외**한다.
-
-대조 단위는 **사실정보 값**이다. 문장 전체의 문자열 일치를 요구하지 않는다.
-
-허용 차이 (실패가 아니다):
-- 서술 문장의 분량·어순·문장 수 차이. 소개서는 압축, 페이지는 확장이다
-- 연결어·안내 문구 추가. source가 "generated"인 필드는 대조 대상이 아니다
-- 앞뒤 공백, HTML 이스케이프
-
-실패로 판정하는 차이:
-- 사실정보 값 자체가 다름 (소개서 120000원 ↔ 페이지 130000원)
-- 값의 재표기·요약·부분 삭제
-- 일차 수 불일치
-- 한쪽에만 새 요소 등장 (페이지 일정에 소개서에 없던 관광지)
-- 한쪽만 「추후 추가 예정」이고 다른 쪽은 공란
-- 한쪽에서 섹션 삭제
-
-**서술 분량·어순·문장 수 차이만을 이유로 실패 판정하면 그 자체가 규칙 위반이다.**
-값 불일치가 있어도 어느 쪽이 옳은지는 판단하지 않는다 — 두 문서가 다르다는 사실만 보고한다.
-재시도 여부는 판단하지 않는다.`

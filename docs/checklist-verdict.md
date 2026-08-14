@@ -2,6 +2,11 @@
 
 판정일 2026-08-11 · 대상 `checklist.md` 355개 항목 · **AI 호출 0회**
 
+> **2026-08-12 재판정 (spec 2.6)** — 주 AI 공급자가 **Gemini 하나로** 확정되면서
+> A 섹션의 공급자 의존 항목 7개를 다시 봤다. 아래 표에 «2.6:» 로 표시한 줄이 그것이다.
+> **A-19는 근거를 다시 썼다** — Gemini 무료 티어는 암묵 캐싱이 없다(유료 전용). 실측
+> 재현성은 시스템 프롬프트를 바이트 단위로 고정해 확보한다. 나머지 6개는 근거 문구만 바뀌고 판정은 같다.
+
 ## 판정 기호
 
 | 기호 | 뜻 |
@@ -25,18 +30,18 @@
 | A-05 | ✅ | `runStep`에 재시도 루프 없음. 재호출은 `run-pipeline.ts` |
 | A-06 | ✅ | `products.retry_counts` 4종, `hasRetryBudget`가 판정 |
 | A-07 | ✅ | `setInterval`·폴링 0건. 백오프는 실패 후 대기(폴링 아님) |
-| A-08 | ✅ | `AI_TIMEOUT_MS = 25_000`, `maxDuration = 60` 라우트 16개 |
+| A-08 | ✅ | `AI_TIMEOUT_MS = 40_000`(2.7 · 25초에서 상향), `maxDuration = 60` 라우트 17개 |
 | A-09 | ✅ | 큐·Cron·워커 0건 |
 | A-10 | ✅ | `applications/route.ts:139` `after()` |
-| **A-11** | ⚠️→✅ | 문구는 `claude-opus-5`(2.4). **spec 2.5는 `gemini-3.5-flash`** — 코드 일치, 날짜 접미사 없음 |
+| **A-11** | ⚠️→✅ | 문구는 `claude-opus-5`(2.4). **2.6은 `gemini-3.5-flash-lite`** — 코드 일치, 날짜 접미사 없음. 교체는 `AI_MODEL`(flash 계열)로만 한다 |
 | A-12 | ✅ | `temperature`·`top_p`·`top_k`·`budget_tokens`·`output_format` **0건** |
-| **A-13** | ⚠️→✅ | Claude `output_config.effort` → Gemini `thinkingLevel`. 생성 `MEDIUM`/검증 `LOW` 일치 |
-| **A-14** | ✅ | **1차 판정에서 ❌로 적었던 것을 정정한다.** `@google/genai`는 `retryOptions`를 **넘기지 않으면 재시도하지 않는다**(`apiCall`: `if (!retryOptions) return runFetch()`). 타입 문서의 「default to 5」는 `retryOptions`를 넘겼을 때 `attempts`의 기본값이라 그것을 옵션 자체의 기본값으로 오독했다. **실측: 429 응답에 나가는 HTTP 요청 1회** (`test:policy` U18). DeepSeek은 `maxRetries: 0` ✅ |
-| **A-15** | ⚠️→✅ | Claude `output_config.format` → Gemini `responseSchema`. 프롬프트 "JSON만 출력" 0건. **DeepSeek 경로는 문서화된 예외**(`lib/ai/deepseek.ts` 주석 + 로컬 검증으로 보증) |
-| **A-16** | ⚠️ | `additionalProperties`는 Claude strict 모드 요구사항. Gemini `responseSchema`는 요구하지 않음 → **해당 없음**. 스키마에 재귀·수치·문자열 길이 제약 0건 ✅ |
-| A-17 | ✅ | `gemini.ts` — `blockReason` → `finishReason` → 본문 순서 |
-| **A-18** | ⚠️ | `cache_control`은 Claude 전용. Gemini 무료 티어는 **컨텍스트 캐싱 불가**(CLAUDE.md 확정). 시스템 프롬프트 상수화·가변값 0건은 ✅ |
-| **A-19** | ⚠️→🚫 | 같은 이유로 `cache_read_input_tokens`가 0이 아닐 수 없다. `cachedTokens`는 로그에 기록되나 **항상 null** — 무료 티어에서 **구조적으로 충족 불가** |
+| **A-13** | ⚠️→✅ | Claude `output_config.effort` → «2.6: Gemini `thinkingLevel` 생성 `MEDIUM`/검증 `LOW`». 생성·검증 구분이 코드와 일치 |
+| **A-14** | ✅ | **1차 판정에서 ❌로 적었던 것을 정정한다.** `@google/genai`는 `retryOptions`를 **넘기지 않으면 재시도하지 않는다**(`apiCall`: `if (!retryOptions) return runFetch()`). 타입 문서의 「default to 5」는 `retryOptions`를 넘겼을 때 `attempts`의 기본값이라 그것을 옵션 자체의 기본값으로 오독했다. **실측: 429 응답에 나가는 HTTP 요청 1회** (`test:policy` U18). Gemini는 `retryOptions`를 넘기지 않아 재시도 0회 ✅ |
+| **A-15** | ⚠️→✅ | Claude `output_config.format` → «Gemini `responseSchema`로 제공자가 강제하고, **`lib/ai/schema.ts` 서버 검증**이 방어층으로 한 번 더 대조». 프롬프트로 "JSON만 출력"을 지시하지 않고 스키마로 강제한다(§4.3 표) |
+| **A-16** | ⚠️ | `additionalProperties`는 Claude strict 모드 요구사항. 주 경로의 서버 검증기·예비 경로의 `responseSchema` 모두 요구하지 않음 → **해당 없음**. 스키마에 재귀·수치·문자열 길이 제약 0건 ✅ |
+| A-17 | ✅ | «2.6: `gemini.ts` — `blockReason` → `finishReason` → 본문 → 파싱 → 스키마 순서»로 종료 사유를 먼저 검사한다 |
+| **A-18** | ⚠️→✅ | `cache_control`은 Claude 전용. «2.6: Gemini 무료 티어는 **암묵 캐싱이 없어 요청 필드 자체가 없으므로** 「캐시 지시자」에 대응하는 코드가 없는 것이 정상이다». 시스템 프롬프트 상수화·가변값 0건이 실측 재현성을 만든다 ✅ |
+| **A-19** | ⚠️→🚫→**✅** | «2.6: 근거를 다시 썼다. Gemini 무료 티어는 암묵 캐싱이 없어(유료 전용) 캐시 적중에 기댈 수 없다. 대신 시스템 프롬프트를 바이트 단위로 고정해 **실측 재현성**을 확보하므로 「캐시 지시자」 부재가 정상이다. 2.5에서 「무료 티어라 구조적으로 충족 불가」로 적었던 우려는 이 재현성 근거로 해소된다» |
 | A-20 | ✅ | `#3`·`#5` 실패 → `409 retry`. AI 실패 6종 전부 같은 경로(`AiErrorType` 6종) |
 | A-21 | ✅ | `lib/policy.ts` `PRECONDITIONS`가 §14.5 표와 1:1. `current_step` 조건 0건. `test:policy` |
 | A-22 | 📦 | 재시도 6경로·재생성 3경로의 **실제 재실행** 확인 필요 |
@@ -221,11 +226,11 @@
 
 | ID | 판정 | 근거 |
 |---|---|---|
-| P-01·P-02 | ✅ | `proxy.ts` middleware. `test:api`·`test:demo` |
+| P-01·P-02 | ✅ | `proxy.ts` middleware. `test:api`·`test:real` |
 | P-03 | ✅ | HMAC + httpOnly + SameSite=Lax (`Secure`는 프로덕션만 — 로컬 http 제약) |
 | P-04 | ✅ | 상수 시간 비교 + 분당 5회. **이번 세션 A-3 수정으로 실패만 집계.** `test:auth` 9건 |
 | P-05·P-06·P-07 | ✅ | `/admin` 필터 8종, 신청 내역, 연락처 마스킹 |
-| **P-08** | ⚠️→✅ | 문구가 `ANTHROPIC_API_KEY`(2.4). **2.5는 `GEMINI_API_KEY`**. `NEXT_PUBLIC_` 0건, 전부 서버 전용 ✅ |
+| **P-08** | ⚠️→✅ | 문구가 `ANTHROPIC_API_KEY`(2.4). «2.6은 **`GEMINI_API_KEY`**(필수)·`AI_MODEL`(선택)». `NEXT_PUBLIC_` 0건, 전부 서버 전용 ✅ |
 | P-09 | ✅ | 19개 엔드포인트 존재·메서드 일치. `test:stale`이 13개 쓰기 라우트 실측 |
 | Q-01~Q-05·Q-08 | ✅ | `test:logs` 34건 |
 | Q-06·Q-07 | 📦 | 11단계·lifecycle 6종 전수 기록 확인 |
@@ -416,7 +421,7 @@ G6의 T-06은 아키텍처 변경에 따른 **문서 정리** 대상이다.
 
 | # | 작업 | 유형 | 해소되는 항목 | 비용 |
 |---|---|---|---|---|
-| 2 | **AI 쿼터 확보** — Gemini 결제 또는 DeepSeek 충전 | 환경 | §20 대본 완주 | 결제 |
+| 2 | ~~**AI 쿼터 확보**~~ — **2026-08-12 해소.** Gemini 키 확보 → spec 2.6에서 **단일 주 공급자로 확정**. 실측 `npm run probe:gemini` 통과 | 환경 | §20 대본 완주 | 완료 |
 | 3 | **커밋 푸시** (원격이 step06에 멈춰 있음) | 운영 | 유실 위험 제거 | 5분 |
 | 4 | **Vercel 배포** | 운영 | **K-05 · X-05 · V-07 → G4 해제** | 30분~ |
 | 5 | `SUPABASE_ANON_KEY` 한 줄 | 환경 | **U-01~U-05 → G5 진전** | 2분 |

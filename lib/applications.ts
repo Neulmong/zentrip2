@@ -27,7 +27,13 @@ export function buildSnapshot(p: ProductRow): ProductSnapshot {
     행사명: g.행사명,
     여행지: g.여행지,
     여행기간: combineTripPeriod(g.여행기간_시작, g.여행기간_종료),
-    숙소명: p.form_input.숙박.숙소명,
+    /*
+     * 숙소가 여러 곳이면 **전부 남긴다**(§7.4). 스냅샷은 신청 시점에 고객이
+     * 본 값의 기록이므로 첫 행만 넣으면 「어디에 묵는지」가 절반만 남는다.
+     * 필드 이름·타입은 그대로 둔다 — `applications.product_snapshot`은 jsonb이고
+     * 이미 발송된 메일의 기록과 형태가 갈리면 재발송(#16)이 다른 값을 보낸다.
+     */
+    숙소명: p.form_input.숙박.map((st) => st.숙소명).filter(Boolean).join(' · '),
     가격: { 성인: p.form_input.가격.성인, 아동: p.form_input.가격.아동 },
     url: `${env.SITE_URL.replace(/\/$/, '')}/p/${p.slug}`,
   }

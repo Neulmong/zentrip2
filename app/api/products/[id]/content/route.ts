@@ -100,7 +100,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (altErrors) return badRequest(altErrors)
 
   const records = diffSections(before, content)
-  if (records.length === 0 && !body.image_alts) {
+  // 장소 설명(enrichment)만 바뀐 경우도 저장한다 — diffSections는 sections만 본다
+  const enrichChanged = JSON.stringify(before.enrichment ?? null) !== JSON.stringify(content.enrichment ?? null)
+  if (records.length === 0 && !body.image_alts && !enrichChanged) {
     // 바뀐 게 없으면 이력·로그를 남기지 않는다. 저장 버튼을 두 번 눌렀다고
     // 같은 행이 쌓이면 이력이 근거가 되지 못한다.
     return ok({ current_step: p.current_step, status: p.status, updated_at: p.updated_at, edited: 0 })

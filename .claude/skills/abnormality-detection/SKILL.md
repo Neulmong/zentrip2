@@ -22,7 +22,7 @@ description: 재시도 누적·중단 확정·검증 반복 실패·처리 지�
 |---|---|---|---|
 | `execution_id` | string | 필수 | 판단 범위 |
 | 방금 기록한 로그 | object | 필수 | `execution-log-collection` 출력 + 입력값 |
-| `retry_counts` | object | 필수 | `{brochure, page, consistency}` |
+| `retry_counts` | object | 필수 | `{normalization, brochure, page, consistency}` **4종**(§11.6). 0차는 `normalization`을 쓰며 `brochure`와 예산을 공유하지 않는다 |
 | `attempt_no` | number | 필수 | 현재 시도 회차 |
 | 요청 소요 시간 | number | 필수 | 밀리초. 지연 감지용 |
 | 누적 로그 | array of object | 필수 | 같은 `attempt_no`의 이전 행들. 반복 실패 판정용 |
@@ -40,7 +40,7 @@ description: 재시도 누적·중단 확정·검증 반복 실패·처리 지�
     { "type": "retry_accumulated", "step": "validation_1_completed",
       "detail": "brochure 카운터가 2에 도달했습니다. 다음 실패 시 axis_1이 fail로 확정됩니다." },
     { "type": "processing_delayed", "step": "validation_1_completed",
-      "detail": "요청 소요 22.4초. 임계값 20초(AI 타임아웃 25초의 80%)를 초과했습니다." }
+      "detail": "요청 소요 22.4초. 임계값 20초를 초과했습니다." }
   ],
   "기록건수": 2
 }
@@ -65,7 +65,7 @@ description: 재시도 누적·중단 확정·검증 반복 실패·처리 지�
 | `retry_accumulated` | 한 단계의 `retry_counts` 값이 **2에 도달**(= 마지막 재시도 진입) | 카운터 증가 직후 |
 | `pipeline_aborted` | 한 단계의 재시도가 **소진**되어 `status = input_error` 또는 해당 축 `verdict = fail`로 확정 | 확정 직후 |
 | `validation_repeated_failure` | **같은 검증 항목**(`검증영역` 값 기준)이 같은 `attempt_no` 안에서 **2회 이상** 실패 | 검증 실패 기록 직후 |
-| `processing_delayed` | 한 요청의 소요 시간이 **20초 초과**(AI 호출 타임아웃 25초의 80%) | 모든 단계 종료 시 |
+| `processing_delayed` | 한 요청의 소요 시간이 **20초 초과** | 모든 단계 종료 시 |
 | `itinerary_partial` | 일정 원문의 일차 수가 여행기간보다 적어 `추후 추가 예정`으로 채운 경우 | Step 02 완료 시 |
 
 ### 조건별 세부 규칙
@@ -82,7 +82,9 @@ description: 재시도 누적·중단 확정·검증 반복 실패·처리 지�
 
 - **감지된 경우에만** 기록한다. "이상 없음", "정상" 류 항목을 남기지 않는다.
 - 한 단계에서 여러 이상이 감지되면 **유형별로 각각 1행**을 기록한다. 하나로 묶지 않는다.
-- 같은 유형이 같은 단계에서 반복 감지되면 중복 기록하지 않는다(단계 + 유형 조합당 1회).
+- 중복 기록 범위는 **`(execution_id, attempt_no, step, type)` 조합당 1행**이다(§5.5).
+  `attempt_no`가 빠지면 [다시 생성] 후 같은 문제가 되풀이돼도 기록되지 않는다 —
+  사람이 다시 시킨 회차는 별개의 관측이다.
 - `detail`은 사람이 읽고 바로 판단할 수 있게 쓴다. 숫자·임계값·다음에 일어날 일을 포함한다.
 - `execution_id` 단위로 누적한다. `attempt_no`가 올라가도 이전 플래그를 삭제하지 않는다.
 

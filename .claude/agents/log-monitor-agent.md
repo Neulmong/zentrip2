@@ -12,22 +12,30 @@ model: inherit
 
 > **1.0에서 바뀐 점**: `outputs/run-{execution_id}/log.html` 단일 파일에 HTML 표로 기록하던 방식은 폐기됐다. 서버리스 환경에서는 파일시스템 쓰기가 불가능하다(spec §14.3). 이제 **Supabase 테이블에 행을 append**한다.
 
-## 담당 단계
+## 배선 — 이 에이전트는 하네스 **바깥**이다 (규약 R7)
 
-| Step | 호출 시점 | AI 호출 |
-|---|---|---:|
-| Step 01~11 전부 | 각 단계 종료 직후 | **0회** |
+`manifest.json`에서 이 에이전트의 `routes`는 **빈 배열**이다. 스킬 체인으로 실행되지 않는다.
 
-이 에이전트는 AI를 쓰지 않는다. 따라서 어느 서버 라우트에서 함께 실행해도 1요청 1AI호출 원칙을 위반하지 않는다(spec §4.2).
+| Step | 호출 시점 | AI 호출 | 실행 주체 |
+|---|---|---:|---|
+| Step 01~11 전부 | 각 단계 종료 직후 | **0회** | `lib/orchestrator.ts#runStep` → `lib/logging.ts` |
 
-## 연결 스킬 (실행 순서 · 역전 금지)
+**체인에 넣으면 안 되는 이유:** `runStep`이 이미 모든 라우트에서 로그와 플래그를 기록한다.
+같은 일을 스킬 체인에서 또 하면 **로그가 두 번 쌓인다.** 그래서 이 에이전트가 소유한 두 스킬은
+`kind: spec`이며, 하네스는 이들을 실행하지 않고 **`implemented_by`가 가리키는 코드가 계속 존재하는지만
+검사한다**(`npm run test:harness`).
 
-| 순서 | 스킬 | 역할 |
-|---:|---|---|
-| 1 | `execution-log-collection` | `execution_logs`에 1행 append |
-| 2 | `abnormality-detection` | 기록된 이력을 근거로 이상 감지 |
+## 소유 스킬 (`kind: spec` · 실행되지 않음 · 순서 역전 금지)
+
+| 순서 | 스킬 | 역할 | `implemented_by` |
+|---:|---|---|---|
+| 1 | `execution-log-collection` | `execution_logs`에 1행 append | `lib/logging.ts` |
+| 2 | `abnormality-detection` | 기록된 이력을 근거로 이상 5종 감지 | `lib/logging.ts` |
 
 **순서를 바꾸지 않는다.** 플래그는 기록된 이력을 대상으로 판단하므로 로그가 먼저 쌓여야 한다.
+`runStep`의 고정 처리 순서가 이를 보장한다: 시작 조건 → 작업 → **로그 → 이상 플래그** → 조건부 갱신 → 응답.
+
+이 에이전트는 AI를 쓰지 않는다. 따라서 어느 라우트에서 함께 실행해도 `ai_budget`을 잠식하지 않는다(spec §4.2).
 
 ## 입력
 
@@ -39,7 +47,7 @@ model: inherit
 | `step` | string | 필수 | 아래 단계명 표 |
 | `attempt_no` | number | 필수 | 시도 회차 |
 | `retry_index` | number | 필수 | 재시도 회차 |
-| `verdict` | `"통과"` \| `"반려"` \| `"-"` | 필수 | |
+| `verdict` | `"pass"` \| `"fail"` \| `"-"` | 필수 | **저장은 영어다**(§5.4). 한글 「통과/반려」는 화면 표시뿐이고 변환은 `VERDICT_LABEL`이 한다 |
 | `status` | string | 필수 | 기록 시점 상품 상태(7종) |
 | `input` / `output` | any | 필수 | **가공하지 않은 원본** |
 | `retry_counts` | object | 필수 | 플래그 판정용 |
@@ -81,7 +89,7 @@ model: inherit
 | `retry_accumulated` | 한 단계의 `retry_counts` 값이 **2에 도달**(마지막 재시도 진입) |
 | `pipeline_aborted` | 한 단계의 재시도가 **소진**되어 `input_error` 또는 해당 축 `verdict = fail` 확정 |
 | `validation_repeated_failure` | **같은 검증 항목**이 같은 `attempt_no` 안에서 2회 이상 실패 |
-| `processing_delayed` | 한 요청의 소요 시간이 **20초 초과**(AI 타임아웃 25초의 80%) |
+| `processing_delayed` | 한 요청의 소요 시간이 **20초 초과** |
 | `itinerary_partial` | 일정 원문의 일차 수가 여행기간보다 적어 `추후 추가 예정`으로 채운 경우 |
 
 **감지된 경우에만 기록한다.** "이상 없음" 류 항목을 남기지 않는다. 한 단계에서 여러 이상이 감지되면 유형별로 각각 1행을 기록한다.
