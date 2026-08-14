@@ -111,8 +111,11 @@ export function Background({ background }: { background: BackgroundKey }) {
  * 새 블록을 추가할 때 비용이 커지지 않는다.
  * ════════════════════════════════════════════════════════════════ */
 
+// 데스크톱에서 「폰을 옆으로 늘린」 좁은 느낌이 나지 않도록 한 단계씩 넓혔다.
+// 문단 텍스트는 각 섹션 안에서 자체 max-w(2xl·3xl)로 가독 폭을 지키므로, 여기서
+// 밴드를 넓혀도 글줄이 길어지지 않고 카드·그리드·카루셀만 폭을 활용한다.
 const WIDTH_CLASS = {
-  narrow: 'max-w-xl', normal: 'max-w-3xl', wide: 'max-w-5xl', full: 'max-w-none',
+  narrow: 'max-w-2xl', normal: 'max-w-5xl', wide: 'max-w-7xl', full: 'max-w-none',
 } as const
 
 const PAD_CLASS = {

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { BlockStyle, Tone } from '@/lib/pipeline/vocabulary'
 import type { EnrichmentPlace } from '@/lib/pipeline/enrichment'
 import { Band, headlineClass, SectionHeading, type RenderTheme } from './theme'
+import { Carousel } from './Carousel'
 import { SlotGallery } from './media'
 import {
   days, PLACEHOLDER_VALUES, rows, slotNames, text,
@@ -421,13 +422,16 @@ export function Itinerary(p: SectionProps) {
               {/* 1일차에 항공을 함께 (12.png식). 항공 별도면 별도 안내 */}
               {di === 0 && <FlightRow flight={p.flight} />}
 
-              {/* 그 날 방문지 — 좌우 스와이프 카루셀 (인스타그램식). 사진 + 요약 + 출처 */}
+              {/* 그 날 방문지 — 좌우 스와이프 카루셀 (인스타그램식). 사진 + 요약 + 출처.
+                  화살표·드래그로 마우스에서도 넘긴다(Carousel). */}
               {notes.length > 0 && (
-                <div className="mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {notes.map((pl, k) => {
-                    const image = idx.bySlot.get(`place_${pl.이름}`)?.[0]
-                    return <PlaceCard key={pl.이름} place={pl} i={k} image={image} />
-                  })}
+                <div className="mt-4">
+                  <Carousel ariaLabel={`${d.day}일차 방문지`}>
+                    {notes.map((pl, k) => {
+                      const image = idx.bySlot.get(`place_${pl.이름}`)?.[0]
+                      return <PlaceCard key={pl.이름} place={pl} i={k} image={image} />
+                    })}
+                  </Carousel>
                 </div>
               )}
             </li>
