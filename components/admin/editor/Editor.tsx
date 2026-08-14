@@ -241,7 +241,7 @@ export function Editor(props: EditorProps) {
   /* ── 화면 ──────────────────────────────────────────────────── */
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-[100dvh] flex-col">
       <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-neutral-200 px-5 py-3">
         <Link href={`/admin/products/${props.productId}`}
           className="text-sm text-neutral-500 hover:text-neutral-900">← 상세</Link>
@@ -492,7 +492,7 @@ export function Editor(props: EditorProps) {
 
         {/* ── 우: 실시간 미리보기 ───────────────────────────── */}
         <div className="min-w-0 flex-1 overflow-auto bg-neutral-100 p-4">
-          <PreviewFrame width={viewport} height={860} title={`미리보기 ${viewport}px`}>
+          <PreviewFrame width={viewport} height={1400} title={`미리보기 ${viewport}px`}>
             <PageRenderer
               content={{ ...content, sections: ordered }}
               images={previewImages}
