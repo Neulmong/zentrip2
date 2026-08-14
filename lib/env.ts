@@ -32,4 +32,11 @@ export const env = {
   get SESSION_SECRET() { return required('SESSION_SECRET') },
   get SITE_URL() { return required('SITE_URL') },
   get CONTACT_INFO() { return required('CONTACT_INFO') },
+  /**
+   * 신청 확인 이메일 발신 주소. **선택** — 없으면 Resend 기본 주소로 떨어진다.
+   * 그 기본 경로에선 Resend 가입 계정 본인 주소로만 도달한다(§13.3). 도메인을
+   * 인증한 뒤(resend.com/domains) 이 값을 자체 도메인 주소로 두면 아무 수신자에게나
+   * 보낼 수 있다 — **코드는 그대로 두고 환경변수만 바꾼다.** 예: `제트립 <no-reply@내도메인.com>`
+   */
+  get MAIL_FROM() { return process.env.MAIL_FROM || 'zentrip <onboarding@resend.dev>' },
 }

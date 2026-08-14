@@ -229,7 +229,7 @@ npm run test:harness   # R1·R3·R4 + 매니페스트 정합성. 실패하면 �
 ## 환경 변수
 
 전부 **서버 전용**. `NEXT_PUBLIC_` 접두사 변수를 만들지 않는다 (공개 페이지도 서버 렌더링).
-`GEMINI_API_KEY` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` · `RESEND_API_KEY` · `ADMIN_PASSWORD` · `SESSION_SECRET` · `SITE_URL` · `CONTACT_INFO` · (선택) `AI_MODEL`
+`GEMINI_API_KEY` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` · `RESEND_API_KEY` · `ADMIN_PASSWORD` · `SESSION_SECRET` · `SITE_URL` · `CONTACT_INFO` · (선택) `AI_MODEL` · (선택) `MAIL_FROM`(도메인 인증 후 발신 주소 — 없으면 Resend 기본 주소, docs/email-domain-setup.md)
 
 ## 명령
 
